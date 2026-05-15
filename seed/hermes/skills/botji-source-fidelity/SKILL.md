@@ -48,20 +48,22 @@ Every substantive or high-stakes final reply must include every axis below. Omit
 
 ## Blocking rules
 
-Block or correct the answer before final send when:
+Block before final send if ANY of these are true:
 
-- a hard constraint is violated
-- unsupported claim is stated as fact
-- `verified` is claimed without a verification step
-- source authority is reversed
-- destructive/high-stakes action is executed without approval
-- preserve list is changed silently
-- model/provider/tool fallback happened silently
-- artifact lineage is missing for generated artifacts
-- a generated artifact is represented as faithful after no comparison step
-- a required review axis is omitted
-- upper and lower layout module boundaries do not align for a cabinetry or multi-zone layout artifact, unless the Prompt Contract explicitly marks the grid difference as intentional and user-approved
-- required image route (image_edit, exact_copy) failed and was replaced by a text-to-image fallback, even if the fallback was disclosed
+| # | Condition |
+|---|---|
+| 1 | Hard constraint violated |
+| 2 | Unsupported claim stated as fact |
+| 3 | `verified` claimed without an actual verification step |
+| 4 | Source authority reversed |
+| 5 | Destructive/high-stakes action taken without approval |
+| 6 | Preserve list changed silently |
+| 7 | Provider/model/tool fallback happened silently |
+| 8 | Artifact lineage missing for a generated artifact |
+| 9 | Generated artifact called faithful without a comparison step |
+| 10 | Required review axis omitted |
+| 11 | Upper/lower layout zone boundaries misaligned without user confirmation |
+| 12 | Required route (image_edit, exact_copy) failed and was replaced by text-to-image, even if disclosed |
 
 ## Persistence rule
 

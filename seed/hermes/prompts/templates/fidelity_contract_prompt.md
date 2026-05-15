@@ -1,51 +1,68 @@
 # Fidelity Prompt Contract Template
 
-Use for every tool-backed or artifact-generating task.
+Two modes. Use the lowest that fits — do not gold-plate.
 
-```text
-Build Prompt Contract <contract_id>.
+---
 
-Intent:
-<what the user wants>
+## QUICK (substantive, no artifacts, no high-stakes risk)
 
-Tier:
-casual | substantive | high_stakes
+```
+Contract: [intent in one line]
+Mode: fidelity | grounded | creative
+Sources: [list]
+Preserve: [what must not change]
+Change: [what is allowed]
+Missing: [unknowns or "none"]
+```
 
-Truth mode:
-creative | grounded | fidelity | verified
+---
+
+## FULL (artifacts, image transforms, high-stakes, multi-tool)
+
+```
+Contract: [contract_id]
+Intent: [what the user wants]
+Tier: substantive | high_stakes
+Mode: fidelity | grounded | creative | verified
 
 Sources:
-- <source_id>: <source_type>, <authority>, <path/citation>, <summary>
+- [id]: [type] · [authority: hard|soft] · [path or citation]
 
-Authority order:
-1. Current explicit user instruction
-2. Uploaded/current files and command outputs
-3. Project rules/schemas/tests
-4. Durable memory
-5. External web/source material
-6. Inference and style assumptions
+Authority: user instruction > uploaded files > project rules > memory > inference
 
 Preserve:
-- <facts, numbers, names, layout, constraints that must stay true>
+- [exact facts, numbers, names, layout, constraints]
 
 Change:
-- <allowed transformations or generated output>
+- [allowed transforms or generated output]
 
-Missing inputs:
-- <unknowns that limit fidelity>
+Missing:
+- [unknowns that limit fidelity, or "none"]
 
-Execution plan:
-1. Pre-review contract for contradictions and missing inputs.
-2. Execute only inside preserve/change boundaries.
-3. Persist output artifact path/id if generated.
-4. Run source-fidelity review with all eight axes.
+Execution:
+1. Pre-check for conflicts and missing inputs
+2. [step 2]
+3. [step 3]
 
-Artifact lineage:
-parent_artifact_id: <input path/id or null>
-output_artifact_id: <planned output path/id or null>
-version_label: Prompt v1
-change_reason: <why this transformation exists>
+Lineage:
+- parent: [source artifact id/path or null]
+- output: [planned output path/id]
+- version: [Render v1 | Draft v2 | etc.]
+- reason: [why this transform exists]
 
-Final requirement:
-The final answer must include all eight review axes and final_claim_level.
+Approval required: yes | no
+Risk: [specific risk or "none"]
+```
+
+---
+
+## Artifact fidelity addendum (add when source file is involved)
+
+```
+Source artifacts: [ids]
+Schema evidence: [ids]
+Route: exact_copy | edit_image | render_schema | concept_generation
+Forbidden routes: [e.g. image_generate]
+Hard requirements: [schema constraints that must pass review]
+Advisory: [style/finish preferences that can warn but not block]
 ```

@@ -4,7 +4,9 @@ Use this skill when the user provides a 2D source artifact (image, DXF, PDF, SVG
 
 ## Core rule
 
-Schema first. Never generate 3D output from a text prompt alone when a 2D source artifact exists. Extract a validated geometry schema from the source, confirm it with the user when measurements are uncertain, then drive all 3D output from that schema. The 3D artifact is a derivative of the schema — not of the prompt.
+Schema first. Do not generate 3D output from a text prompt alone when a 2D source artifact with readable dimensions exists. Extract a geometry schema, confirm uncertain measurements with the user, then drive output from the schema — not from the prompt.
+
+**User override:** If the user explicitly says "just generate something" or "don't worry about exact dimensions", set `schema_authority: user_waived`, lower `final_claim_level` to `draft`, and proceed with best-effort generation. Disclose the waiver in the review.
 
 ## Pipeline (mandatory for all 2D→3D work)
 
