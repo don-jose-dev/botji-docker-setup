@@ -2,8 +2,8 @@
 data/
 backups/
 
-# User workspace — runtime content, not source
-workspace/
+# User workspace — runtime content, not source (root only)
+/workspace/
 
 # Actual env file — only .env.example is tracked
 .env
