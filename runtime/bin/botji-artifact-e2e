@@ -1,0 +1,315 @@
+#!/opt/hermes/.venv/bin/python
+"""Run a real Botji artifact fidelity E2E harness.
+
+This intentionally uses a real provider route for image transform and vision
+review. Default is Codex OAuth through the ChatGPT/Codex backend. It fails
+when credentials are unavailable; there is no mock fallback.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+def drop_root_to_runtime_user() -> None:
+    """Docker exec defaults to root; provider runs must write as Hermes."""
+    if os.name != "posix" or not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return
+
+    uid = int(os.environ.get("HERMES_UID", "10000"))
+    gid = int(os.environ.get("HERMES_GID", str(uid)))
+    home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
+    artifact_root = Path(os.environ.get("BOTJI_ARTIFACT_ROOT", str(home / "artifacts")))
+    runtime_dirs = [
+        home,
+        artifact_root,
+        artifact_root / "e2e",
+        artifact_root / "sources",
+        artifact_root / "outputs",
+        artifact_root / "evidence",
+        artifact_root / "reviews",
+        artifact_root / "index",
+        home / "reviews",
+    ]
+    for path in runtime_dirs:
+        path.mkdir(parents=True, exist_ok=True)
+        os.chown(path, uid, gid)
+    for child in (artifact_root / "e2e").iterdir():
+        os.chown(child, uid, gid)
+
+    os.environ["HOME"] = str(home)
+    os.setgid(gid)
+    os.setuid(uid)
+
+
+def load_plugin():
+    home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
+    plugin_path = home / "plugins" / "botji-artifacts" / "__init__.py"
+    if not plugin_path.is_file():
+        raise SystemExit(f"botji-artifacts plugin not found: {plugin_path}")
+    spec = importlib.util.spec_from_file_location("botji_artifacts_plugin", plugin_path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot import plugin: {plugin_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def create_source_image(path: Path) -> Path:
+    from PIL import Image, ImageDraw
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image = Image.new("RGB", (1024, 1024), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((130, 160, 820, 760), outline=(20, 76, 170), width=18, fill=(220, 234, 255))
+    draw.ellipse((555, 300, 780, 525), outline=(190, 30, 45), width=16, fill=(255, 220, 220))
+    draw.rectangle((205, 615, 520, 700), fill=(40, 145, 90))
+    draw.text((230, 642), "BOTJI SOURCE", fill="white")
+    draw.line((130, 800, 820, 800), fill=(40, 40, 40), width=10)
+    image.save(path)
+    return path
+
+
+def call_tool(module, name: str, args: dict) -> dict:
+    handler = getattr(module, f"_handle_{name}")
+    payload = json.loads(handler(args))
+    if not payload.get("success"):
+        print(json.dumps(payload, indent=2), file=sys.stderr)
+        raise SystemExit(f"{name} failed: {payload.get('error')}")
+    return payload
+
+
+def main() -> int:
+    drop_root_to_runtime_user()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", help="Optional existing source image under /opt/data or /workspace.")
+    parser.add_argument("--contract-id", default="artifact-e2e-real-api")
+    parser.add_argument("--provider-route", default="openai_codex", choices=["openai_codex", "openai_api", "auto"])
+    parser.add_argument("--quality", default="high", choices=["low", "medium", "high", "auto"])
+    parser.add_argument("--size", default="auto")
+    parser.add_argument("--output-format", default="png", choices=["png", "jpeg", "webp"])
+    parser.add_argument("--vision-model", default=os.environ.get("BOTJI_VISION_REVIEW_MODEL", "gpt-5.4-mini"))
+    parser.add_argument("--max-attempts", type=int, default=1, help="Retry real provider generation when review does not pass.")
+    parser.add_argument("--require-pass", action="store_true", help="Exit non-zero unless the final real review verdict is pass.")
+    parser.add_argument(
+        "--allowed-change",
+        action="append",
+        default=[],
+        help="Allowed transformation note for the reviewer. May be passed more than once.",
+    )
+    parser.add_argument(
+        "--prompt",
+        default=(
+            "Create a polished faithful 3D studio-rendered version of the source image. "
+            "Preserve the blue rectangular panel, red circle, green label block, "
+            "bottom black line, relative positions, and overall composition. "
+            "Improve lighting and finish only; do not invent extra objects."
+        ),
+    )
+    args = parser.parse_args()
+
+    if args.provider_route == "openai_api" and not os.environ.get("OPENAI_API_KEY", "").strip():
+        raise SystemExit("OPENAI_API_KEY is required for provider_route=openai_api; no mock fallback is allowed.")
+
+    if args.vision_model:
+        os.environ["BOTJI_VISION_REVIEW_MODEL"] = args.vision_model
+
+    source = Path(args.source) if args.source else Path(os.environ.get("BOTJI_ARTIFACT_ROOT", "/opt/data/artifacts")) / "e2e" / "source-real-api.png"
+    if not source.is_file():
+        source = create_source_image(source)
+
+    plugin = load_plugin()
+    registered = call_tool(
+        plugin,
+        "artifact_register",
+        {
+            "path": str(source),
+            "declared_type": "image",
+            "role": "source",
+            "authority": "user_supplied",
+            "user_intent": "real API image fidelity E2E source",
+        },
+    )
+    source_artifact_id = registered["artifact"]["artifact_id"]
+    extracted = call_tool(plugin, "artifact_extract", {"artifact_id": source_artifact_id, "detail": "full", "intent": "image_e2e"})
+    normalized = call_tool(
+        plugin,
+        "artifact_normalize",
+        {
+            "artifact_id": source_artifact_id,
+            "schema_profile": "real_api_image_e2e",
+            "intent": "image_e2e",
+            "semantic_schema": {
+                "kind": "source_image_layout",
+                "required_visible_items": ["blue rectangular panel", "red circle", "green label block", "bottom black line"],
+            },
+            "hard_requirements": [
+                "Preserve the blue rectangular panel.",
+                "Preserve the red circle.",
+                "Preserve the green label block with BOTJI SOURCE text.",
+                "Preserve the bottom black line and relative composition.",
+            ],
+            "evidence_ids": [extracted["evidence"]["evidence_id"]],
+        },
+    )
+    baseline = call_tool(
+        plugin,
+        "artifact_transform",
+        {
+            "contract_id": f"{args.contract_id}-default-preserve-baseline",
+            "source_artifact_ids": [source_artifact_id],
+            "instructions": "Default transform must preserve the source artifact byte-for-byte before any 2D-to-3D render is attempted.",
+        },
+    )
+    baseline_artifact = baseline["output_artifact"]
+    if baseline_artifact.get("route") != "artifact_transform.exact_copy":
+        raise SystemExit(f"default preserve baseline used unexpected route: {baseline_artifact.get('route')}")
+    if baseline_artifact.get("source_sha256") != baseline_artifact.get("output_sha256"):
+        raise SystemExit("default preserve baseline failed SHA-256 equality")
+    baseline_review = call_tool(
+        plugin,
+        "artifact_review",
+        {
+            "contract_id": f"{args.contract_id}-default-preserve-baseline",
+            "source_artifact_ids": [source_artifact_id],
+            "output_artifact_id": baseline_artifact["artifact_id"],
+            "evidence_ids": [
+                extracted["evidence"]["evidence_id"],
+                normalized["schema_evidence"]["evidence_id"],
+                baseline["route_evidence"]["evidence_id"],
+            ],
+            "fidelity_requirements": ["Preserve the source artifact byte-for-byte before transformation."],
+            "use_openai_vision": False,
+            "require_vision_api": False,
+        },
+    )
+    subprocess.run(["botji-validate-review", baseline_review["review_path"]], check=True)
+    if baseline_review["review"]["verdict"] != "pass" or baseline_review["review"].get("final_claim_level") != "verified":
+        raise SystemExit("default preserve baseline review did not pass as verified")
+
+    attempts = max(1, args.max_attempts)
+    transform = None
+    review = None
+    correction_notes: list[str] = []
+    review_requirements = [
+        *normalized["schema_evidence"]["data"]["fidelity_contract"]["hard_requirements"],
+        *[f"Allowed transform: {item}" for item in args.allowed_change],
+    ]
+    for attempt in range(1, attempts + 1):
+        prompt = args.prompt
+        if correction_notes:
+            prompt = (
+                f"{args.prompt}\n\n"
+                "Previous real vision review found these fidelity warnings. Correct them in this attempt without changing source facts:\n"
+                f"{correction_notes[-1][:1800]}"
+            )
+        transform = call_tool(
+            plugin,
+            "artifact_transform",
+            {
+                "contract_id": f"{args.contract_id}-attempt-{attempt}",
+                "source_artifact_ids": [source_artifact_id],
+                "operation": "edit_image",
+                "instructions": prompt,
+                "output_type": "image",
+                "fidelity_mode": "strict",
+                "provider_route": args.provider_route,
+                "quality": args.quality,
+                "size": args.size,
+                "output_format": args.output_format,
+            },
+        )
+        output_artifact_id = transform["output_artifact"]["artifact_id"]
+        review = call_tool(
+            plugin,
+            "artifact_review",
+            {
+                "contract_id": f"{args.contract_id}-attempt-{attempt}",
+                "source_artifact_ids": [source_artifact_id],
+                "output_artifact_id": output_artifact_id,
+                "evidence_ids": [
+                    extracted["evidence"]["evidence_id"],
+                    normalized["schema_evidence"]["evidence_id"],
+                    transform["route_evidence"]["evidence_id"],
+                ],
+                "fidelity_requirements": review_requirements,
+                "use_openai_vision": True,
+                "require_vision_api": True,
+                "review_provider_route": args.provider_route,
+            },
+        )
+        subprocess.run(["botji-validate-review", review["review_path"]], check=True)
+        if review["review"]["verdict"] == "pass":
+            break
+        correction_notes.append(str(review["review"].get("reviewer_notes") or ""))
+
+    assert transform is not None and review is not None
+    final_verdict = review["review"]["verdict"]
+    fidelity_scores = review["review"].get("fidelity_scores") or {}
+    output_route = str(transform["output_artifact"].get("route") or "")
+    high_fidelity_axes = [
+        axis for axis in review["review"].get("axes", [])
+        if axis.get("axis") == "high_fidelity_provider_transform"
+    ]
+    high_fidelity_status = high_fidelity_axes[0].get("compare_status") if high_fidelity_axes else None
+    payload = {
+        "success": True,
+        "source_artifact_id": source_artifact_id,
+        "baseline_output_artifact_id": baseline_artifact["artifact_id"],
+        "baseline_output_path": baseline_artifact["path"],
+        "baseline_review_id": baseline_review["review"]["review_id"],
+        "baseline_review_path": baseline_review["review_path"],
+        "baseline_route": baseline_artifact["route"],
+        "baseline_source_sha256": baseline_artifact.get("source_sha256"),
+        "baseline_output_sha256": baseline_artifact.get("output_sha256"),
+        "output_artifact_id": transform["output_artifact"]["artifact_id"],
+        "output_path": transform["output_artifact"]["path"],
+        "output_route": output_route,
+        "output_provider": transform["output_artifact"].get("provider"),
+        "output_model": transform["output_artifact"].get("model"),
+        "output_quality": transform["output_artifact"].get("quality"),
+        "review_id": review["review"]["review_id"],
+        "review_path": review["review_path"],
+        "verdict": final_verdict,
+        "final_claim_level": review["review"]["final_claim_level"],
+        "byte_exact_file_fidelity_percent": fidelity_scores.get("byte_exact_file_fidelity_percent"),
+        "transform_contract_fidelity_percent": fidelity_scores.get("transform_contract_fidelity_percent"),
+        "claim_type": fidelity_scores.get("claim_type"),
+        "preservation_target": fidelity_scores.get("preservation_target"),
+        "high_fidelity_provider_transform": high_fidelity_status,
+        "fidelity_claim_boundary": fidelity_scores.get("claim_boundary"),
+        "provider_route": args.provider_route,
+        "attempts": len(correction_notes) + (1 if final_verdict == "pass" or not correction_notes else 0),
+    }
+    provider_route = output_route.startswith("artifact_transform.edit_image")
+    provider_claim_ok = (
+        not provider_route
+        or (
+            review["review"].get("final_claim_level") == "reviewed"
+            and fidelity_scores.get("byte_exact_file_fidelity_percent") == 0
+            and high_fidelity_status == "match"
+        )
+    )
+    if args.require_pass and (
+        final_verdict != "pass"
+        or fidelity_scores.get("transform_contract_fidelity_percent") != 100
+        or not provider_claim_ok
+    ):
+        payload["success"] = False
+        payload["error"] = "final real API review did not pass with 100% reviewed transform fidelity and high-fidelity provider proof"
+        payload["reviewer_notes"] = review["review"].get("reviewer_notes")
+        print(json.dumps(payload, indent=2))
+        return 2
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

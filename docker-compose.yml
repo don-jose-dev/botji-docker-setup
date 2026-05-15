@@ -1,0 +1,96 @@
+name: botji-single-tenant
+
+services:
+  hermes:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HERMES_IMAGE: ${HERMES_IMAGE:-nousresearch/hermes-agent:main}
+        CODEX_NPM_VERSION: ${CODEX_NPM_VERSION:-latest}
+    image: ${BOTJI_IMAGE_NAME:-botji/hermes-codex}:${BOTJI_IMAGE_TAG:-local}
+    container_name: ${BOTJI_TENANT_ID:-botji}-hermes
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    stop_grace_period: 60s
+    ports:
+      # Bound to host loopback only. No public-facing service by default.
+      - "127.0.0.1:${HERMES_API_PORT:-8642}:8642"
+      - "127.0.0.1:${HERMES_DASHBOARD_PORT:-9119}:9119"
+    volumes:
+      # One tenant = one private Hermes home. Do not share this folder.
+      - ${BOTJI_DATA_DIR:-./data/botji}:/opt/data
+      # Codex works only inside this tenant workspace by default.
+      - ${BOTJI_WORKSPACE_DIR:-./workspace}:/workspace
+      # Optional only for trusted repo/container build work. Keep commented by default.
+      # - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: ${TZ:-Europe/Amsterdam}
+      HERMES_HOME: /opt/data
+      HERMES_UID: ${HERMES_UID:-10000}
+      HERMES_GID: ${HERMES_GID:-10000}
+
+      # Telegram long-polling by default. Do not set TELEGRAM_WEBHOOK_URL unless you want inbound HTTPS.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_HOME_CHANNEL: ${TELEGRAM_HOME_CHANNEL:-}
+      TELEGRAM_HOME_CHANNEL_NAME: ${TELEGRAM_HOME_CHANNEL_NAME:-Botji Home}
+      GATEWAY_ALLOW_ALL_USERS: ${GATEWAY_ALLOW_ALL_USERS:-false}
+
+      # Local dashboard/API. Host binding is loopback-only above.
+      API_SERVER_ENABLED: ${API_SERVER_ENABLED:-true}
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_KEY: ${API_SERVER_KEY:-replace-me-with-openssl-rand-hex-32}
+      API_SERVER_CORS_ORIGINS: ${API_SERVER_CORS_ORIGINS:-http://127.0.0.1:${HERMES_DASHBOARD_PORT:-9119}}
+      HERMES_DASHBOARD: ${HERMES_DASHBOARD:-1}
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: 9119
+      HERMES_DASHBOARD_TUI: ${HERMES_DASHBOARD_TUI:-1}
+
+      # Codex CLI. Credentials persist under the tenant Hermes volume.
+      CODEX_HOME: /opt/data/.codex
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      BOTJI_WORKDIR: /workspace
+      BOTJI_CONTRACT_SCHEMA: /opt/data/schemas/prompt_contract.schema.json
+      BOTJI_REVIEW_SCHEMA: /opt/data/schemas/source_fidelity_review.schema.json
+      BOTJI_ARTIFACT_SCHEMA: /opt/data/schemas/artifact_schema.schema.json
+      BOTJI_DEFAULT_TRUTH_MODE: ${BOTJI_DEFAULT_TRUTH_MODE:-fidelity}
+      BOTJI_ARTIFACT_ROOT: /opt/data/artifacts
+      BOTJI_ARTIFACT_MAX_BYTES: ${BOTJI_ARTIFACT_MAX_BYTES:-104857600}
+      BOTJI_ARTIFACT_ENABLE_DXF_WRITE: ${BOTJI_ARTIFACT_ENABLE_DXF_WRITE:-false}
+      BOTJI_ARTIFACT_ENABLE_PDF_WRITE: ${BOTJI_ARTIFACT_ENABLE_PDF_WRITE:-false}
+      BOTJI_IMAGE_MODEL: ${BOTJI_IMAGE_MODEL:-gpt-image-2}
+      BOTJI_VISION_REVIEW_MODEL: ${BOTJI_VISION_REVIEW_MODEL:-gpt-5.4-mini}
+
+      # Tool/debug defaults. Keep noisy logs off until needed.
+      WEB_TOOLS_DEBUG: ${WEB_TOOLS_DEBUG:-false}
+      VISION_TOOLS_DEBUG: ${VISION_TOOLS_DEBUG:-false}
+      MOA_TOOLS_DEBUG: ${MOA_TOOLS_DEBUG:-false}
+      IMAGE_TOOLS_DEBUG: ${IMAGE_TOOLS_DEBUG:-false}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8642/health >/dev/null 2>&1 || hermes status >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: ${BOTJI_MEMORY_LIMIT:-4G}
+          cpus: "${BOTJI_CPU_LIMIT:-2.0}"
+
+  bootstrap:
+    image: alpine:3.22
+    container_name: ${BOTJI_TENANT_ID:-botji}-bootstrap
+    profiles: ["bootstrap"]
+    user: "${HERMES_UID:-10000}:${HERMES_GID:-10000}"
+    working_dir: /seed
+    volumes:
+      - ${BOTJI_DATA_DIR:-./data/botji}:/opt/data
+      - ${BOTJI_WORKSPACE_DIR:-./workspace}:/workspace
+      - ./seed:/seed:ro
+    environment:
+      HERMES_HOME: /opt/data
+      BOTJI_FORCE_SEED: ${BOTJI_FORCE_SEED:-0}
+      BOTJI_TENANT_ID: ${BOTJI_TENANT_ID:-botji}
+    command: ["/bin/sh", "/seed/bootstrap-botji.sh"]

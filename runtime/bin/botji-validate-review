@@ -1,0 +1,196 @@
+#!/usr/bin/python3
+import json
+import os
+import sys
+from pathlib import Path
+
+ALLOWED_VERDICTS = {"pass", "warn", "block"}
+ALLOWED_COMPARE = {"match", "partial", "missing", "conflict", "not_applicable"}
+ALLOWED_CLAIMS = {"unverified", "draft", "reviewed", "verified"}
+CORE_AXES = {
+    "source_coverage",
+    "authority_alignment",
+    "preserve_change",
+    "groundedness",
+    "uncertainty",
+    "safety",
+    "artifact_lineage",
+    "actionability",
+}
+DETERMINISTIC_EVIDENCE_HINTS = (
+    "schema",
+    "checksum",
+    "sha256",
+    "pymupdf",
+    "pypdf",
+    "pillow",
+    "pil",
+    "ezdxf",
+    "diff",
+    "file_metadata",
+    "artifact_extract",
+)
+
+def fail(msg: str) -> None:
+    print(f"BLOCK: {msg}", file=sys.stderr)
+    raise SystemExit(2)
+
+def validate_schema(data: dict) -> None:
+    schema_path = Path(os.environ.get("BOTJI_REVIEW_SCHEMA", "/opt/data/schemas/source_fidelity_review.schema.json"))
+    if not schema_path.is_file():
+        return
+    try:
+        from jsonschema import Draft202012Validator
+    except Exception as exc:
+        fail(f"jsonschema is unavailable for schema validation: {exc}")
+
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    errors = sorted(validator.iter_errors(data), key=lambda err: list(err.path))
+    if errors:
+        first = errors[0]
+        path = ".".join(str(part) for part in first.path) or "<root>"
+        fail(f"schema validation failed at {path}: {first.message}")
+
+def evidence_exists(evidence_id: str) -> bool:
+    artifact_root = Path(os.environ.get("BOTJI_ARTIFACT_ROOT", "/opt/data/artifacts"))
+    evidence_root = artifact_root / "evidence"
+    if not evidence_root.is_dir():
+        return False
+    return any(evidence_root.glob(f"*/{evidence_id}.json"))
+
+def has_deterministic_verification(data: dict) -> bool:
+    steps = data.get("verification_steps") or []
+    for step in steps:
+        text = str(step).lower()
+        if any(hint in text for hint in DETERMINISTIC_EVIDENCE_HINTS):
+            return True
+    for axis in data.get("axes", []):
+        if axis.get("claim_level") != "verified":
+            continue
+        for evidence_id in axis.get("evidence_ids") or []:
+            if evidence_exists(evidence_id):
+                return True
+    return False
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        print("Usage: botji-validate-review /path/to/review.json", file=sys.stderr)
+        raise SystemExit(64)
+
+    path = Path(sys.argv[1])
+    data = json.loads(path.read_text(encoding="utf-8"))
+    validate_schema(data)
+
+    required = [
+        "review_id",
+        "contract_id",
+        "reviewed_output_ref",
+        "verdict",
+        "final_claim_level",
+        "axes",
+        "blockers",
+        "required_corrections",
+    ]
+    for key in required:
+        if key not in data:
+            fail(f"missing required key: {key}")
+
+    if data["verdict"] not in ALLOWED_VERDICTS:
+        fail(f"invalid verdict: {data['verdict']}")
+
+    if data["final_claim_level"] not in ALLOWED_CLAIMS:
+        fail(f"invalid final_claim_level: {data['final_claim_level']}")
+
+    if data["final_claim_level"] == "verified" and not has_deterministic_verification(data):
+        fail("final_claim_level=verified requires deterministic verification evidence")
+
+    scores = data.get("fidelity_scores") or {}
+    transform_score = scores.get("transform_contract_fidelity_percent")
+    byte_score = scores.get("byte_exact_file_fidelity_percent")
+    if transform_score == 100 and data["verdict"] != "pass":
+        fail("transform_contract_fidelity_percent=100 requires verdict=pass")
+    if data["verdict"] == "pass" and transform_score is not None and transform_score != 100:
+        fail("verdict=pass requires transform_contract_fidelity_percent=100 when fidelity_scores are present")
+
+    axes = data["axes"]
+    if not isinstance(axes, list) or not axes:
+        fail("axes must be a non-empty list")
+
+    seen_axes = set()
+    axes_by_name = {}
+    for i, axis in enumerate(axes):
+        for key in ("axis", "compare_status", "severity", "notes"):
+            if key not in axis:
+                fail(f"axes[{i}] missing {key}")
+        if axis["compare_status"] not in ALLOWED_COMPARE:
+            fail(f"axes[{i}] invalid compare_status: {axis['compare_status']}")
+        seen_axes.add(axis["axis"])
+        axes_by_name.setdefault(axis["axis"], []).append(axis)
+        claim_level = axis.get("claim_level")
+        if claim_level is not None and claim_level not in ALLOWED_CLAIMS:
+            fail(f"axes[{i}] invalid claim_level: {claim_level}")
+        if claim_level == "verified" and not axis.get("evidence_ids"):
+            fail(f"axes[{i}] claim_level=verified requires evidence_ids")
+
+    missing_core_axes = sorted(CORE_AXES - seen_axes)
+    if missing_core_axes:
+        fail(f"missing required core review axes: {', '.join(missing_core_axes)}")
+
+    blocking_axes = [
+        a for a in axes
+        if a.get("severity") == "blocking" or a.get("compare_status") == "conflict"
+    ]
+    if blocking_axes and data["verdict"] != "block":
+        fail("blocking/conflict axis requires verdict=block")
+
+    if data["verdict"] == "block" and not data.get("blockers"):
+        fail("verdict=block requires blockers")
+
+    context = data.get("artifact_context") or {}
+    output_artifact_id = context.get("output_artifact_id")
+    source_artifact_ids = context.get("source_artifact_ids") or []
+    if output_artifact_id and source_artifact_ids:
+        artifact_root = Path(os.environ.get("BOTJI_ARTIFACT_ROOT", "/opt/data/artifacts"))
+        index_path = artifact_root / "index" / "artifacts.jsonl"
+        records = []
+        if index_path.is_file():
+            for line in index_path.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    records.append(json.loads(line))
+        output = next((record for record in records if record.get("artifact_id") == output_artifact_id), None)
+        if output is None:
+            fail(f"artifact_context output not found in registry: {output_artifact_id}")
+        parents = set(output.get("parents") or [])
+        missing_parents = sorted(set(source_artifact_ids) - parents)
+        if missing_parents:
+            fail(f"output artifact missing source lineage: {', '.join(missing_parents)}")
+        route = str(output.get("route") or "")
+        if data["final_claim_level"] == "verified":
+            steps = {str(step) for step in data.get("verification_steps") or []}
+            if route.startswith("artifact_transform.edit_image"):
+                fail("provider image edits cannot use final_claim_level=verified; use reviewed unless a deterministic exact/schema route produced the output")
+            if route == "artifact_transform.exact_copy" and "exact_sha256_output_compare" not in steps:
+                fail("exact_copy verified reviews require exact_sha256_output_compare")
+        steps = {str(step) for step in data.get("verification_steps") or []}
+        if byte_score == 100:
+            if route != "artifact_transform.exact_copy" or "exact_sha256_output_compare" not in steps:
+                fail("byte_exact_file_fidelity_percent=100 requires exact_copy plus exact_sha256_output_compare")
+        if route.startswith("artifact_transform.edit_image"):
+            if byte_score not in (None, 0):
+                fail("provider image edits cannot claim non-zero byte_exact_file_fidelity_percent")
+            if transform_score == 100:
+                hf_axes = axes_by_name.get("high_fidelity_provider_transform") or []
+                if not hf_axes or hf_axes[0].get("compare_status") != "match":
+                    fail("provider image transform_contract_fidelity_percent=100 requires high_fidelity_provider_transform=match")
+                if "high_fidelity_provider_transform" not in steps:
+                    fail("provider image transform_contract_fidelity_percent=100 requires high_fidelity_provider_transform verification step")
+                if "openai_vision_compare" not in steps:
+                    fail("provider image transform_contract_fidelity_percent=100 requires openai_vision_compare verification step")
+                if data["final_claim_level"] != "reviewed":
+                    fail("provider image transform_contract_fidelity_percent=100 must keep final_claim_level=reviewed")
+
+    print(f"PASS: {path} is a valid Botji source-fidelity review.")
+
+if __name__ == "__main__":
+    main()

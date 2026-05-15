@@ -1,0 +1,81 @@
+#!/usr/bin/python3
+import json
+import os
+import uuid
+import datetime as dt
+from pathlib import Path
+
+
+def drop_root_to_runtime_user() -> None:
+    """Docker exec defaults to root; prompt contracts must stay Hermes-owned."""
+    if os.name != "posix" or not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return
+
+    uid = int(os.environ.get("HERMES_UID", "10000"))
+    gid = int(os.environ.get("HERMES_GID", str(uid)))
+    home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
+    artifact_root = Path(os.environ.get("BOTJI_ARTIFACT_ROOT", str(home / "artifacts")))
+    runtime_dirs = [home, home / "prompts", artifact_root, artifact_root / "index"]
+    for path in runtime_dirs:
+        path.mkdir(parents=True, exist_ok=True)
+        os.chown(path, uid, gid)
+
+    os.environ["HOME"] = str(home)
+    os.setgid(gid)
+    os.setuid(uid)
+
+
+drop_root_to_runtime_user()
+
+artifact_root = Path(os.environ.get("BOTJI_ARTIFACT_ROOT", "/opt/data/artifacts"))
+prompts = Path(os.environ.get("BOTJI_PROMPT_OUT_DIR", "/opt/data/prompts"))
+prompts.mkdir(parents=True, exist_ok=True)
+
+now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+contract_id = f"prompt-{now.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+contract = {
+    "contract_id": contract_id,
+    "version": "Prompt v1",
+    "created_at": now.isoformat().replace("+00:00", "Z"),
+    "tier": "substantive",
+    "user_intent": "",
+    "truth_mode": os.environ.get("BOTJI_DEFAULT_TRUTH_MODE", "fidelity"),
+    "sources": [],
+    "authority_order": [],
+    "preserve": [],
+    "change": [],
+    "execution_plan": [],
+    "missing_inputs": [],
+    "risk_level": "medium",
+    "approval_required": False,
+    "artifact_lineage": {
+        "parent_artifact_id": None,
+        "output_artifact_id": None,
+        "version_label": "Prompt v1",
+        "change_reason": ""
+    },
+    "artifact_fidelity": {
+        "source_artifact_ids": [],
+        "normalized_schema_ids": [],
+        "selected_route": "exact_copy",
+        "forbidden_routes": ["prompt_only_generation"],
+        "hard_requirements": ["Preserve source artifacts byte-for-byte unless the user explicitly authorizes a transform route."],
+        "advisory_preferences": [],
+        "comparator_required": False,
+        "comparator_status": "not_applicable",
+        "review_required": True
+    },
+    "artifact_refs": [],
+    "allowed_operations": ["exact_copy"],
+    "selected_adapter": "auto",
+    "evidence_required": False,
+    "unknown_policy": "state_unknown",
+    "output_expectation": {
+        "type": "answer",
+        "review_required": True
+    },
+    "notes": ""
+}
+out = prompts / f"{contract_id}.json"
+out.write_text(json.dumps(contract, indent=2), encoding="utf-8")
+print(out)

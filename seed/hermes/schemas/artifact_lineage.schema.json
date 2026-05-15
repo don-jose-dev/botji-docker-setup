@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://botji.local/schemas/artifact_lineage.schema.json",
+  "title": "Botji Artifact Lineage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact_id",
+    "artifact_type",
+    "version_label",
+    "created_at",
+    "source_contract_id",
+    "parents",
+    "verification"
+  ],
+  "properties": {
+    "artifact_id": {
+      "type": "string"
+    },
+    "artifact_type": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "source",
+        "reference",
+        "intermediate",
+        "output",
+        "evidence",
+        "preview"
+      ]
+    },
+    "path": {
+      "type": "string"
+    },
+    "sha256": {
+      "type": "string"
+    },
+    "detected_type": {
+      "type": "string"
+    },
+    "adapter": {
+      "type": "string",
+      "enum": [
+        "image",
+        "pdf",
+        "text",
+        "dxf",
+        "binary",
+        "unknown"
+      ]
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "version_label": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "source_contract_id": {
+      "type": "string"
+    },
+    "parents": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "change_summary": {
+      "type": "string"
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_level",
+        "steps"
+      ],
+      "properties": {
+        "claim_level": {
+          "type": "string",
+          "enum": [
+            "unverified",
+            "draft",
+            "reviewed",
+            "verified"
+          ]
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

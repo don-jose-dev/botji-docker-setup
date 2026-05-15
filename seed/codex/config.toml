@@ -1,0 +1,34 @@
+# Botji Codex CLI config.
+# Credentials are stored under CODEX_HOME=/opt/data/.codex for this tenant only.
+
+cli_auth_credentials_store = "file"
+allow_login_shell = false
+
+# Default profile is intentionally conservative.
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+
+[profiles.botji_readonly]
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+
+[profiles.botji_write]
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+web_search = "disabled"
+
+[profiles.botji_review]
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+
+[sandbox_workspace_write]
+network_access = false
+
+# Optional: uncomment only when the outer container/VM is the intended sandbox.
+# [profiles.botji_container_boundary]
+# approval_policy = "never"
+# sandbox_mode = "danger-full-access"
+# web_search = "disabled"

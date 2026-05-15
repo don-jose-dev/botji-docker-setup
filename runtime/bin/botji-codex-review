@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WORKDIR="${BOTJI_WORKDIR:-/workspace}"
+SCHEMA="${BOTJI_REVIEW_SCHEMA:-/opt/data/schemas/source_fidelity_review.schema.json}"
+OUT_DIR="${BOTJI_REVIEW_OUT_DIR:-/opt/data/reviews}"
+HERMES_DATA="${HERMES_HOME:-/opt/data}"
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  HERMES_RUNTIME_UID="${HERMES_UID:-10000}"
+  HERMES_RUNTIME_GID="${HERMES_GID:-${HERMES_RUNTIME_UID}}"
+  mkdir -p "$HERMES_DATA" "$WORKDIR" "$OUT_DIR"
+  chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$HERMES_DATA" "$WORKDIR" "$OUT_DIR" 2>/dev/null || true
+  export HOME="$HERMES_DATA"
+  exec setpriv --reuid "$HERMES_RUNTIME_UID" --regid "$HERMES_RUNTIME_GID" --clear-groups "$0" "$@"
+fi
+
+TS="$(date -u +%Y%m%dT%H%M%SZ)"
+OUT="${OUT_DIR}/source-fidelity-review-${TS}.json"
+
+mkdir -p "$OUT_DIR" "$WORKDIR"
+
+if [[ $# -eq 0 ]]; then
+  echo "Usage: botji-codex-review '<review prompt>'" >&2
+  exit 64
+fi
+
+codex exec \
+  --profile botji_readonly \
+  --cd "$WORKDIR" \
+  --skip-git-repo-check \
+  --output-schema "$SCHEMA" \
+  --output-last-message "$OUT" \
+  "$@"
+
+botji-validate-review "$OUT"
+echo "Review JSON: $OUT"

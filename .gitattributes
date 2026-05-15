@@ -1,0 +1,25 @@
+# Default: normalize to LF in repo
+* text=auto eol=lf
+
+# Shell scripts must be LF
+*.sh text eol=lf
+
+# Python scripts must be LF
+*.py text eol=lf
+
+# Windows-safe text files
+*.md text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.txt text eol=lf
+Makefile text eol=lf
+Dockerfile text eol=lf
+
+# Binaries — no line ending normalization
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.db binary
+*.tgz binary

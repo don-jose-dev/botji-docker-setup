@@ -1,0 +1,61 @@
+SHELL := /bin/bash
+COMPOSE := docker compose --env-file .env
+export HERMES_UID ?= $(shell id -u)
+export HERMES_GID ?= $(shell id -g)
+
+.PHONY: init bootstrap build pull up down restart logs status shell setup-hermes codex-login codex-status smoke-local smoke-agent snapshot clean
+
+init:
+	@if [ ! -f .env ]; then cp .env.example .env; echo "Created .env"; fi
+	@mkdir -p data/botji workspace backups
+	@echo "Set TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USERS, and API_SERVER_KEY in .env."
+
+bootstrap: init
+	$(COMPOSE) --profile bootstrap run --rm bootstrap
+
+build: bootstrap
+	$(COMPOSE) build --pull hermes
+
+pull:
+	$(COMPOSE) pull || true
+
+up: build
+	$(COMPOSE) up -d hermes
+
+down:
+	$(COMPOSE) down
+
+restart:
+	$(COMPOSE) restart hermes
+
+logs:
+	$(COMPOSE) logs -f hermes
+
+status:
+	$(COMPOSE) ps
+	$(COMPOSE) exec hermes hermes status || true
+	$(COMPOSE) exec hermes codex --version || true
+
+shell:
+	$(COMPOSE) exec hermes bash
+
+setup-hermes: bootstrap
+	$(COMPOSE) run --rm hermes setup
+
+codex-login: bootstrap
+	$(COMPOSE) run --rm hermes codex login
+
+codex-status:
+	$(COMPOSE) run --rm hermes bash -lc 'codex --version && ls -la $$CODEX_HOME && test -f $$CODEX_HOME/config.toml && echo "Codex home present: $$CODEX_HOME"'
+
+smoke-local: bootstrap
+	./scripts/smoke-local.sh
+
+smoke-agent:
+	./scripts/smoke-agent.sh
+
+snapshot:
+	./scripts/snapshot.sh
+
+clean:
+	$(COMPOSE) down --remove-orphans

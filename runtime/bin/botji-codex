@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODE="${BOTJI_CODEX_MODE:-write}"
+WORKDIR="${BOTJI_WORKDIR:-/workspace}"
+HERMES_DATA="${HERMES_HOME:-/opt/data}"
+CODEX_DATA="${CODEX_HOME:-$HERMES_DATA/.codex}"
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  HERMES_RUNTIME_UID="${HERMES_UID:-10000}"
+  HERMES_RUNTIME_GID="${HERMES_GID:-${HERMES_RUNTIME_UID}}"
+  mkdir -p "$HERMES_DATA" "$WORKDIR" "$CODEX_DATA"
+  chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$HERMES_DATA" "$WORKDIR" "$CODEX_DATA" 2>/dev/null || true
+  export HOME="$HERMES_DATA"
+  exec setpriv --reuid "$HERMES_RUNTIME_UID" --regid "$HERMES_RUNTIME_GID" --clear-groups "$0" "$@"
+fi
+
+case "$MODE" in
+  readonly|read-only|inspect)
+    PROFILE="${BOTJI_CODEX_PROFILE:-botji_readonly}"
+    ;;
+  *)
+    PROFILE="${BOTJI_CODEX_PROFILE:-botji_write}"
+    ;;
+esac
+
+mkdir -p "$WORKDIR"
+
+if [[ $# -eq 0 ]]; then
+  echo "Usage: botji-codex '<task prompt>'" >&2
+  echo "Set BOTJI_CODEX_MODE=readonly for inspection-only runs." >&2
+  exit 64
+fi
+
+exec codex exec \
+  --profile "$PROFILE" \
+  --cd "$WORKDIR" \
+  --skip-git-repo-check \
+  "$@"

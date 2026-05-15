@@ -1,0 +1,28 @@
+# Runtime data — never commit
+data/
+backups/
+
+# User workspace — runtime content, not source
+workspace/
+
+# Actual env file — only .env.example is tracked
+.env
+
+# Claude Code project state
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs and databases
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,14 @@
+name: botji-artifacts
+version: 1.0.0
+description: "Generic Botji artifact registry, extraction, transform, and fidelity review tools."
+author: Botji
+kind: standalone
+requires_env: []
+provides_tools:
+  - artifact_register
+  - artifact_extract
+  - artifact_normalize
+  - artifact_transform
+  - artifact_review
+  - artifact_list
+  - artifact_read

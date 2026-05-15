@@ -1,0 +1,84 @@
+{
+  "review_id": "review-example-pass",
+  "contract_id": "prompt-example",
+  "reviewed_output_ref": "answer-draft",
+  "verdict": "pass",
+  "final_claim_level": "reviewed",
+  "axes": [
+    {
+      "axis": "source_coverage",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Explicit constraints are represented.",
+      "claim_level": "reviewed",
+      "evidence_ids": []
+    },
+    {
+      "axis": "authority_alignment",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Hard constraints outrank preferences.",
+      "claim_level": "reviewed",
+      "evidence_ids": []
+    },
+    {
+      "axis": "preserve_change",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Preserve/change lists are respected.",
+      "claim_level": "reviewed",
+      "evidence_ids": []
+    },
+    {
+      "axis": "groundedness",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "No unsupported verified claims.",
+      "claim_level": "reviewed",
+      "evidence_ids": []
+    },
+    {
+      "axis": "uncertainty",
+      "compare_status": "partial",
+      "severity": "low",
+      "notes": "Remaining assumptions are stated.",
+      "claim_level": "reviewed",
+      "evidence_ids": []
+    },
+    {
+      "axis": "safety",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "No high-stakes action executed.",
+      "claim_level": "verified",
+      "evidence_ids": []
+    },
+    {
+      "axis": "artifact_lineage",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Version label is present.",
+      "claim_level": "verified",
+      "evidence_ids": []
+    },
+    {
+      "axis": "actionability",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Next steps are explicit.",
+      "claim_level": "reviewed",
+      "evidence_ids": []
+    }
+  ],
+  "blockers": [],
+  "required_corrections": [],
+  "verification_steps": [
+    "schema_validation"
+  ],
+  "reviewer_notes": "Example valid review.",
+  "artifact_context": {
+    "source_artifact_ids": [],
+    "output_artifact_id": "answer-draft",
+    "evidence_ids": []
+  }
+}

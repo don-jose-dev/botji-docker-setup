@@ -1,0 +1,649 @@
+#!/opt/hermes/.venv/bin/python
+"""Run Botji generic artifact adapter compliance checks.
+
+This harness exercises the generic, non-provider spine:
+register -> extract -> normalize -> render_schema -> review.
+
+It uses deterministic local fixtures only. Image provider and vision review
+coverage belongs in botji-artifact-e2e.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import struct
+import wave
+import zipfile
+from pathlib import Path
+from typing import Any
+
+
+ADAPTERS = (
+    "text",
+    "image",
+    "pdf",
+    "dxf",
+    "docx",
+    "xlsx",
+    "html",
+    "svg",
+    "step",
+    "ifc",
+    "zip",
+    "audio",
+    "video",
+    "binary",
+)
+MODALITY_COMPARATORS = {
+    "image": "image_schema_metadata_compare",
+    "text": "text_line_span_compare",
+    "pdf": "pdf_page_text_compare",
+    "dxf": "dxf_entity_geometry_compare",
+    "docx": "docx_openxml_compare",
+    "xlsx": "xlsx_openxml_compare",
+    "html": "html_dom_text_compare",
+    "svg": "svg_vector_xml_compare",
+    "step": "step_entity_compare",
+    "ifc": "ifc_entity_hierarchy_compare",
+    "zip": "zip_manifest_crc_compare",
+    "audio": "audio_header_compare",
+    "video": "video_container_compare",
+    "binary": "binary_checksum_signature_compare",
+}
+
+
+def drop_root_to_runtime_user() -> None:
+    """Docker exec defaults to root; Botji artifacts must be owned by Hermes."""
+    if os.name != "posix" or not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return
+
+    uid = int(os.environ.get("HERMES_UID", "10000"))
+    gid = int(os.environ.get("HERMES_GID", str(uid)))
+    home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
+    artifact_root = Path(os.environ.get("BOTJI_ARTIFACT_ROOT", str(home / "artifacts")))
+    runtime_dirs = [
+        home,
+        artifact_root,
+        artifact_root / "harness",
+        artifact_root / "harness" / "fixtures",
+        artifact_root / "sources",
+        artifact_root / "outputs",
+        artifact_root / "evidence",
+        artifact_root / "reviews",
+        artifact_root / "index",
+        home / "reviews",
+    ]
+    for path in runtime_dirs:
+        path.mkdir(parents=True, exist_ok=True)
+        os.chown(path, uid, gid)
+    for child in (artifact_root / "harness" / "fixtures").iterdir():
+        os.chown(child, uid, gid)
+
+    os.environ["HOME"] = str(home)
+    os.setgid(gid)
+    os.setuid(uid)
+
+
+def load_plugin():
+    home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
+    plugin_path = home / "plugins" / "botji-artifacts" / "__init__.py"
+    if not plugin_path.is_file():
+        raise SystemExit(f"botji-artifacts plugin not found: {plugin_path}")
+    spec = importlib.util.spec_from_file_location("botji_artifacts_plugin", plugin_path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot import plugin: {plugin_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def call_tool(module: Any, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    handler = getattr(module, f"_handle_{name}")
+    payload = json.loads(handler(args))
+    if not payload.get("success"):
+        raise RuntimeError(f"{name} failed: {payload.get('error')} ({payload.get('error_type')})")
+    return payload
+
+
+def validate_schema_payload(payload: dict[str, Any]) -> None:
+    schema_path = Path(os.environ.get("BOTJI_ARTIFACT_SCHEMA", "/opt/data/schemas/artifact_schema.schema.json"))
+    if not schema_path.is_file():
+        return
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    errors = sorted(Draft202012Validator(schema).iter_errors(payload), key=lambda error: list(error.path))
+    if errors:
+        first = errors[0]
+        path = ".".join(str(part) for part in first.path) or "<root>"
+        raise RuntimeError(f"artifact schema validation failed at {path}: {first.message}")
+
+
+def fixture_dir() -> Path:
+    root = Path(os.environ.get("BOTJI_ARTIFACT_ROOT", "/opt/data/artifacts"))
+    path = root / "harness" / "fixtures"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def make_text_fixture(path: Path) -> Path:
+    path.write_text(
+        "\n".join(
+            [
+                "Botji artifact harness text fixture.",
+                "Line 2 preserves a concrete span.",
+                "Line 3 is used for schema normalization.",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def make_image_fixture(path: Path) -> Path:
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (640, 420), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((70, 75, 360, 300), outline=(30, 80, 170), width=8, fill=(225, 235, 255))
+    draw.ellipse((390, 120, 550, 280), outline=(180, 35, 45), width=8, fill=(255, 225, 225))
+    draw.text((90, 320), "BOTJI HARNESS", fill=(30, 30, 30))
+    image.save(path)
+    return path
+
+
+def make_pdf_fixture(path: Path) -> Path:
+    try:
+        import pymupdf
+    except Exception:
+        import fitz as pymupdf
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((72, 72), "Botji artifact harness PDF fixture")
+    page.insert_text((72, 110), "This page has deterministic text and page geometry.")
+    doc.save(str(path))
+    doc.close()
+    return path
+
+
+def make_dxf_fixture(path: Path) -> Path:
+    import ezdxf
+
+    doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    msp.add_line((0, 0), (1000, 0))
+    msp.add_line((1000, 0), (1000, 500))
+    msp.add_line((1000, 500), (0, 500))
+    msp.add_line((0, 500), (0, 0))
+    msp.add_text("BOTJI HARNESS").set_placement((100, 250))
+    doc.saveas(path)
+    return path
+
+
+def make_docx_fixture(path: Path) -> Path:
+    document = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Botji artifact harness DOCX fixture.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Paragraph two preserves OpenXML text evidence.</w:t></w:r></w:p>
+    <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Cell A1</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+  </w:body>
+</w:document>
+"""
+    content_types = """<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>
+"""
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types)
+        archive.writestr("word/document.xml", document)
+    return path
+
+
+def make_xlsx_fixture(path: Path) -> Path:
+    workbook = """<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheets><sheet name="Harness" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets>
+</workbook>
+"""
+    sheet = """<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:B2"/>
+  <sheetData>
+    <row r="1"><c r="A1" t="inlineStr"><is><t>Botji</t></is></c><c r="B1"><v>42</v></c></row>
+    <row r="2"><c r="A2" t="inlineStr"><is><t>Harness</t></is></c><c r="B2"><f>B1*2</f><v>84</v></c></row>
+  </sheetData>
+</worksheet>
+"""
+    shared = """<?xml version="1.0" encoding="UTF-8"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">
+  <si><t>Botji</t></si><si><t>Harness</t></si>
+</sst>
+"""
+    content_types = """<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>
+"""
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types)
+        archive.writestr("xl/workbook.xml", workbook)
+        archive.writestr("xl/worksheets/sheet1.xml", sheet)
+        archive.writestr("xl/sharedStrings.xml", shared)
+    return path
+
+
+def make_html_fixture(path: Path) -> Path:
+    path.write_text(
+        """<!doctype html>
+<html>
+  <head><title>Botji Harness HTML</title></head>
+  <body>
+    <h1>Artifact Fidelity</h1>
+    <p>HTML fixture preserves DOM text, links, and image references.</p>
+    <a href="https://botji.local/example">Example</a>
+    <img src="diagram.png" alt="Diagram">
+  </body>
+</html>
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def make_svg_fixture(path: Path) -> Path:
+    path.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect x="40" y="50" width="220" height="120" fill="#e9f0ff" stroke="#2250aa"/>
+  <circle cx="420" cy="140" r="70" fill="#ffe1e1" stroke="#aa2533"/>
+  <text x="80" y="250">BOTJI SVG HARNESS</text>
+</svg>
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def make_step_fixture(path: Path) -> Path:
+    path.write_text(
+        """ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('Botji harness STEP'),'2;1');
+FILE_NAME('botji-harness.step','2026-05-15T00:00:00',('Botji'),('Botji'),'','','');
+FILE_SCHEMA(('AP214'));
+ENDSEC;
+DATA;
+#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(100.,0.,0.));
+#3=DIRECTION('',(0.,0.,1.));
+ENDSEC;
+END-ISO-10303-21;
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def make_ifc_fixture(path: Path) -> Path:
+    path.write_text(
+        """ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('Botji harness IFC'),'2;1');
+FILE_NAME('botji-harness.ifc','2026-05-15T00:00:00',('Botji'),('Botji'),'','','');
+FILE_SCHEMA(('IFC4'));
+ENDSEC;
+DATA;
+#1=IFCPROJECT('0J$botji',$,'Harness Project',$,$,$,$,$);
+#2=IFCSITE('1J$botji',$,'Harness Site',$,$,$,$,$,$,$,$,$,$,$);
+#3=IFCBUILDING('2J$botji',$,'Harness Building',$,$,$,$,$,$,$,$);
+#4=IFCBUILDINGSTOREY('3J$botji',$,'Level 1',$,$,$,$,$,$);
+#5=IFCWALL('4J$botji',$,'Wall A',$,$,$,$,$);
+ENDSEC;
+END-ISO-10303-21;
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def make_zip_fixture(path: Path) -> Path:
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.txt", "Botji ZIP harness manifest\n")
+        archive.writestr("nested/data.json", json.dumps({"botji": True, "kind": "zip-fixture"}))
+    return path
+
+
+def make_audio_fixture(path: Path) -> Path:
+    with wave.open(str(path), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(8000)
+        audio.writeframes(b"\x00\x00" * 800)
+    return path
+
+
+def _mp4_box(box_type: bytes, payload: bytes) -> bytes:
+    return struct.pack(">I4s", len(payload) + 8, box_type) + payload
+
+
+def make_video_fixture(path: Path) -> Path:
+    path.write_bytes(
+        _mp4_box(b"ftyp", b"isom\x00\x00\x02\x00isomiso2mp41")
+        + _mp4_box(b"free", b"botji harness video metadata fixture")
+        + _mp4_box(b"mdat", b"\x00" * 64)
+    )
+    return path
+
+
+def make_binary_fixture(path: Path) -> Path:
+    path.write_bytes(b"BOTJI-BINARY-HARNESS\x00\x01\x02\x03")
+    return path
+
+
+def make_fixture(adapter: str) -> tuple[Path, str]:
+    base = fixture_dir()
+    if adapter == "text":
+        return make_text_fixture(base / "text-fixture.txt"), "text"
+    if adapter == "image":
+        return make_image_fixture(base / "image-fixture.png"), "image"
+    if adapter == "pdf":
+        return make_pdf_fixture(base / "pdf-fixture.pdf"), "pdf"
+    if adapter == "dxf":
+        return make_dxf_fixture(base / "dxf-fixture.dxf"), "dxf"
+    if adapter == "docx":
+        return make_docx_fixture(base / "docx-fixture.docx"), "docx"
+    if adapter == "xlsx":
+        return make_xlsx_fixture(base / "xlsx-fixture.xlsx"), "xlsx"
+    if adapter == "html":
+        return make_html_fixture(base / "html-fixture.html"), "html"
+    if adapter == "svg":
+        return make_svg_fixture(base / "svg-fixture.svg"), "svg"
+    if adapter == "step":
+        return make_step_fixture(base / "step-fixture.step"), "step"
+    if adapter == "ifc":
+        return make_ifc_fixture(base / "ifc-fixture.ifc"), "ifc"
+    if adapter == "zip":
+        return make_zip_fixture(base / "zip-fixture.zip"), "zip"
+    if adapter == "audio":
+        return make_audio_fixture(base / "audio-fixture.wav"), "audio"
+    if adapter == "video":
+        return make_video_fixture(base / "video-fixture.mp4"), "video"
+    if adapter == "binary":
+        return make_binary_fixture(base / "binary-fixture.bin"), "binary"
+    raise ValueError(f"unsupported harness adapter: {adapter}")
+
+
+def semantic_schema_for(adapter: str) -> dict[str, Any]:
+    if adapter == "image":
+        return {
+            "kind": "schema_primitive_layout",
+            "domain_profile": "harness_image",
+            "canvas": {"width": 900, "height": 520, "background": "white"},
+            "render_primitives": [
+                {"shape": "rect", "x": 70, "y": 90, "w": 300, "h": 220, "fill": "#e9f0ff", "outline": "#2250aa", "width": 5, "label": "rectangle"},
+                {"shape": "ellipse", "x": 450, "y": 120, "w": 180, "h": 180, "fill": "#ffe1e1", "outline": "#aa2533", "width": 5, "label": "circle"},
+                {"shape": "text", "x": 70, "y": 350, "text": "BOTJI HARNESS"},
+            ],
+        }
+    if adapter == "text":
+        return {"kind": "text_document", "required_line_spans": [{"line": 2, "contains": "concrete span"}]}
+    if adapter == "pdf":
+        return {"kind": "pdf_document", "required_text": ["deterministic text"], "page_count": 1}
+    if adapter == "dxf":
+        return {"kind": "cad_dxf", "required_entities": {"LINE": 4, "TEXT": 1}, "units": "millimeters"}
+    if adapter == "docx":
+        return {"kind": "word_document", "required_paragraphs": 2, "required_tables": 1}
+    if adapter == "xlsx":
+        return {"kind": "spreadsheet_workbook", "required_sheets": ["Harness"], "required_dimension": "A1:B2"}
+    if adapter == "html":
+        return {"kind": "html_document", "required_title": "Botji Harness HTML", "required_headings": ["Artifact Fidelity"]}
+    if adapter == "svg":
+        return {"kind": "svg_vector_graphic", "required_viewbox": "0 0 640 360", "required_text": ["BOTJI SVG HARNESS"]}
+    if adapter == "step":
+        return {"kind": "step_cad_model", "required_schema": "AP214", "required_entities": {"CARTESIAN_POINT": 2}}
+    if adapter == "ifc":
+        return {"kind": "ifc_bim_model", "required_schema": "IFC4", "required_entities": {"IFCPROJECT": 1, "IFCWALL": 1}}
+    if adapter == "zip":
+        return {"kind": "zip_archive", "required_entries": ["manifest.txt", "nested/data.json"]}
+    if adapter == "audio":
+        return {"kind": "audio_media", "required_container": "wav", "required_sample_rate": 8000}
+    if adapter == "video":
+        return {"kind": "video_media", "required_container": "mp4", "required_boxes": ["ftyp", "mdat"]}
+    if adapter == "binary":
+        return {"kind": "binary_file", "required_signature": "BOTJI-BINARY-HARNESS"}
+    return {"kind": "generic_file"}
+
+
+def hard_requirements_for(adapter: str) -> list[str]:
+    return {
+        "text": ["Preserve line count and line-span evidence for text fidelity work."],
+        "image": ["Preserve source image dimensions and schema primitive preview elements."],
+        "pdf": ["Preserve page count, page geometry, and extracted text evidence."],
+        "dxf": ["Preserve parsed DXF layers, units, entity counts, and geometry evidence."],
+        "docx": ["Preserve OpenXML package validity, paragraph count, table count, and extracted text evidence."],
+        "xlsx": ["Preserve workbook sheet names, worksheet dimensions, cell references, formulas, and shared strings."],
+        "html": ["Preserve DOM title, headings, links, images, tag counts, and extracted text evidence."],
+        "svg": ["Preserve SVG viewport, viewBox, vector element counts, and text evidence."],
+        "step": ["Preserve STEP schema and entity counts."],
+        "ifc": ["Preserve IFC schema, entity counts, and spatial hierarchy evidence."],
+        "zip": ["Preserve ZIP manifest entries, CRCs, sizes, and archive structure."],
+        "audio": ["Preserve audio container, sample rate, channels, frame count, and duration metadata."],
+        "video": ["Preserve video container signature and box structure metadata."],
+        "binary": ["Preserve checksum, size, and byte signature evidence."],
+    }.get(adapter, ["Preserve checksum and metadata evidence."])
+
+
+def run_adapter(module: Any, adapter: str, *, copy_into_registry: bool) -> dict[str, Any]:
+    path, declared_type = make_fixture(adapter)
+    registered = call_tool(
+        module,
+        "artifact_register",
+        {
+            "path": str(path),
+            "declared_type": declared_type,
+            "role": "source",
+            "authority": "user_supplied",
+            "copy_into_registry": copy_into_registry,
+            "user_intent": f"generic artifact harness {adapter} source",
+        },
+    )
+    source_id = registered["artifact"]["artifact_id"]
+    extracted = call_tool(module, "artifact_extract", {"artifact_id": source_id, "detail": "full", "intent": f"harness_{adapter}"})
+    normalized = call_tool(
+        module,
+        "artifact_normalize",
+        {
+            "artifact_id": source_id,
+            "schema_profile": f"{adapter}_harness",
+            "intent": f"harness_{adapter}",
+            "semantic_schema": semantic_schema_for(adapter),
+            "hard_requirements": hard_requirements_for(adapter),
+            "evidence_ids": [extracted["evidence"]["evidence_id"]],
+        },
+    )
+    schema_data = normalized["schema_evidence"]["data"]
+    validate_schema_payload(schema_data)
+    output_type = "image" if adapter == "image" else "json"
+    transformed = call_tool(
+        module,
+        "artifact_transform",
+        {
+            "contract_id": f"artifact-harness-{adapter}",
+            "source_artifact_ids": [source_id],
+            "operation": "render_schema",
+            "output_type": output_type,
+            "schema_evidence_id": normalized["schema_evidence"]["evidence_id"],
+            "render_title": f"Botji harness {adapter} schema preview",
+            "instructions": f"Deterministically render {adapter} normalized schema.",
+        },
+    )
+    reviewed = call_tool(
+        module,
+        "artifact_review",
+        {
+            "contract_id": f"artifact-harness-{adapter}",
+            "source_artifact_ids": [source_id],
+            "output_artifact_id": transformed["output_artifact"]["artifact_id"],
+            "evidence_ids": [
+                extracted["evidence"]["evidence_id"],
+                normalized["schema_evidence"]["evidence_id"],
+                transformed["route_evidence"]["evidence_id"],
+            ],
+            "fidelity_requirements": hard_requirements_for(adapter),
+            "use_openai_vision": False,
+            "require_vision_api": False,
+        },
+    )
+    subprocess.run(["botji-validate-review", reviewed["review_path"]], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    modality_axes = [axis for axis in reviewed["review"].get("axes", []) if axis.get("axis") == "modality_comparator"]
+    if not modality_axes:
+        raise RuntimeError("artifact_review did not emit modality_comparator axis")
+    modality_status = modality_axes[0].get("compare_status")
+    if modality_status != "match":
+        raise RuntimeError(f"modality comparator did not pass: {modality_status} {modality_axes[0].get('notes')}")
+    exact_transformed = call_tool(
+        module,
+        "artifact_transform",
+        {
+            "contract_id": f"artifact-harness-{adapter}-exact-copy",
+            "source_artifact_ids": [source_id],
+            "operation": "exact_copy",
+            "instructions": f"Create a byte-exact preservation copy for {adapter}.",
+        },
+    )
+    exact_reviewed = call_tool(
+        module,
+        "artifact_review",
+        {
+            "contract_id": f"artifact-harness-{adapter}-exact-copy",
+            "source_artifact_ids": [source_id],
+            "output_artifact_id": exact_transformed["output_artifact"]["artifact_id"],
+            "evidence_ids": [
+                extracted["evidence"]["evidence_id"],
+                normalized["schema_evidence"]["evidence_id"],
+                exact_transformed["route_evidence"]["evidence_id"],
+            ],
+            "fidelity_requirements": ["Preserve the source artifact byte-for-byte."],
+            "use_openai_vision": False,
+            "require_vision_api": False,
+        },
+    )
+    subprocess.run(["botji-validate-review", exact_reviewed["review_path"]], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if exact_reviewed["review"]["verdict"] != "pass":
+        raise RuntimeError(f"exact_copy review did not pass: {exact_reviewed['review']['verdict']}")
+    if exact_reviewed["review"].get("final_claim_level") != "verified":
+        raise RuntimeError(f"exact_copy final claim is not verified: {exact_reviewed['review'].get('final_claim_level')}")
+    exact_axes = [axis for axis in exact_reviewed["review"].get("axes", []) if axis.get("axis") == "metadata_fidelity"]
+    if not exact_axes or exact_axes[0].get("compare_status") != "match":
+        raise RuntimeError("exact_copy did not produce matching metadata_fidelity axis")
+    if "exact_sha256_output_compare" not in exact_reviewed["review"].get("verification_steps", []):
+        raise RuntimeError("exact_copy review missing exact_sha256_output_compare verification step")
+    default_transformed = call_tool(
+        module,
+        "artifact_transform",
+        {
+            "contract_id": f"artifact-harness-{adapter}-default-preserve",
+            "source_artifact_ids": [source_id],
+            "instructions": f"Default transform must preserve {adapter} exactly unless operation is explicit.",
+        },
+    )
+    default_artifact = default_transformed["output_artifact"]
+    if default_artifact.get("route") != "artifact_transform.exact_copy":
+        raise RuntimeError(f"default artifact_transform route is not exact_copy: {default_artifact.get('route')}")
+    if default_artifact.get("source_sha256") != default_artifact.get("output_sha256"):
+        raise RuntimeError("default artifact_transform did not preserve source/output SHA-256")
+    return {
+        "adapter": adapter,
+        "status": "pass",
+        "source_artifact_id": source_id,
+        "extract_evidence_id": extracted["evidence"]["evidence_id"],
+        "schema_evidence_id": normalized["schema_evidence"]["evidence_id"],
+        "output_artifact_id": transformed["output_artifact"]["artifact_id"],
+        "output_path": transformed["output_artifact"]["path"],
+        "review_id": reviewed["review"]["review_id"],
+        "review_path": reviewed["review_path"],
+        "exact_copy_output_artifact_id": exact_transformed["output_artifact"]["artifact_id"],
+        "exact_copy_output_path": exact_transformed["output_artifact"]["path"],
+        "exact_copy_review_id": exact_reviewed["review"]["review_id"],
+        "exact_copy_review_path": exact_reviewed["review_path"],
+        "default_preserve_output_artifact_id": default_artifact["artifact_id"],
+        "default_preserve_output_path": default_artifact["path"],
+        "verdict": reviewed["review"]["verdict"],
+        "route": transformed["output_artifact"]["route"],
+        "capabilities": {
+            "adapter_spine": "pass",
+            "schema_validation": "pass",
+            "schema_render": "pass",
+            "exact_copy": "pass",
+            "default_preserve_exact": "pass",
+            "modality_comparator": MODALITY_COMPARATORS.get(adapter) or "missing",
+            "modality_comparator_status": modality_status,
+        },
+    }
+
+
+def capability_gaps(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    gaps: list[dict[str, Any]] = []
+    missing_comparators = [
+        item["adapter"]
+        for item in results
+        if item.get("status") == "pass" and item.get("capabilities", {}).get("modality_comparator") == "missing"
+    ]
+    if missing_comparators:
+        gaps.append(
+            {
+                "area": "modality_comparator",
+                "status": "missing",
+                "adapters": missing_comparators,
+                "impact": "Review can prove lineage/schema/route, but cannot yet compare semantic content deeply for these adapters.",
+            }
+        )
+    return gaps
+
+
+def main() -> int:
+    drop_root_to_runtime_user()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--adapters", default=",".join(ADAPTERS), help="Comma-separated adapters, or the default full V1 adapter set.")
+    parser.add_argument("--copy-into-registry", action="store_true", help="Copy fixtures into artifact registry sources.")
+    parser.add_argument("--strict", action="store_true", help="Fail the harness if an adapter is skipped.")
+    parser.add_argument("--require-modality-comparators", action="store_true", help="Fail if a passing adapter lacks a deep content/geometry comparator.")
+    args = parser.parse_args()
+
+    module = load_plugin()
+    results = []
+    requested = [item.strip() for item in args.adapters.split(",") if item.strip()]
+    for adapter in requested:
+        try:
+            results.append(run_adapter(module, adapter, copy_into_registry=args.copy_into_registry))
+        except Exception as exc:
+            status = "fail" if args.strict else "skip"
+            results.append({"adapter": adapter, "status": status, "error": f"{type(exc).__name__}: {exc}"})
+            if args.strict:
+                break
+
+    gaps = capability_gaps(results)
+    comparator_gap = any(gap.get("area") == "modality_comparator" for gap in gaps)
+    success = all(item.get("status") == "pass" for item in results) if args.strict else not any(item.get("status") == "fail" for item in results)
+    if args.require_modality_comparators and comparator_gap:
+        success = False
+    print(json.dumps({"success": success, "results": results, "capability_gaps": gaps}, indent=2))
+    return 0 if success else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

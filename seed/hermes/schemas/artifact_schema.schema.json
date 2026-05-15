@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://botji.local/schemas/artifact_schema.schema.json",
+  "title": "Botji Artifact Schema",
+  "type": "object",
+  "required": ["schema_version", "profile", "artifact", "deterministic", "fidelity_contract"],
+  "properties": {
+    "schema_version": {
+      "const": "botji.artifact_schema.v1"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "intent": {
+      "type": "string"
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["artifact_id", "adapter"],
+      "properties": {
+        "artifact_id": {"type": "string"},
+        "role": {"type": "string"},
+        "adapter": {"type": "string"},
+        "detected_type": {"type": "string"},
+        "path": {"type": "string"},
+        "sha256": {"type": "string"},
+        "size_bytes": {"type": "integer"},
+        "authority": {"type": "string"},
+        "created_at": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "deterministic": {
+      "type": "object"
+    },
+    "semantic_schema": {
+      "type": "object"
+    },
+    "fidelity_contract": {
+      "type": "object",
+      "required": ["hard_requirements", "advisory_preferences", "claim_boundary"],
+      "properties": {
+        "hard_requirements": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "advisory_preferences": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "claim_boundary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "transform_policy": {
+      "type": "object"
+    },
+    "evidence_basis": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "additionalProperties": true
+}

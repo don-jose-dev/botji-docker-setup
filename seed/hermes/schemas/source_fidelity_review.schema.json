@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://botji.local/schemas/source_fidelity_review.schema.json",
+  "title": "Botji Source Fidelity Review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "review_id",
+    "contract_id",
+    "reviewed_output_ref",
+    "verdict",
+    "final_claim_level",
+    "axes",
+    "blockers",
+    "required_corrections"
+  ],
+  "properties": {
+    "review_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contract_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewed_output_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "warn",
+        "block"
+      ]
+    },
+    "final_claim_level": {
+      "type": "string",
+      "enum": [
+        "unverified",
+        "draft",
+        "reviewed",
+        "verified"
+      ]
+    },
+    "axes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "axis",
+          "compare_status",
+          "severity",
+          "notes"
+        ],
+        "properties": {
+          "axis": {
+            "type": "string",
+            "enum": [
+              "source_coverage",
+              "authority_alignment",
+              "preserve_change",
+              "groundedness",
+              "uncertainty",
+              "safety",
+              "artifact_lineage",
+              "actionability",
+              "visual_route",
+              "source_geometry",
+              "content_fidelity",
+              "layout_fidelity",
+              "geometry_fidelity",
+              "style_fidelity",
+              "unit_consistency",
+              "table_fidelity",
+              "text_fidelity",
+              "metadata_fidelity",
+              "transform_contract_fidelity",
+              "high_fidelity_provider_transform",
+              "modality_comparator",
+              "lineage_integrity",
+              "adapter_route",
+              "unknowns_handling"
+            ]
+          },
+          "compare_status": {
+            "type": "string",
+            "enum": [
+              "match",
+              "partial",
+              "missing",
+              "conflict",
+              "not_applicable"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "blocking"
+            ]
+          },
+          "notes": {
+            "type": "string"
+          },
+          "claim_level": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "draft",
+              "reviewed",
+              "verified"
+            ]
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_corrections": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "verification_steps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reviewer_notes": {
+      "type": "string"
+    },
+    "artifact_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "output_artifact_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "fidelity_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "byte_exact_file_fidelity_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "transform_contract_fidelity_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "claim_type": {
+          "type": "string",
+          "enum": [
+            "byte_exact_file_fidelity",
+            "transform_contract_fidelity",
+            "reviewed_visual_similarity",
+            "none"
+          ]
+        },
+        "preservation_target": {
+          "type": "string",
+          "enum": [
+            "byte_exact_file_identity",
+            "deterministic_schema_equivalence",
+            "source_constraint_preservation",
+            "visual_reference_similarity",
+            "new_concept"
+          ]
+        },
+        "high_fidelity_provider_transform": {
+          "type": "string",
+          "enum": [
+            "match",
+            "partial",
+            "missing",
+            "conflict",
+            "not_applicable"
+          ]
+        },
+        "claim_boundary": {
+          "type": "string"
+        },
+        "basis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

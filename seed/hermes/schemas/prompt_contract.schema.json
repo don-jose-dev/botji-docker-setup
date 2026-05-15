@@ -1,0 +1,461 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://botji.local/schemas/prompt_contract.schema.json",
+  "title": "Botji Prompt Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_id",
+    "version",
+    "created_at",
+    "tier",
+    "user_intent",
+    "truth_mode",
+    "sources",
+    "authority_order",
+    "preserve",
+    "change",
+    "execution_plan",
+    "missing_inputs",
+    "risk_level",
+    "approval_required",
+    "artifact_lineage"
+  ],
+  "properties": {
+    "contract_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^Prompt v[0-9]+$"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "tier": {
+      "type": "string",
+      "enum": [
+        "casual",
+        "substantive",
+        "high_stakes"
+      ]
+    },
+    "user_intent": {
+      "type": "string"
+    },
+    "truth_mode": {
+      "type": "string",
+      "enum": [
+        "creative",
+        "grounded",
+        "fidelity",
+        "verified"
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_id",
+          "source_type",
+          "authority",
+          "summary"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "explicit_user_request",
+              "uploaded_file",
+              "project_file",
+              "memory",
+              "external_web",
+              "tool_output",
+              "inference"
+            ]
+          },
+          "authority": {
+            "type": "string",
+            "enum": [
+              "hard_constraint",
+              "soft_preference",
+              "context",
+              "hypothesis"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "path_or_citation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "authority_order": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "preserve": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "change": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "execution_plan": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "step_id",
+          "actor",
+          "visible",
+          "action"
+        ],
+        "properties": {
+          "step_id": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string",
+            "enum": [
+              "hermes",
+              "codex",
+              "subagent",
+              "tool",
+              "human"
+            ]
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "action": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "missing_inputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "approval_required": {
+      "type": "boolean"
+    },
+    "artifact_lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parent_artifact_id",
+        "output_artifact_id",
+        "version_label",
+        "change_reason"
+      ],
+      "properties": {
+        "parent_artifact_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output_artifact_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version_label": {
+          "type": "string"
+        },
+        "change_reason": {
+          "type": "string"
+        }
+      }
+    },
+    "artifact_fidelity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "normalized_schema_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selected_route": {
+          "type": "string",
+          "enum": [
+            "none",
+            "artifact_register",
+            "artifact_extract",
+            "artifact_normalize",
+            "exact_copy",
+            "render_schema",
+            "edit_image",
+            "manual_review",
+            "ask_user"
+          ]
+        },
+        "forbidden_routes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "prompt_only_generation",
+              "uncited_rewrite",
+              "raster_only_dimension_claim",
+              "provider_fallback_without_disclosure",
+              "manual_output_without_review"
+            ]
+          }
+        },
+        "hard_requirements": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "advisory_preferences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "comparator_required": {
+          "type": "boolean"
+        },
+        "comparator_status": {
+          "type": "string",
+          "enum": [
+            "not_applicable",
+            "available",
+            "missing",
+            "failed",
+            "passed"
+          ]
+        },
+        "review_required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "visual_fidelity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "visual_mode": {
+          "type": "string",
+          "enum": [
+            "none",
+            "source_edit",
+            "reference_transform",
+            "schema_render",
+            "concept_generation"
+          ]
+        },
+        "source_image_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selected_route": {
+          "type": "string",
+          "enum": [
+            "exact_copy",
+            "image_edit",
+            "image_generate",
+            "schema_render",
+            "manual_review",
+            "ask_user"
+          ]
+        },
+        "forbidden_routes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+          "enum": [
+              "exact_copy",
+              "image_edit",
+              "image_generate",
+              "schema_render",
+              "manual_review",
+              "ask_user"
+            ]
+          }
+        },
+        "geometry_authority": {
+          "type": "string",
+          "enum": [
+            "source_pixels",
+            "user_dimensions",
+            "schema",
+            "assumption",
+            "not_applicable"
+          ]
+        },
+        "review_required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "artifact_id",
+          "role",
+          "required",
+          "fidelity_axes",
+          "authority"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "source",
+              "reference",
+              "intermediate",
+              "output",
+              "evidence",
+              "preview"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "fidelity_axes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "content",
+                "layout",
+                "geometry",
+                "style",
+                "text",
+                "table",
+                "metadata",
+                "lineage"
+              ]
+            }
+          },
+          "authority": {
+            "type": "string",
+            "enum": [
+              "user_supplied",
+              "agent_generated",
+              "external",
+              "derived"
+            ]
+          }
+        }
+      }
+    },
+    "allowed_operations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+                "enum": [
+                    "extract",
+                    "exact_copy",
+                    "render_schema",
+                    "edit_image",
+                    "edit",
+                    "generate_derivative",
+                    "answer",
+          "render_preview",
+          "review"
+        ]
+      }
+    },
+    "selected_adapter": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "image",
+        "pdf",
+        "text",
+        "dxf"
+      ]
+    },
+    "evidence_required": {
+      "type": "boolean"
+    },
+    "unknown_policy": {
+      "type": "string",
+      "enum": [
+        "ask",
+        "state_unknown",
+        "best_effort"
+      ]
+    },
+    "output_expectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "review_required"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "answer",
+            "image",
+            "pdf",
+            "text",
+            "dxf",
+            "artifact"
+          ]
+        },
+        "review_required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

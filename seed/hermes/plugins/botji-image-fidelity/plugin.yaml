@@ -1,0 +1,9 @@
+name: botji-image-fidelity
+version: 1.0.0
+description: "Source-image edit/reference tool for Botji fidelity workflows using OpenAI GPT Image 2."
+author: Botji
+kind: standalone
+requires_env:
+  - OPENAI_API_KEY
+provides_tools:
+  - image_edit
