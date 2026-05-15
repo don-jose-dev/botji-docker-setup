@@ -3,7 +3,7 @@ COMPOSE := docker compose --env-file .env
 export HERMES_UID ?= $(shell id -u)
 export HERMES_GID ?= $(shell id -g)
 
-.PHONY: init bootstrap build pull up down restart logs status shell setup-hermes codex-login codex-status smoke-local smoke-agent snapshot clean
+.PHONY: init bootstrap build pull up down restart reload logs status shell setup-hermes codex-login codex-status smoke-local smoke-agent snapshot clean
 
 init:
 	@if [ ! -f .env ]; then cp .env.example .env; echo "Created .env"; fi
@@ -27,6 +27,12 @@ down:
 
 restart:
 	$(COMPOSE) restart hermes
+
+reload:
+	$(COMPOSE) restart hermes
+	@echo "Waiting for healthy..."
+	@until docker inspect $${BOTJI_TENANT_ID:-botji}-hermes --format='{{.State.Health.Status}}' | grep -q healthy; do sleep 2; done
+	@echo "Ready — fresh session loaded."
 
 logs:
 	$(COMPOSE) logs -f hermes
