@@ -1,3 +1,8 @@
+---
+name: botji-image-fidelity
+description: Source-image fidelity workflow for transformations, renders, design revisions, and visual outputs that must preserve uploaded image constraints.
+---
+
 # Botji Image Fidelity Skill
 
 Use this skill when a user provides or references a source image and asks for a transformation, render, professional visualization, design revision, 3D version, restyle, cleanup, or any output where fidelity to the source matters.
@@ -61,7 +66,9 @@ For cabinetry, interiors, construction, architecture, product design, diagrams, 
 4. Prefer deterministic schema/CAD/plan artifacts for dimensions.
 5. Use `image_edit` for the visual render, not as proof of exact measurements.
 6. Review the output as `reviewed`, not `verified`, unless a concrete measurement/test/schema validation was performed.
-7. For 100% source preservation, use `exact_copy`; for plans, elevations, and cabinetry drawings, preserve module order, object positions, appliance counts, depth cues, and forbidden additions before optimizing for photorealism.
+7. For 100% preservation, prefer exact_copy or schema/CAD/vector output over generative image output.
+8. For drawings with modules or bays, inventory the ordering, counts, appliance/object positions, labels, and forbidden inventions before generation.
+9. When the user explicitly asks for realistic, photorealistic, real 3D, or photofinish output, the final deliverable must be visually photorealistic unless the user accepts a non-photorealistic fallback. Do not present a schema diagram as satisfying a photorealistic render request.
 
 For 2D-to-3D or styled transforms, 100% transformation fidelity means every hard source-preservation requirement passed under the allowed-change list. Persist this as `transform_contract_fidelity_percent: 100`; when GPT Image 2 receives source images, also require `high_fidelity_provider_transform: match`. Do not call it byte-exact fidelity.
 
@@ -79,3 +86,5 @@ Before final answer:
 ## 2D-to-3D work
 
 When the user asks for a 3D render, model, or perspective view from a 2D source, use the `botji-2d-to-3d` skill. It defines the mandatory schema-first pipeline, zone alignment checks, route priority, fidelity scores, and blocking rules specific to that transform type. Do not generate 3D output from a text prompt alone when a 2D source artifact exists.
+
+For kitchen/cabinetry images, treat “realistic,” “photorealistic,” “real 3D,” and “photofinish” as a requirement for the final artifact to look like a real rendered interior. Schema renders are acceptable as intermediate fidelity checks, but they should not be delivered as the main final output unless the user explicitly asks for a technical/schema visualization or accepts a non-photorealistic fallback after disclosure. If the photorealistic edit route preserves only core layout while exact seams/dimensions are approximate, disclose the trade-off rather than replacing the deliverable with a schematic.

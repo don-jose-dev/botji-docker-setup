@@ -1,3 +1,13 @@
+---
+name: botji-source-fidelity
+description: Source-fidelity review for every substantive or high-stakes response — 8-axis comparison against the Prompt Contract with blocking rules and compact review badge.
+tags:
+  - botji
+  - fidelity
+  - review
+  - artifact-fidelity
+---
+
 # Botji Source-Fidelity Review Skill
 
 Use this skill before every substantive or high-stakes response.

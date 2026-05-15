@@ -1,3 +1,12 @@
+---
+name: botji-codex-engineering
+description: Engineering tasks via Codex — repo inspection, code changes, tests, builds, Docker, scripts. Passes Prompt Contract into every task; treats Codex output as draft evidence.
+tags:
+  - botji
+  - codex
+  - engineering
+---
+
 # Botji Codex Engineering Skill
 
 Use this skill when the task involves repository work, tests, builds, scripts, Docker files, generated code, or structured engineering output.

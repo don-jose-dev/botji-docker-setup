@@ -1,3 +1,12 @@
+---
+name: botji-prompt-contract
+description: Structured Prompt Contract for all substantive and high-stakes work — quick (6-field) or full (13-field) format with authority order, preserve/change lists, and artifact lineage.
+tags:
+  - botji
+  - contract
+  - fidelity
+---
+
 # Botji Prompt Contract Skill
 
 Use this skill whenever the user's message is non-trivial.

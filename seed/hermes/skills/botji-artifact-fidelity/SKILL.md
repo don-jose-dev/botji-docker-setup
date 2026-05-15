@@ -1,3 +1,13 @@
+---
+name: botji-artifact-fidelity
+description: Generic artifact fidelity for any file type — register, extract, normalize, transform, review. Enforces exact_copy default, schema-first rendering, and no-silent-fallback rule.
+tags:
+  - botji
+  - artifact-fidelity
+  - fidelity
+  - image-fidelity
+---
+
 # Botji Artifact Fidelity Skill
 
 Use this skill whenever the user provides or references a file, image, PDF, text document, DXF/CAD drawing, generated output, or any derivative that must stay faithful to a source.
