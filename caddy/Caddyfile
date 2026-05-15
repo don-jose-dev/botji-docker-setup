@@ -1,0 +1,21 @@
+# Caddy reverse proxy — automatic HTTPS via Let's Encrypt
+# Replace YOUR_DOMAIN with your actual domain.
+# Run: apt install caddy && cp Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy
+
+# Dashboard — protected by basic auth
+YOUR_DOMAIN {
+    # Basic auth — generate password hash with: caddy hash-password
+    basicauth {
+        botji $2a$14$REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT
+    }
+    reverse_proxy localhost:9119
+    tls {
+        on_demand
+    }
+}
+
+# API — optional, only expose if needed externally
+# api.YOUR_DOMAIN {
+#     reverse_proxy localhost:8642
+#     header Authorization "Bearer {env.API_SERVER_KEY}"
+# }

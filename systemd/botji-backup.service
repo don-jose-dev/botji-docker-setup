@@ -1,0 +1,11 @@
+[Unit]
+Description=Botji daily cloud backup
+After=botji.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/botji
+EnvironmentFile=/opt/botji/.env
+ExecStart=/opt/botji/scripts/backup-cloud.sh
+StandardOutput=journal
+StandardError=journal

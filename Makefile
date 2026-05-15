@@ -3,7 +3,7 @@ COMPOSE := docker compose --env-file .env
 export HERMES_UID ?= $(shell id -u)
 export HERMES_GID ?= $(shell id -g)
 
-.PHONY: init bootstrap build pull up down restart reload logs status shell setup-hermes codex-login codex-status smoke-local smoke-agent snapshot clean
+.PHONY: init bootstrap build pull up down restart reload logs status shell setup-hermes codex-login codex-status smoke-local smoke-agent snapshot backup-cloud restore clean
 
 init:
 	@if [ ! -f .env ]; then cp .env.example .env; echo "Created .env"; fi
@@ -62,6 +62,13 @@ smoke-agent:
 
 snapshot:
 	./scripts/snapshot.sh
+
+backup-cloud:
+	./scripts/backup-cloud.sh
+
+restore:
+	@echo "Usage: make restore BACKUP=backups/<file>.tgz"
+	./scripts/restore-snapshot.sh $(BACKUP)
 
 clean:
 	$(COMPOSE) down --remove-orphans

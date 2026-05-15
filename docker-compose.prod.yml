@@ -1,0 +1,30 @@
+# Production overrides — use with: docker compose -f docker-compose.yml -f docker-compose.prod.yml
+# Never commit secrets. Set them in /opt/botji/.env on the server.
+
+services:
+  hermes:
+    # Use pre-built image from GHCR instead of building locally.
+    # Set BOTJI_IMAGE_TAG to the exact sha- tag after each CI build for full traceability.
+    image: ${BOTJI_PROD_IMAGE:-ghcr.io/OWNER/botji-hermes:latest}
+
+    restart: always
+
+    # Production log limits — prevents disk exhaustion
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    # Tighter resource limits for shared VPS
+    deploy:
+      resources:
+        limits:
+          memory: ${BOTJI_MEMORY_LIMIT:-3G}
+          cpus: "${BOTJI_CPU_LIMIT:-1.5}"
+
+    # Data dir is an absolute path on the VPS.
+    # Set BOTJI_DATA_DIR and BOTJI_WORKSPACE_DIR in .env on the server.
+    volumes:
+      - ${BOTJI_DATA_DIR:-/opt/botji/data}:/opt/data
+      - ${BOTJI_WORKSPACE_DIR:-/opt/botji/workspace}:/workspace
