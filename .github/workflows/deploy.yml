@@ -72,13 +72,13 @@ jobs:
 
       - name: Write CI vars file
         run: |
-          cat > /tmp/ci-vars.env << 'VARSEOF'
-          DEPLOY_PATH=${{ secrets.DEPLOY_PATH }}
-          GHCR_USER=${{ github.actor }}
-          IMAGE_TAG=${{ needs.build.outputs.image_tag }}
-          GIT_BRANCH=${{ github.ref_name }}
-          VARSEOF
-          echo "GHCR_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> /tmp/ci-vars.env
+          {
+            echo "DEPLOY_PATH='${{ secrets.DEPLOY_PATH }}'"
+            echo "GHCR_USER='${{ github.actor }}'"
+            echo "IMAGE_TAG='${{ needs.build.outputs.image_tag }}'"
+            echo "GIT_BRANCH='${{ github.ref_name }}'"
+            echo "GHCR_TOKEN='${{ secrets.GITHUB_TOKEN }}'"
+          } > /tmp/ci-vars.env
           printf '%s' "${{ secrets.VPS_ENV }}" | base64 > /tmp/vps-env.b64
 
       - name: Deploy via SSH
