@@ -93,6 +93,13 @@ else
   echo "    CODEX_AUTH_B64 not set — skipping auth.json"
 fi
 
+echo "==> Clear Telegram webhook (ensures clean long-polling)"
+BOT_TOKEN="$(grep -E '^TELEGRAM_BOT_TOKEN=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
+if [ -n "$BOT_TOKEN" ]; then
+  curl -s "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook?drop_pending_updates=true" | grep -o '"ok":[^,}]*' || true
+  echo "    Webhook cleared"
+fi
+
 echo "==> Start / reload"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   up -d --force-recreate --no-build --remove-orphans
