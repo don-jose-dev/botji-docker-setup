@@ -1,7 +1,6 @@
 model:
-  default: gpt-5.4-mini
-  provider: openai-codex
-  base_url: https://chatgpt.com/backend-api/codex
+  default: openai/gpt-5.4-mini
+  provider: openrouter
 terminal:
   backend: local
   cwd: .
@@ -35,21 +34,21 @@ prompt_caching:
   cache_ttl: 5m
 auxiliary:
   vision:
-    provider: codex
-    model: gpt-5.4-mini
+    provider: openrouter
+    model: openai/gpt-5.4-mini
     timeout: 120
     download_timeout: 30
   web_extract:
-    provider: codex
-    model: gpt-5.4-mini
+    provider: openrouter
+    model: openai/gpt-5.4-mini
   session_search:
-    provider: codex
-    model: gpt-5.4-mini
+    provider: openrouter
+    model: openai/gpt-5.4-mini
     timeout: 60
     max_concurrency: 2
   compression:
-    provider: codex
-    model: gpt-5.4-mini
+    provider: openrouter
+    model: openai/gpt-5.4-mini
 memory:
   memory_enabled: true
   user_profile_enabled: true
@@ -136,8 +135,6 @@ platform_toolsets:
 image_gen:
   provider: openai-codex
   model: gpt-image-2-high
-  openai-codex:
-    model: gpt-image-2-high
 plugins:
   enabled:
   - botji-image-fidelity

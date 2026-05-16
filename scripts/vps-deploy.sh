@@ -24,9 +24,23 @@ if [ -s /tmp/vps-env.b64 ]; then
   chmod 600 .env
   echo "    .env written from CI secret"
 fi
+if [ -s /tmp/openrouter-key.txt ]; then
+  ORKEY="$(cat /tmp/openrouter-key.txt)"
+  # Remove any existing entry then append fresh
+  grep -v '^OPENROUTER_API_KEY=' .env > .env.tmp 2>/dev/null || true
+  echo "OPENROUTER_API_KEY=${ORKEY}" >> .env.tmp
+  mv .env.tmp .env
+  chmod 600 .env
+  echo "    OPENROUTER_API_KEY added to .env"
+fi
 
 echo "==> Pull image: $IMAGE_REF"
 docker pull "$IMAGE_REF"
+
+echo "==> Force-update config.yaml (provider change requires overwrite)"
+DATA_DIR_CFG="$(grep -E '^BOTJI_DATA_DIR=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
+DATA_DIR_CFG="${DATA_DIR_CFG:-./data/botji}"
+cp seed/hermes/config.yaml "$DATA_DIR_CFG/config.yaml" 2>/dev/null && echo "    config.yaml updated" || echo "    config.yaml update skipped"
 
 echo "==> Bootstrap seed (idempotent — skips existing files)"
 export BOTJI_PROD_IMAGE="$IMAGE_REF"
@@ -76,4 +90,4 @@ else
 fi
 
 # Cleanup
-rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 /tmp/vps-deploy.sh
+rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 /tmp/openrouter-key.txt /tmp/vps-deploy.sh

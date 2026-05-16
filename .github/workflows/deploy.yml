@@ -119,6 +119,8 @@ jobs:
           printf '%s' "${{ secrets.VPS_ENV }}" | base64 > /tmp/vps-env.b64
           # Codex auth — written separately so it never appears in .env
           printf '%s' "${{ secrets.CODEX_AUTH_B64 }}" > /tmp/codex-auth.b64
+          # OpenRouter key — appended to .env by vps-deploy.sh
+          printf '%s' "${{ secrets.OPENROUTER_API_KEY }}" > /tmp/openrouter-key.txt
 
       - name: Deploy via SSH
         run: |
@@ -127,7 +129,7 @@ jobs:
 
           # Copy files to server
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            scripts/vps-deploy.sh /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 \
+            scripts/vps-deploy.sh /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 /tmp/openrouter-key.txt \
             "$HOST:/tmp/"
 
           # Run deploy
