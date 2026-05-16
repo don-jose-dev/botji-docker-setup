@@ -54,31 +54,33 @@ HERMES_RUNTIME_UID="$(grep -E '^HERMES_UID=' .env 2>/dev/null | cut -d= -f2 | tr
 HERMES_RUNTIME_GID="$(grep -E '^HERMES_GID=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
 HERMES_RUNTIME_UID="${HERMES_RUNTIME_UID:-10000}"
 HERMES_RUNTIME_GID="${HERMES_RUNTIME_GID:-$HERMES_RUNTIME_UID}"
+DATA_DIR="$(grep -E '^BOTJI_DATA_DIR=' .env 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'" | tr -d '"')"
+DATA_DIR="${DATA_DIR:-./data/botji}"
+WORKSPACE_DIR="$(grep -E '^BOTJI_WORKSPACE_DIR=' .env 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'" | tr -d '"')"
+WORKSPACE_DIR="${WORKSPACE_DIR:-./workspace}"
+export HERMES_UID="$HERMES_RUNTIME_UID"
+export HERMES_GID="$HERMES_RUNTIME_GID"
+export BOTJI_DATA_DIR="$DATA_DIR"
+export BOTJI_WORKSPACE_DIR="$WORKSPACE_DIR"
 
 echo "==> Pull image: $IMAGE_REF"
 docker pull "$IMAGE_REF"
 
 echo "==> Force-update config.yaml (provider change requires overwrite)"
-DATA_DIR_CFG="$(grep -E '^BOTJI_DATA_DIR=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
-DATA_DIR_CFG="${DATA_DIR_CFG:-./data/botji}"
-mkdir -p "$DATA_DIR_CFG"
-cp seed/hermes/config.yaml "$DATA_DIR_CFG/config.yaml"
-chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR_CFG" "$DATA_DIR_CFG/config.yaml" 2>/dev/null || true
+mkdir -p "$DATA_DIR"
+cp seed/hermes/config.yaml "$DATA_DIR/config.yaml"
+chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR" "$DATA_DIR/config.yaml" 2>/dev/null || true
 echo "    config.yaml updated"
 
 echo "==> Bootstrap seed (idempotent — skips existing files)"
 export BOTJI_PROD_IMAGE="$IMAGE_REF"
 # Ensure workspace is writable by the hermes user (UID 10000) before bootstrap runs
-WORKSPACE_DIR="$(grep -E '^BOTJI_WORKSPACE_DIR=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
-WORKSPACE_DIR="${WORKSPACE_DIR:-./workspace}"
 mkdir -p "$WORKSPACE_DIR"
 chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$WORKSPACE_DIR" 2>/dev/null || true
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   --profile bootstrap run --rm bootstrap
 
 echo "==> Write Codex auth"
-DATA_DIR="$(grep -E '^BOTJI_DATA_DIR=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
-DATA_DIR="${DATA_DIR:-./data/botji}"
 if [ -s /tmp/codex-auth.b64 ]; then
   mkdir -p "$DATA_DIR/.codex"
   base64 -d /tmp/codex-auth.b64 > "$DATA_DIR/.codex/auth.json"
@@ -91,7 +93,7 @@ fi
 
 echo "==> Start / reload"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-  up -d --no-build --remove-orphans
+  up -d --force-recreate --no-build --remove-orphans
 
 echo "==> Waiting for healthy..."
 for i in $(seq 1 15); do
