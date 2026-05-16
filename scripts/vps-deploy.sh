@@ -38,6 +38,18 @@ chown -R 10000:10000 "$WORKSPACE_DIR" 2>/dev/null || true
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   --profile bootstrap run --rm bootstrap
 
+echo "==> Write Codex auth"
+DATA_DIR="$(grep -E '^BOTJI_DATA_DIR=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
+DATA_DIR="${DATA_DIR:-./data/botji}"
+if [ -s /tmp/codex-auth.b64 ]; then
+  mkdir -p "$DATA_DIR/.codex"
+  base64 -d /tmp/codex-auth.b64 > "$DATA_DIR/.codex/auth.json"
+  chmod 600 "$DATA_DIR/.codex/auth.json"
+  echo "    Codex auth.json written to $DATA_DIR/.codex/"
+else
+  echo "    CODEX_AUTH_B64 not set — skipping auth.json"
+fi
+
 echo "==> Start / reload"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   up -d --no-build --remove-orphans
@@ -64,4 +76,4 @@ else
 fi
 
 # Cleanup
-rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/vps-deploy.sh
+rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 /tmp/vps-deploy.sh

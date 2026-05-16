@@ -117,6 +117,8 @@ jobs:
             echo "GHCR_TOKEN='${{ secrets.GITHUB_TOKEN }}'"
           } > /tmp/ci-vars.env
           printf '%s' "${{ secrets.VPS_ENV }}" | base64 > /tmp/vps-env.b64
+          # Codex auth — written separately so it never appears in .env
+          printf '%s' "${{ secrets.CODEX_AUTH_B64 }}" > /tmp/codex-auth.b64
 
       - name: Deploy via SSH
         run: |
@@ -125,7 +127,7 @@ jobs:
 
           # Copy files to server
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            scripts/vps-deploy.sh /tmp/ci-vars.env /tmp/vps-env.b64 \
+            scripts/vps-deploy.sh /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 \
             "$HOST:/tmp/"
 
           # Run deploy
