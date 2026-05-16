@@ -67,38 +67,29 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.VPS_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p "${{ secrets.VPS_PORT || '22' }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
           ssh-keygen -l -f ~/.ssh/deploy_key
 
-      - name: Deploy via SSH
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/botji' }}
-          VPS_ENV_B64: ${{ secrets.VPS_ENV }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
-          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-          GIT_BRANCH: ${{ github.ref_name }}
+      - name: Write CI vars file
         run: |
-          # Copy deploy script to server, then execute it
-          scp -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -P "$VPS_PORT" \
-            scripts/vps-deploy.sh \
-            "$VPS_USER@$VPS_HOST:/tmp/vps-deploy.sh"
+          cat > /tmp/ci-vars.env << 'VARSEOF'
+          DEPLOY_PATH=${{ secrets.DEPLOY_PATH }}
+          GHCR_USER=${{ github.actor }}
+          IMAGE_TAG=${{ needs.build.outputs.image_tag }}
+          GIT_BRANCH=${{ github.ref_name }}
+          VARSEOF
+          echo "GHCR_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> /tmp/ci-vars.env
+          printf '%s' "${{ secrets.VPS_ENV }}" | base64 > /tmp/vps-env.b64
 
-          ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -o BatchMode=yes \
-            -p "$VPS_PORT" \
-            "$VPS_USER@$VPS_HOST" \
-            env \
-              DEPLOY_PATH="$DEPLOY_PATH" \
-              GHCR_TOKEN="$GHCR_TOKEN" \
-              GHCR_USER="$GHCR_USER" \
-              IMAGE_TAG="$IMAGE_TAG" \
-              GIT_BRANCH="$GIT_BRANCH" \
-              VPS_ENV_B64="$(printf '%s' "$VPS_ENV_B64" | base64 -w0)" \
-            bash /tmp/vps-deploy.sh
+      - name: Deploy via SSH
+        run: |
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes"
+          HOST="${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
+
+          # Copy files to server
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            scripts/vps-deploy.sh /tmp/ci-vars.env /tmp/vps-env.b64 \
+            "$HOST:/tmp/"
+
+          # Run deploy
+          $SSH "$HOST" "chmod +x /tmp/vps-deploy.sh && bash /tmp/vps-deploy.sh"
