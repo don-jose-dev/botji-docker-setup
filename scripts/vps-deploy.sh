@@ -27,6 +27,8 @@ fi
 grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env 2>/dev/null \
   | grep -Ev '^(OPENROUTER_API_KEY|OPENAI_API_KEY)=' > .env.tmp || true
 mv .env.tmp .env
+tr -d '\r' < .env > .env.lf
+mv .env.lf .env
 chmod 600 .env
 echo "    .env sanitized and legacy provider key entries removed"
 
