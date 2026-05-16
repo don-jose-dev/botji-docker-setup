@@ -24,10 +24,11 @@ if [ -s /tmp/vps-env.b64 ]; then
   chmod 600 .env
   echo "    .env written from CI secret"
 fi
-grep -Ev '^(OPENROUTER_API_KEY|OPENAI_API_KEY)=' .env > .env.tmp 2>/dev/null || true
+grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env 2>/dev/null \
+  | grep -Ev '^(OPENROUTER_API_KEY|OPENAI_API_KEY)=' > .env.tmp || true
 mv .env.tmp .env
 chmod 600 .env
-echo "    legacy provider key entries removed from .env"
+echo "    .env sanitized and legacy provider key entries removed"
 
 HERMES_RUNTIME_UID="$(grep -E '^HERMES_UID=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
 HERMES_RUNTIME_GID="$(grep -E '^HERMES_GID=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
@@ -40,7 +41,10 @@ docker pull "$IMAGE_REF"
 echo "==> Force-update config.yaml (provider change requires overwrite)"
 DATA_DIR_CFG="$(grep -E '^BOTJI_DATA_DIR=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
 DATA_DIR_CFG="${DATA_DIR_CFG:-./data/botji}"
-cp seed/hermes/config.yaml "$DATA_DIR_CFG/config.yaml" 2>/dev/null && echo "    config.yaml updated" || echo "    config.yaml update skipped"
+mkdir -p "$DATA_DIR_CFG"
+cp seed/hermes/config.yaml "$DATA_DIR_CFG/config.yaml"
+chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR_CFG" "$DATA_DIR_CFG/config.yaml" 2>/dev/null || true
+echo "    config.yaml updated"
 
 echo "==> Bootstrap seed (idempotent — skips existing files)"
 export BOTJI_PROD_IMAGE="$IMAGE_REF"
