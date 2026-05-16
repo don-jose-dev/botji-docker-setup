@@ -75,7 +75,7 @@ jobs:
           {
             echo "DEPLOY_PATH='${{ secrets.DEPLOY_PATH }}'"
             echo "GHCR_USER='${{ github.actor }}'"
-            echo "IMAGE_TAG='${{ needs.build.outputs.image_tag }}'"
+            echo "IMAGE_REF='ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image_digest }}'"
             echo "GIT_BRANCH='${{ github.ref_name }}'"
             echo "GHCR_TOKEN='${{ secrets.GITHUB_TOKEN }}'"
           } > /tmp/ci-vars.env

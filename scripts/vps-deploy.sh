@@ -7,7 +7,7 @@ source /tmp/ci-vars.env
 DEPLOY_PATH="${DEPLOY_PATH:-/opt/botji}"
 
 echo "==> Deploy started on $(hostname) at $(date -u)"
-echo "    Image: $IMAGE_TAG"
+echo "    Image: $IMAGE_REF"
 echo "    Branch: $GIT_BRANCH"
 
 cd "$DEPLOY_PATH"
@@ -25,11 +25,11 @@ if [ -s /tmp/vps-env.b64 ]; then
   echo "    .env written from CI secret"
 fi
 
-echo "==> Pull image: $IMAGE_TAG"
-docker pull "$IMAGE_TAG"
+echo "==> Pull image: $IMAGE_REF"
+docker pull "$IMAGE_REF"
 
 echo "==> Start / reload"
-export BOTJI_PROD_IMAGE="$IMAGE_TAG"
+export BOTJI_PROD_IMAGE="$IMAGE_REF"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   up -d --no-build --remove-orphans
 
