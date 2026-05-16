@@ -30,6 +30,11 @@ docker pull "$IMAGE_REF"
 
 echo "==> Bootstrap seed (idempotent — skips existing files)"
 export BOTJI_PROD_IMAGE="$IMAGE_REF"
+# Ensure workspace is writable by the hermes user (UID 10000) before bootstrap runs
+WORKSPACE_DIR="$(grep -E '^BOTJI_WORKSPACE_DIR=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
+WORKSPACE_DIR="${WORKSPACE_DIR:-./workspace}"
+mkdir -p "$WORKSPACE_DIR"
+chown -R 10000:10000 "$WORKSPACE_DIR" 2>/dev/null || true
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   --profile bootstrap run --rm bootstrap
 
