@@ -42,6 +42,15 @@ set_env_var() {
   fi
 }
 
+if [ -n "${CI_TELEGRAM_BOT_TOKEN:-}" ]; then
+  set_env_var TELEGRAM_BOT_TOKEN "$CI_TELEGRAM_BOT_TOKEN"
+  echo "    TELEGRAM_BOT_TOKEN overridden from CI secret"
+fi
+if [ -n "${CI_TELEGRAM_BOT_USERNAME:-}" ]; then
+  set_env_var TELEGRAM_BOT_USERNAME "$CI_TELEGRAM_BOT_USERNAME"
+  echo "    TELEGRAM_BOT_USERNAME set to $CI_TELEGRAM_BOT_USERNAME"
+fi
+
 if grep -Eq '^BOTJI_DATA_DIR=/opt/data(/.*)?$' .env; then
   set_env_var BOTJI_DATA_DIR "./data/botji"
   echo "    BOTJI_DATA_DIR normalized to host tenant data path"

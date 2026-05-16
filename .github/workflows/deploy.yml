@@ -131,6 +131,8 @@ jobs:
             echo "IMAGE_REF='ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image_digest }}'"
             echo "GIT_BRANCH='${{ github.ref_name }}'"
             echo "GHCR_TOKEN='${{ secrets.GITHUB_TOKEN }}'"
+            echo "CI_TELEGRAM_BOT_TOKEN='${{ secrets.TELEGRAM_BOT_TOKEN }}'"
+            echo "CI_TELEGRAM_BOT_USERNAME='${{ secrets.TELEGRAM_BOT_USERNAME }}'"
           } > /tmp/ci-vars.env
           printf '%s' "${{ secrets.VPS_ENV }}" | base64 > /tmp/vps-env.b64
           # Codex auth — written separately so it never appears in .env
