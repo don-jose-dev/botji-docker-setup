@@ -51,6 +51,14 @@ setup-hermes: bootstrap
 codex-login: bootstrap
 	$(COMPOSE) run --rm hermes codex login
 
+codex-push-auth:
+	@[ -n "$(VPS_HOST)" ] || (echo "ERROR: VPS_HOST is required.  make codex-push-auth VPS_HOST=<ip>" && exit 1)
+	VPS_HOST="$(VPS_HOST)" \
+	VPS_USER="$${VPS_USER:-botji}" \
+	VPS_DATA_PATH="$${VPS_DATA_PATH:-/opt/botji/data/botji}" \
+	SSH_KEY="$${SSH_KEY:-}" \
+	./scripts/codex-push-auth.sh
+
 codex-status:
 	$(COMPOSE) run --rm hermes bash -lc 'codex --version && ls -la $$CODEX_HOME && test -f $$CODEX_HOME/config.toml && echo "Codex home present: $$CODEX_HOME"'
 

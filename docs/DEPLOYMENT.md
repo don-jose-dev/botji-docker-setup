@@ -142,12 +142,58 @@ systemctl list-timers botji-backup.timer
 
 ---
 
+## Codex authentication (ChatGPT subscription)
+
+Codex runs headless in the container and cannot open a browser. Log in **locally** where you have a browser, then push the credential file to the VPS.
+
+**Step 1 — Log in locally (one-time, on your own machine)**
+
+```bash
+# Install Codex CLI if not already installed
+npm i -g @openai/codex
+
+# Optional: use a separate CODEX_HOME so it doesn't mix with your personal login
+export CODEX_HOME="$HOME/.codex-botji"   # Mac/Linux
+# On Windows PowerShell: $env:CODEX_HOME = "C:\Users\You\.codex-botji"
+
+codex login
+# A browser opens → log in to ChatGPT → credentials saved to $CODEX_HOME
+```
+
+**Step 2 — Push credentials to the VPS**
+
+```bash
+# From your local machine, inside the botji-docker-setup directory:
+make codex-push-auth VPS_HOST=187.124.13.159
+
+# With a custom SSH key or VPS user:
+make codex-push-auth VPS_HOST=187.124.13.159 VPS_USER=root SSH_KEY=~/.ssh/botji_deploy
+```
+
+Credentials are written to `/opt/botji/data/botji/.codex/` on the VPS. They persist across container restarts (mounted volume). No `make reload` needed — Codex reads the file on each call.
+
+**Step 3 — Verify**
+
+```bash
+# Check the file is present on VPS:
+ssh botji@187.124.13.159 'ls -la /opt/botji/data/botji/.codex/'
+
+# Check Codex can run inside the container:
+ssh botji@187.124.13.159 'cd /opt/botji && docker compose exec hermes codex --version'
+```
+
+**Re-authentication:** ChatGPT tokens expire. When Codex starts returning auth errors, repeat steps 1–3. Typical token lifetime is 30–90 days.
+
+---
+
 ## Operations reference
 
 | Task | Command |
 |------|---------|
 | View logs | `make logs` |
 | Apply config/SOUL change | `make reload` |
+| Push Codex auth to VPS | `make codex-push-auth VPS_HOST=<ip>` |
+| Check Codex status | `make codex-status` |
 | Manual backup | `make snapshot` |
 | Upload backup to cloud | `make backup-cloud` |
 | Restore from backup | `make restore BACKUP=backups/botji-hermes-home-xxx.tgz` |
