@@ -82,7 +82,8 @@ services:
     image: alpine:3.22
     container_name: ${BOTJI_TENANT_ID:-botji}-bootstrap
     profiles: ["bootstrap"]
-    user: "${HERMES_UID:-10000}:${HERMES_GID:-10000}"
+    # Bootstrap must initialize and chown the bind-mounted tenant data volume.
+    user: "0:0"
     working_dir: /seed
     volumes:
       - ${BOTJI_DATA_DIR:-./data/botji}:/opt/data
