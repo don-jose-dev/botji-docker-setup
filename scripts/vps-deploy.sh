@@ -91,13 +91,18 @@ chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$WORKSPACE_DIR" 2>/dev/null 
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   --profile bootstrap run --rm bootstrap
 
-echo "==> Write Codex auth"
+echo "==> Write Codex / Hermes auth"
 if [ -s /tmp/codex-auth.b64 ]; then
   mkdir -p "$DATA_DIR/.codex"
   base64 -d /tmp/codex-auth.b64 > "$DATA_DIR/.codex/auth.json"
   chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/.codex" "$DATA_DIR/.codex/auth.json" 2>/dev/null || true
   chmod 600 "$DATA_DIR/.codex/auth.json"
   echo "    Codex auth.json written to $DATA_DIR/.codex/"
+  # Hermes looks for auth.json at $HERMES_HOME/auth.json (= /opt/data/auth.json inside container)
+  base64 -d /tmp/codex-auth.b64 > "$DATA_DIR/auth.json"
+  chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/auth.json" 2>/dev/null || true
+  chmod 600 "$DATA_DIR/auth.json"
+  echo "    Hermes auth.json written to $DATA_DIR/auth.json"
 else
   echo "    CODEX_AUTH_B64 not set — skipping auth.json"
 fi
