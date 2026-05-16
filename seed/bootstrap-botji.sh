@@ -70,12 +70,10 @@ fi
 copy_dir "$SEED/hermes/skills/botji-prompt-contract" "$DATA/skills/botji-prompt-contract"
 copy_dir "$SEED/hermes/skills/botji-source-fidelity" "$DATA/skills/botji-source-fidelity"
 copy_dir "$SEED/hermes/skills/botji-codex-engineering" "$DATA/skills/botji-codex-engineering"
-copy_dir "$SEED/hermes/skills/botji-image-fidelity" "$DATA/skills/botji-image-fidelity"
 copy_dir "$SEED/hermes/skills/botji-artifact-fidelity" "$DATA/skills/botji-artifact-fidelity"
 copy_dir "$SEED/hermes/skills/botji-2d-to-3d" "$DATA/skills/botji-2d-to-3d"
 copy_file "$SEED/hermes/config.yaml" "$DATA/config.yaml"
 copy_dir "$SEED/hermes/prompts" "$DATA/prompts"
-copy_dir "$SEED/hermes/plugins/botji-image-fidelity" "$DATA/plugins/botji-image-fidelity"
 copy_dir "$SEED/hermes/plugins/botji-artifacts" "$DATA/plugins/botji-artifacts"
 
 copy_file "$SEED/hermes/schemas/prompt_contract.schema.json" "$DATA/schemas/prompt_contract.schema.json"
@@ -106,10 +104,8 @@ Seeded controls:
 - source-fidelity skill
 - codex-engineering skill
 - artifact-fidelity skill
-- image-fidelity skill
 - 2d-to-3d skill
 - prompt templates
-- image-fidelity plugin
 - artifact registry plugin
 - JSON schemas
 - Codex config profiles

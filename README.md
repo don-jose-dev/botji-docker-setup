@@ -86,11 +86,9 @@ make bootstrap
 make setup-hermes
 ```
 
-Choose your provider/model and Telegram setup in the wizard. If you use OpenAI Codex OAuth from Hermes, keep credentials under this tenant data directory.
+Choose the `openai-codex` provider/model and Telegram setup in the wizard. Keep Codex credentials under this tenant data directory.
 
-5. Authenticate Codex CLI:
-
-Either use API key auth by setting `OPENAI_API_KEY` in `.env`, or run:
+5. Authenticate Codex CLI with your ChatGPT/Codex subscription:
 
 ```bash
 make codex-login
@@ -134,7 +132,7 @@ Run the generic artifact adapter harness inside the container:
 botji-artifact-harness --strict --require-modality-comparators
 ```
 
-The harness uses deterministic local fixtures and checks register -> extract -> normalize -> schema render -> exact copy -> default exact-preserve transform -> review -> modality comparator for text, image, PDF, DXF, DOCX, XLSX, HTML, SVG, STEP, IFC, ZIP, audio, video, and binary adapters. It does not call OpenAI; real provider coverage is handled by `botji-artifact-e2e`. The `exact_copy` route validates byte-for-byte preservation by SHA-256 and is the 100% file-fidelity path; omitted `artifact_transform.operation` also defaults to exact copy.
+The harness uses deterministic local fixtures and checks register -> extract -> normalize -> schema render -> exact copy -> default exact-preserve transform -> review -> modality comparator for text, image, PDF, DXF, DOCX, XLSX, HTML, SVG, STEP, IFC, ZIP, audio, video, and binary adapters. It does not call a live provider; Codex subscription-backed provider coverage is handled by `botji-artifact-e2e`. The `exact_copy` route validates byte-for-byte preservation by SHA-256 and is the 100% file-fidelity path; omitted `artifact_transform.operation` also defaults to exact copy.
 
 Codex defaults:
 - `botji_readonly`: read-only sandbox, no web search

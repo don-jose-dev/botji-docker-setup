@@ -24,15 +24,10 @@ if [ -s /tmp/vps-env.b64 ]; then
   chmod 600 .env
   echo "    .env written from CI secret"
 fi
-if [ -s /tmp/openrouter-key.txt ]; then
-  ORKEY="$(cat /tmp/openrouter-key.txt)"
-  # Remove any existing entry then append fresh
-  grep -v '^OPENROUTER_API_KEY=' .env > .env.tmp 2>/dev/null || true
-  echo "OPENROUTER_API_KEY=${ORKEY}" >> .env.tmp
-  mv .env.tmp .env
-  chmod 600 .env
-  echo "    OPENROUTER_API_KEY added to .env"
-fi
+grep -Ev '^(OPENROUTER_API_KEY|OPENAI_API_KEY)=' .env > .env.tmp 2>/dev/null || true
+mv .env.tmp .env
+chmod 600 .env
+echo "    legacy provider key entries removed from .env"
 
 HERMES_RUNTIME_UID="$(grep -E '^HERMES_UID=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
 HERMES_RUNTIME_GID="$(grep -E '^HERMES_GID=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
@@ -96,4 +91,4 @@ else
 fi
 
 # Cleanup
-rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 /tmp/openrouter-key.txt /tmp/vps-deploy.sh
+rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 /tmp/vps-deploy.sh

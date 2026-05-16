@@ -14,7 +14,7 @@ DigitalOcean equivalent costs $24/month for less RAM. Hostinger wins on price/pe
 - GitHub account with this repo pushed
 - Domain name pointed at your VPS IP (for dashboard HTTPS)
 - `TELEGRAM_BOT_TOKEN` from @BotFather
-- `OPENAI_API_KEY` (optional — for image generation)
+- Codex/ChatGPT subscription auth exported as `CODEX_AUTH_B64`
 
 ---
 
@@ -45,7 +45,6 @@ Required values:
 TELEGRAM_BOT_TOKEN=your_token_here
 TELEGRAM_ALLOWED_USERS=your_telegram_user_id
 API_SERVER_KEY=$(openssl rand -hex 32)
-OPENAI_API_KEY=sk-...          # optional
 
 BOTJI_DATA_DIR=/opt/botji/data
 BOTJI_WORKSPACE_DIR=/opt/botji/workspace
@@ -110,6 +109,7 @@ cat ~/.ssh/botji_deploy        # copy the private key
 | `VPS_SSH_KEY` | Contents of `~/.ssh/botji_deploy` |
 | `VPS_PORT` | `22` |
 | `DEPLOY_PATH` | `/opt/botji` |
+| `CODEX_AUTH_B64` | Base64-encoded local Codex `auth.json` |
 
 **Allow GitHub Actions to push to GHCR:**
 Go to your GitHub profile → Packages → botji-hermes → Package Settings → Add repository access.
@@ -144,7 +144,7 @@ systemctl list-timers botji-backup.timer
 
 ## Codex authentication (ChatGPT subscription)
 
-Codex runs headless in the container and cannot open a browser. Log in **locally** where you have a browser, then push the credential file to the VPS.
+Codex runs headless in the container and cannot open a browser. Log in **locally** where you have a browser, then push the credential file to the VPS. No API key is required for this deployment.
 
 **Step 1 — Log in locally (one-time, on your own machine)**
 
@@ -223,7 +223,7 @@ make reload
 |--------|--------------|
 | `API_SERVER_KEY` | Generate new: `openssl rand -hex 32`. Update `.env`, run `make reload`. |
 | `TELEGRAM_BOT_TOKEN` | Revoke in @BotFather, get new token, update `.env`, run `make reload`. |
-| `OPENAI_API_KEY` | Revoke in OpenAI dashboard, update `.env`, run `make reload`. |
+| Codex auth | Run `make codex-login`, update `CODEX_AUTH_B64`, then redeploy. |
 | Deploy SSH key | Generate new keypair, update server `authorized_keys` and GitHub secret. |
 
 ---

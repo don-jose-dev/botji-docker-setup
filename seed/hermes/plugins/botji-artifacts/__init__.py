@@ -1,8 +1,8 @@
 """Botji generic artifact fidelity plugin.
 
 The plugin turns files into durable Botji artifacts before the agent reasons
-about them. It records checksums, adapter evidence, lineage, real OpenAI image
-edits, and review receipts.
+about them. It records checksums, adapter evidence, lineage, Codex-backed image
+transforms, and review receipts.
 """
 
 from __future__ import annotations
@@ -182,9 +182,9 @@ ARTIFACT_TRANSFORM_SCHEMA = _tool_schema(
             "fidelity_mode": {"type": "string", "enum": ["strict", "balanced", "creative"], "default": "strict"},
             "provider_route": {
                 "type": "string",
-                "enum": ["auto", "openai_codex", "openai_api"],
+                "enum": ["auto", "openai_codex"],
                 "default": "auto",
-                "description": "Use openai_codex for ChatGPT/Codex OAuth, openai_api for OPENAI_API_KEY, or auto to prefer Codex OAuth when available.",
+                "description": "Use openai_codex for ChatGPT/Codex OAuth, or auto to require Codex OAuth when available.",
             },
             "quality": {"type": "string", "enum": ["low", "medium", "high", "auto"], "default": "high"},
             "size": {"type": "string", "default": "auto"},
@@ -196,7 +196,7 @@ ARTIFACT_TRANSFORM_SCHEMA = _tool_schema(
 
 ARTIFACT_REVIEW_SCHEMA = _tool_schema(
     "artifact_review",
-    "Persist a source-fidelity review receipt for generated artifacts. Can use real OpenAI vision review for image pairs.",
+    "Persist a source-fidelity review receipt for generated artifacts. Can use Codex vision review for image pairs.",
     {
         "type": "object",
         "properties": {
@@ -214,7 +214,7 @@ ARTIFACT_REVIEW_SCHEMA = _tool_schema(
             "require_vision_api": {"type": "boolean", "default": False},
             "review_provider_route": {
                 "type": "string",
-                "enum": ["auto", "openai_codex", "openai_api"],
+                "enum": ["auto", "openai_codex"],
                 "default": "auto",
             },
         },
@@ -788,7 +788,7 @@ def _claim_boundary_for_adapter(adapter: str) -> str:
 def _transform_policy_for_adapter(adapter: str) -> dict[str, Any]:
     if adapter == "image":
         return {
-            "preferred_routes": ["exact_copy", "render_schema", "artifact_transform.edit_image.openai_codex", "artifact_transform.edit_image.openai_api"],
+            "preferred_routes": ["exact_copy", "render_schema", "artifact_transform.edit_image.openai_codex"],
             "forbidden_routes": ["prompt_only_image_generate_for_source_bound_work"],
         }
     if adapter == "dxf":
@@ -1591,18 +1591,7 @@ def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
             "output_format": str(args.get("output_format") or "png"),
             "fidelity_mode": str(args.get("fidelity_mode") or "strict"),
         }
-        if provider_route == "openai_codex":
-            result = _openai_codex_image_generate(**common)
-        else:
-            if not os.environ.get("OPENAI_API_KEY", "").strip():
-                return _json({
-                    "success": False,
-                    "error": "OPENAI_API_KEY is required for provider_route=openai_api. No mock or prompt-only fallback is allowed.",
-                    "error_type": "auth_required",
-                    "provider": "openai",
-                    "model": API_MODEL,
-                })
-            result = _openai_image_edit(**common)
+        result = _openai_codex_image_generate(**common)
         return _json({"success": True, **result})
     except Exception as exc:
         return _json({"success": False, "error": str(exc), "error_type": type(exc).__name__})
@@ -2018,122 +2007,6 @@ def _rgb(value: Any, default: tuple[int, int, int] | None) -> tuple[int, int, in
     return default
 
 
-def _extract_b64(response: Any) -> str | None:
-    data = getattr(response, "data", None)
-    if not data:
-        return None
-    first = data[0]
-    if isinstance(first, dict):
-        return first.get("b64_json")
-    return getattr(first, "b64_json", None)
-
-
-def _openai_image_edit(
-    *,
-    source_artifacts: list[dict[str, Any]],
-    prompt: str,
-    contract_id: str,
-    quality: str,
-    size: str,
-    output_format: str,
-    fidelity_mode: str,
-) -> dict[str, Any]:
-    from openai import OpenAI
-
-    client = OpenAI()
-    files = [Path(artifact["path"]).open("rb") for artifact in source_artifacts]
-    try:
-        kwargs: dict[str, Any] = {
-            "model": API_MODEL,
-            "prompt": prompt,
-            "image": files if len(files) > 1 else files[0],
-            "quality": quality,
-            "size": size,
-            "output_format": output_format,
-        }
-        response = client.images.edit(**kwargs)
-        b64_json = _extract_b64(response)
-        if not b64_json:
-            raise RuntimeError("OpenAI image edit response did not include b64_json")
-
-        output_id = _new_id("art")
-        extension = "jpg" if output_format == "jpeg" else output_format
-        output_dir = _artifact_root() / "outputs" / output_id
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"output.{extension}"
-        output_path.write_bytes(base64.b64decode(b64_json))
-
-        detected_type, adapter = _detect_type(output_path, "image")
-        output_record = {
-            "artifact_id": output_id,
-            "role": "output",
-            "path": str(output_path),
-            "original_path": str(output_path),
-            "original_filename": output_path.name,
-            "detected_type": detected_type,
-            "declared_type": "image",
-            "adapter": adapter,
-            "sha256": _sha256(output_path),
-            "size_bytes": output_path.stat().st_size,
-            "created_at": _now(),
-            "authority": "agent_generated",
-            "parents": [artifact["artifact_id"] for artifact in source_artifacts],
-            "evidence_ids": [],
-            "preview_paths": [],
-            "user_intent": prompt,
-            "risk_flags": [],
-            "provider": "openai",
-            "model": API_MODEL,
-            "endpoint": "images.edit",
-            "quality": quality,
-            "size": size,
-            "output_format": output_format,
-            "fidelity_mode": fidelity_mode,
-            "contract_id": contract_id,
-            "route": "artifact_transform.edit_image.openai_api",
-        }
-        _append_record(output_record)
-        route_evidence = _store_evidence(
-            output_record,
-            extractor="artifact_transform",
-            claim_level="verified",
-            summary="Output image was created through OpenAI Images API edit endpoint with source artifacts as image inputs.",
-            data={
-                "provider": "openai",
-                "model": API_MODEL,
-                "endpoint": "images.edit",
-                "source_artifact_ids": [artifact["artifact_id"] for artifact in source_artifacts],
-                "source_paths": [artifact["path"] for artifact in source_artifacts],
-                "source_sha256s": [artifact.get("sha256") for artifact in source_artifacts],
-                "source_input_mode": "image[]",
-                "output_artifact_id": output_id,
-                "output_sha256": _sha256(output_path),
-                "prompt": prompt,
-                "quality": quality,
-                "size": size,
-                "output_format": output_format,
-                "fidelity_mode": fidelity_mode,
-                "contract_id": contract_id,
-                "input_fidelity_omitted": API_MODEL == "gpt-image-2",
-                "input_fidelity_rationale": "gpt-image-2 processes image inputs at high fidelity automatically; input_fidelity is intentionally omitted.",
-                "no_prompt_only_fallback": True,
-            },
-        )
-        return {
-            "output_artifact": _load_artifact(output_id),
-            "route_evidence": route_evidence,
-            "provider": "openai",
-            "model": API_MODEL,
-            "endpoint": "images.edit",
-        }
-    finally:
-        for handle in files:
-            try:
-                handle.close()
-            except Exception:
-                pass
-
-
 def _openai_codex_image_generate(
     *,
     source_artifacts: list[dict[str, Any]],
@@ -2479,8 +2352,8 @@ def _run_high_fidelity_provider_transform(
     model = str(output.get("model") or "")
     quality = str(output.get("quality") or "")
     endpoint = str(output.get("endpoint") or "")
-    if provider not in {"openai", "openai-codex"}:
-        blockers.append(f"provider route is not OpenAI-backed: {provider or 'unknown'}")
+    if provider != "openai-codex":
+        blockers.append(f"provider route is not Codex-backed: {provider or 'unknown'}")
     if model != "gpt-image-2":
         blockers.append(f"high-fidelity provider transform requires gpt-image-2, got {model or 'unknown'}")
     if quality != "high":
@@ -2668,15 +2541,14 @@ def _build_review(
     if route != "artifact_transform.exact_copy" and use_openai_vision and output.get("adapter") == "image" and all(source.get("adapter") == "image" for source in sources):
         try:
             resolved_review_route = _resolve_review_provider_route(review_provider_route, output)
-            if resolved_review_route == "openai_codex":
-                vision_payload = _codex_vision_compare(sources, output, fidelity_requirements)
-            else:
-                vision_payload = _openai_vision_compare(sources, output, fidelity_requirements)
+            if resolved_review_route != "openai_codex":
+                raise RuntimeError(f"Unsupported review provider route: {resolved_review_route}")
+            vision_payload = _codex_vision_compare(sources, output, fidelity_requirements)
             evidence = _store_evidence(
                 output,
                 extractor=f"{vision_payload['provider']}_vision_compare",
                 claim_level="reviewed",
-                summary="OpenAI vision comparison reviewed source and output images for visible fidelity.",
+                summary="Codex vision comparison reviewed source and output images for visible fidelity.",
                 data=vision_payload,
             )
             vision_evidence_id = evidence["evidence_id"]
@@ -2692,10 +2564,10 @@ def _build_review(
                 vision_warning = True
         except Exception as exc:
             vision_failed = True
-            vision_note = f"OpenAI vision review failed: {type(exc).__name__}: {exc}"
+            vision_note = f"Codex vision review failed: {type(exc).__name__}: {exc}"
             if require_vision_api:
                 blockers.append(vision_note)
-                corrections.append("Fix OpenAI vision review before accepting the artifact.")
+                corrections.append("Fix Codex vision review before accepting the artifact.")
 
     modality_result = _run_modality_comparators(
         sources=sources,
@@ -2807,7 +2679,7 @@ def _build_review(
             "artifact_modality_comparator",
             *(["exact_sha256_output_compare"] if exact_result else []),
             *(["high_fidelity_provider_transform"] if high_fidelity_result else []),
-            *(["openai_vision_compare"] if vision_evidence_id else []),
+            *(["codex_vision_compare"] if vision_evidence_id else []),
         ],
         "reviewer_notes": preserve_note,
         "artifact_context": {
@@ -2831,7 +2703,7 @@ def _build_review(
                 "baseline_or_schema_evidence",
                 *(("exact_sha256_output_compare",) if exact_result else ()),
                 *(("high_fidelity_provider_transform",) if high_fidelity_result else ()),
-                *(("openai_vision_compare",) if vision_evidence_id else ()),
+                *(("codex_vision_compare",) if vision_evidence_id else ()),
                 "artifact_modality_comparator",
             ],
         },
@@ -3009,16 +2881,12 @@ def _resolve_provider_route(requested: str) -> str:
     route = (requested or "auto").strip().lower().replace("-", "_")
     if route == "codex":
         route = "openai_codex"
-    if route == "api":
-        route = "openai_api"
-    if route not in {"auto", "openai_codex", "openai_api"}:
-        raise ValueError("provider_route must be auto, openai_codex, or openai_api")
+    if route not in {"auto", "openai_codex"}:
+        raise ValueError("provider_route must be auto or openai_codex")
     if route == "auto":
         if _codex_available():
             return "openai_codex"
-        if os.environ.get("OPENAI_API_KEY", "").strip():
-            return "openai_api"
-        raise RuntimeError("No image provider route is available: Codex OAuth token and OPENAI_API_KEY are both missing")
+        raise RuntimeError("No image provider route is available: Codex OAuth token is missing")
     return route
 
 
@@ -3026,18 +2894,14 @@ def _resolve_review_provider_route(requested: str, output: dict[str, Any]) -> st
     route = (requested or "auto").strip().lower().replace("-", "_")
     if route == "codex":
         route = "openai_codex"
-    if route == "api":
-        route = "openai_api"
-    if route not in {"auto", "openai_codex", "openai_api"}:
-        raise ValueError("review_provider_route must be auto, openai_codex, or openai_api")
+    if route not in {"auto", "openai_codex"}:
+        raise ValueError("review_provider_route must be auto or openai_codex")
     if route == "auto":
         if output.get("provider") == "openai-codex" and _codex_available():
             return "openai_codex"
-        if os.environ.get("OPENAI_API_KEY", "").strip():
-            return "openai_api"
         if _codex_available():
             return "openai_codex"
-        raise RuntimeError("No vision review route is available: Codex OAuth token and OPENAI_API_KEY are both missing")
+        raise RuntimeError("No vision review route is available: Codex OAuth token is missing")
     return route
 
 
@@ -3111,38 +2975,6 @@ def _collect_codex_image_b64(
             if isinstance(result, str) and result:
                 image_b64 = result
     return image_b64
-
-
-def _openai_vision_compare(sources: list[dict[str, Any]], output: dict[str, Any], fidelity_requirements: list[str]) -> dict[str, Any]:
-    if not os.environ.get("OPENAI_API_KEY", "").strip():
-        raise RuntimeError("OPENAI_API_KEY is required for real OpenAI vision review")
-    from openai import OpenAI
-
-    client = OpenAI()
-    content: list[dict[str, Any]] = [
-        {
-            "type": "input_text",
-            "text": _vision_review_prompt(fidelity_requirements),
-        }
-    ]
-    for index, artifact in enumerate(sources, start=1):
-        content.append({"type": "input_text", "text": f"Source image {index}: {artifact['artifact_id']}"})
-        content.append({"type": "input_image", "image_url": _data_url(Path(artifact["path"]), artifact.get("detected_type") or "image/png")})
-    content.append({"type": "input_text", "text": f"Output image: {output['artifact_id']}"})
-    content.append({"type": "input_image", "image_url": _data_url(Path(output["path"]), output.get("detected_type") or "image/png")})
-    response = client.responses.create(
-        model=VISION_REVIEW_MODEL,
-        input=[{"role": "user", "content": content}],
-    )
-    text = getattr(response, "output_text", None)
-    if not text:
-        text = str(response)
-    return {
-        "provider": "openai",
-        "model": VISION_REVIEW_MODEL,
-        "endpoint": "responses.create",
-        "comparison": text,
-    }
 
 
 def _codex_vision_compare(sources: list[dict[str, Any]], output: dict[str, Any], fidelity_requirements: list[str]) -> dict[str, Any]:

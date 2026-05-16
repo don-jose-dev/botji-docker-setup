@@ -37,7 +37,7 @@ The default transformation policy is exact preservation: if the user provided a 
 ## Route rules
 
 - Exact preservation: use `artifact_transform` with omitted operation or `operation: "exact_copy"`; this verifies byte-for-byte preservation and is not a mock.
-- Source-image edit or render: use `artifact_transform(operation: "edit_image", provider_route: "openai_codex")` only when the contract has an explicit change list; use `provider_route: "openai_api"` for OpenAI API-key billing. Do not use prompt-only `image_generate`.
+- Source-image edit or render: use `artifact_transform(operation: "edit_image", provider_route: "openai_codex")` only when the contract has an explicit change list. Do not use prompt-only `image_generate`.
 - Schema-first preview or intermediate: use `artifact_transform(operation: "render_schema")`. This route is deterministic, not a mock, and is the preferred bridge for any file type before a styled/rendered output.
 - New concept image with no source file: `image_generate` is allowed only when the contract says concept generation.
 - PDF questions: extract page/text/table evidence first. Do not claim OCR or exact table structure if the PDF has no text layer and OCR was not performed.

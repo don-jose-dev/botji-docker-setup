@@ -1,8 +1,8 @@
 #!/opt/hermes/.venv/bin/python
 """Run a real Botji artifact fidelity E2E harness.
 
-This intentionally uses a real provider route for image transform and vision
-review. Default is Codex OAuth through the ChatGPT/Codex backend. It fails
+This intentionally uses a real Codex provider route for image transform and
+vision review. Default is Codex OAuth through the ChatGPT/Codex backend. It fails
 when credentials are unavailable; there is no mock fallback.
 """
 
@@ -91,7 +91,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", help="Optional existing source image under /opt/data or /workspace.")
     parser.add_argument("--contract-id", default="artifact-e2e-real-api")
-    parser.add_argument("--provider-route", default="openai_codex", choices=["openai_codex", "openai_api", "auto"])
+    parser.add_argument("--provider-route", default="openai_codex", choices=["openai_codex", "auto"])
     parser.add_argument("--quality", default="high", choices=["low", "medium", "high", "auto"])
     parser.add_argument("--size", default="auto")
     parser.add_argument("--output-format", default="png", choices=["png", "jpeg", "webp"])
@@ -114,9 +114,6 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
-
-    if args.provider_route == "openai_api" and not os.environ.get("OPENAI_API_KEY", "").strip():
-        raise SystemExit("OPENAI_API_KEY is required for provider_route=openai_api; no mock fallback is allowed.")
 
     if args.vision_model:
         os.environ["BOTJI_VISION_REVIEW_MODEL"] = args.vision_model

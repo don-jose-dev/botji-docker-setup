@@ -49,8 +49,6 @@ services:
 
       # Codex CLI. Credentials persist under the tenant Hermes volume.
       CODEX_HOME: /opt/data/.codex
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       BOTJI_WORKDIR: /workspace
       BOTJI_CONTRACT_SCHEMA: /opt/data/schemas/prompt_contract.schema.json
       BOTJI_REVIEW_SCHEMA: /opt/data/schemas/source_fidelity_review.schema.json
