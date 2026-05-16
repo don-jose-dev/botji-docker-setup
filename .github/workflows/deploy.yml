@@ -4,6 +4,15 @@ on:
   push:
     branches: [master, main]
   workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: false
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - logs
 
 env:
   REGISTRY: ghcr.io
@@ -51,12 +60,34 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           cache-to: type=inline
 
+  logs:
+    name: Fetch container logs
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'logs'
+    permissions:
+      contents: read
+
+    steps:
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Fetch logs
+        run: |
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes"
+          HOST="${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
+          $SSH "$HOST" "docker logs botji-hermes --tail 200 2>&1"
+
   deploy:
     name: Deploy to VPS
     needs: build
     runs-on: ubuntu-latest
     environment: production
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event.inputs.action == 'deploy')
     permissions:
       contents: read
       packages: read
