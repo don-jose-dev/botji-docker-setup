@@ -81,9 +81,25 @@ jobs:
         run: |
           SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes"
           HOST="${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
-          $SSH "$HOST" "docker logs botji-hermes --tail 500 2>&1"
+          $SSH "$HOST" "docker logs botji-hermes --tail 200 2>&1 | tail -50"
+          echo ""
+          echo "=== ALL DOCKER CONTAINERS ON VPS ==="
+          $SSH "$HOST" "docker ps -a"
+          echo ""
+          echo "=== ALL DOCKER IMAGES ==="
+          $SSH "$HOST" "docker images | head -20"
+          echo ""
+          echo "=== SYSTEMD BOTJI SERVICES ==="
+          $SSH "$HOST" "systemctl list-units '*botji*' --all --no-pager 2>&1 || true"
+          echo ""
+          echo "=== PROCESSES USING THE BOT TOKEN ==="
+          $SSH "$HOST" "ps auxf | grep -iE 'hermes|telegram|gateway' | grep -v grep || echo 'no host hermes processes'"
+          echo ""
+          echo "=== TELEGRAM_BOT_TOKEN ENTRIES IN .env (last 8 chars only) ==="
+          $SSH "$HOST" "cd /opt/botji && grep TELEGRAM_BOT_TOKEN .env | sed 's/.*\(.\{8\}\)$/...\1/'"
+          echo ""
           echo "--- CODEX STATUS ---"
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'echo CODEX_HOME=\$CODEX_HOME && ls -la \$CODEX_HOME/ && codex --version 2>&1' 2>&1 || echo CODEX_EXEC_FAILED"
+          $SSH "$HOST" "docker exec botji-hermes bash -c 'codex --version 2>&1' 2>&1 || echo CODEX_EXEC_FAILED"
 
   deploy:
     name: Deploy to VPS
