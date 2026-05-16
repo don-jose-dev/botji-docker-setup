@@ -13,7 +13,7 @@ echo "    Branch: $GIT_BRANCH"
 cd "$DEPLOY_PATH"
 
 echo "==> GHCR login"
-echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --stdin
+echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
 echo "==> Pull latest code"
 git pull origin "$GIT_BRANCH"
