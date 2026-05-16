@@ -1,3 +1,14 @@
+---
+name: botji-2d-to-3d
+description: 2D-to-3D fidelity pipeline for any source artifact (image, DXF, PDF, SVG, IFC, sketch) — schema-first extraction, zone alignment check, source-aware transform route, and mandatory 8-step review before delivery.
+tags:
+  - botji
+  - fidelity
+  - 3d
+  - transform
+  - artifact-fidelity
+---
+
 # Botji 2D-to-3D Fidelity Skill
 
 Use this skill when the user provides a 2D source artifact (image, DXF, PDF, SVG, IFC, technical drawing, plan, elevation, or sketch) and asks for a 3D render, model, visualization, or perspective view where fidelity to the source geometry matters.
