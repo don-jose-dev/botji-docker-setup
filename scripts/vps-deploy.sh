@@ -30,6 +30,26 @@ mv .env.tmp .env
 chmod 600 .env
 echo "    .env sanitized and legacy provider key entries removed"
 
+set_env_var() {
+  key="$1"
+  value="$2"
+  if grep -q "^${key}=" .env; then
+    sed -i "s|^${key}=.*|${key}=${value}|" .env
+  else
+    printf '%s=%s\n' "$key" "$value" >> .env
+  fi
+}
+
+if grep -Eq '^BOTJI_DATA_DIR=/opt/data(/.*)?$' .env; then
+  set_env_var BOTJI_DATA_DIR "./data/botji"
+  echo "    BOTJI_DATA_DIR normalized to host tenant data path"
+fi
+if grep -Eq '^BOTJI_WORKSPACE_DIR=/workspace(/.*)?$' .env; then
+  set_env_var BOTJI_WORKSPACE_DIR "./workspace"
+  echo "    BOTJI_WORKSPACE_DIR normalized to host workspace path"
+fi
+chmod 600 .env
+
 HERMES_RUNTIME_UID="$(grep -E '^HERMES_UID=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
 HERMES_RUNTIME_GID="$(grep -E '^HERMES_GID=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
 HERMES_RUNTIME_UID="${HERMES_RUNTIME_UID:-10000}"
