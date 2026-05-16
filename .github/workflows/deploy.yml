@@ -65,7 +65,7 @@ jobs:
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
@@ -73,52 +73,31 @@ jobs:
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT || 22 }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/botji' }}
-          VPS_ENV: ${{ secrets.VPS_ENV }}
+          VPS_ENV_B64: ${{ secrets.VPS_ENV }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
           GIT_BRANCH: ${{ github.ref_name }}
         run: |
+          # Copy deploy script to server, then execute it
+          scp -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -P "$VPS_PORT" \
+            scripts/vps-deploy.sh \
+            "$VPS_USER@$VPS_HOST:/tmp/vps-deploy.sh"
+
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o BatchMode=yes \
             -p "$VPS_PORT" \
             "$VPS_USER@$VPS_HOST" \
-            DEPLOY_PATH="$DEPLOY_PATH" \
-            GHCR_TOKEN="$GHCR_TOKEN" \
-            GHCR_USER="$GHCR_USER" \
-            IMAGE_TAG="$IMAGE_TAG" \
-            GIT_BRANCH="$GIT_BRANCH" \
-            VPS_ENV="$(printf '%s' "$VPS_ENV" | base64 -w0)" \
-            'bash -s' << '"DEPLOY"'
-            set -e
-
-            cd "$DEPLOY_PATH"
-
-            echo "==> GHCR login"
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --stdin
-
-            echo "==> Pull latest code"
-            git pull origin "$GIT_BRANCH"
-
-            echo "==> Write .env"
-            if [ -n "$VPS_ENV" ]; then
-              printf '%s' "$VPS_ENV" | base64 -d > .env
-              chmod 600 .env
-            fi
-
-            echo "==> Pull image: $IMAGE_TAG"
-            BOTJI_PROD_IMAGE="$IMAGE_TAG" docker compose \
-              -f docker-compose.yml -f docker-compose.prod.yml pull
-
-            echo "==> Reload"
-            BOTJI_PROD_IMAGE="$IMAGE_TAG" make reload
-
-            echo "==> Smoke check"
-            sleep 8
-            STATUS=$(docker inspect botji-hermes --format='{{.State.Health.Status}}' 2>/dev/null || echo "not found")
-            echo "Container status: $STATUS"
-            [ "$STATUS" = "healthy" ] && echo "Deploy complete." || { echo "WARN: Not healthy yet ($STATUS)"; exit 1; }
-          DEPLOY
+            env \
+              DEPLOY_PATH="$DEPLOY_PATH" \
+              GHCR_TOKEN="$GHCR_TOKEN" \
+              GHCR_USER="$GHCR_USER" \
+              IMAGE_TAG="$IMAGE_TAG" \
+              GIT_BRANCH="$GIT_BRANCH" \
+              VPS_ENV_B64="$(printf '%s' "$VPS_ENV_B64" | base64 -w0)" \
+            bash /tmp/vps-deploy.sh
