@@ -64,25 +64,43 @@ jobs:
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          VPS_ENV: ${{ secrets.VPS_ENV }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          envs: GHCR_TOKEN,GHCR_USER,VPS_ENV,IMAGE_TAG
           script: |
             set -e
-            cd ${{ secrets.DEPLOY_PATH || '/opt/botji' }}
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/botji' }}"
+            cd "$DEPLOY_PATH"
+
+            echo "Authenticating with GHCR..."
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --stdin
 
             echo "Pulling latest code..."
             git pull origin ${{ github.ref_name }}
 
-            echo "Pulling new image..."
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+            echo "Writing .env..."
+            if [ -n "$VPS_ENV" ]; then
+              echo "$VPS_ENV" > .env
+            elif [ ! -f .env ]; then
+              cp .env.example .env
+              echo "WARN: No VPS_ENV secret — using .env.example defaults. Set VPS_ENV in GitHub secrets."
+            fi
+
+            echo "Pulling image..."
+            BOTJI_PROD_IMAGE="$IMAGE_TAG" docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
 
             echo "Reloading..."
-            make reload
+            BOTJI_PROD_IMAGE="$IMAGE_TAG" make reload
 
-            echo "Running smoke check..."
+            echo "Smoke check..."
             sleep 5
             docker inspect botji-hermes --format='{{.State.Health.Status}}' | grep -q healthy
             echo "Deploy complete."
