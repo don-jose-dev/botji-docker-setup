@@ -26,11 +26,20 @@ if [ -s /tmp/vps-env.b64 ]; then
 fi
 
 echo "==> Pull image: $IMAGE_TAG"
-BOTJI_PROD_IMAGE="$IMAGE_TAG" \
-  docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+docker pull "$IMAGE_TAG"
 
-echo "==> Reload"
-BOTJI_PROD_IMAGE="$IMAGE_TAG" make reload
+echo "==> Start / reload"
+export BOTJI_PROD_IMAGE="$IMAGE_TAG"
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  up -d --no-build --remove-orphans
+
+echo "==> Waiting for healthy..."
+for i in $(seq 1 15); do
+  STATUS=$(docker inspect botji-hermes \
+    --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")
+  [ "$STATUS" = "healthy" ] && break
+  sleep 4
+done
 
 echo "==> Smoke check"
 sleep 10
