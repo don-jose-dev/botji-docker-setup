@@ -12,7 +12,9 @@ RUN npm i -g "@openai/codex@${CODEX_NPM_VERSION}" \
 
 RUN if command -v apt-get >/dev/null 2>&1; then \
       apt-get update \
-      && apt-get install -y --no-install-recommends libmagic1 python3 python3-pip python3-venv \
+      && apt-get install -y --no-install-recommends \
+           libmagic1 python3 python3-pip python3-venv \
+           chromium chromium-driver \
       && rm -rf /var/lib/apt/lists/*; \
     fi \
     && python3 -m pip install --break-system-packages --no-cache-dir \
@@ -46,6 +48,8 @@ RUN chmod +x /usr/local/bin/botji-* \
     && ln -sf /usr/bin/python3 /usr/bin/python
 
 ENV CODEX_HOME=/opt/data/.codex
+ENV CHROME_PATH=/usr/bin/chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV BOTJI_WORKDIR=/workspace
 ENV BOTJI_CONTRACT_SCHEMA=/opt/data/schemas/prompt_contract.schema.json
 ENV BOTJI_REVIEW_SCHEMA=/opt/data/schemas/source_fidelity_review.schema.json

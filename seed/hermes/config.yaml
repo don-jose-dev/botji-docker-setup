@@ -149,7 +149,7 @@ stt:
   openai:
     model: whisper-1
 code_execution:
-  timeout: 300
+  timeout: 600
   max_tool_calls: 50
 delegation:
   max_iterations: 50
