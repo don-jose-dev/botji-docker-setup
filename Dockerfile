@@ -42,7 +42,8 @@ COPY runtime/bin/botji-artifact-harness /usr/local/bin/botji-artifact-harness
 
 RUN chmod +x /usr/local/bin/botji-* \
     && mkdir -p /workspace \
-    && chown -R hermes:hermes /workspace
+    && chown -R hermes:hermes /workspace \
+    && ln -sf /usr/bin/python3 /usr/bin/python
 
 ENV CODEX_HOME=/opt/data/.codex
 ENV BOTJI_WORKDIR=/workspace
