@@ -28,8 +28,12 @@ fi
 echo "==> Pull image: $IMAGE_REF"
 docker pull "$IMAGE_REF"
 
-echo "==> Start / reload"
+echo "==> Bootstrap seed (idempotent — skips existing files)"
 export BOTJI_PROD_IMAGE="$IMAGE_REF"
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  --profile bootstrap run --rm bootstrap
+
+echo "==> Start / reload"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   up -d --no-build --remove-orphans
 
