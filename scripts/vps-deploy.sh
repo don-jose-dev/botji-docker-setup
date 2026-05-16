@@ -34,6 +34,11 @@ if [ -s /tmp/openrouter-key.txt ]; then
   echo "    OPENROUTER_API_KEY added to .env"
 fi
 
+HERMES_RUNTIME_UID="$(grep -E '^HERMES_UID=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
+HERMES_RUNTIME_GID="$(grep -E '^HERMES_GID=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
+HERMES_RUNTIME_UID="${HERMES_RUNTIME_UID:-10000}"
+HERMES_RUNTIME_GID="${HERMES_RUNTIME_GID:-$HERMES_RUNTIME_UID}"
+
 echo "==> Pull image: $IMAGE_REF"
 docker pull "$IMAGE_REF"
 
@@ -48,7 +53,7 @@ export BOTJI_PROD_IMAGE="$IMAGE_REF"
 WORKSPACE_DIR="$(grep -E '^BOTJI_WORKSPACE_DIR=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
 WORKSPACE_DIR="${WORKSPACE_DIR:-./workspace}"
 mkdir -p "$WORKSPACE_DIR"
-chown -R 10000:10000 "$WORKSPACE_DIR" 2>/dev/null || true
+chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$WORKSPACE_DIR" 2>/dev/null || true
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   --profile bootstrap run --rm bootstrap
 
@@ -58,6 +63,7 @@ DATA_DIR="${DATA_DIR:-./data/botji}"
 if [ -s /tmp/codex-auth.b64 ]; then
   mkdir -p "$DATA_DIR/.codex"
   base64 -d /tmp/codex-auth.b64 > "$DATA_DIR/.codex/auth.json"
+  chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/.codex" "$DATA_DIR/.codex/auth.json" 2>/dev/null || true
   chmod 600 "$DATA_DIR/.codex/auth.json"
   echo "    Codex auth.json written to $DATA_DIR/.codex/"
 else

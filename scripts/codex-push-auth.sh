@@ -17,6 +17,7 @@
 #   VPS_HOST          — VPS IP or hostname (required)
 #   VPS_DATA_PATH     — path to botji data dir on VPS (default: /opt/botji/data/botji)
 #   SSH_KEY           — path to SSH private key (default: ~/.ssh/id_ed25519)
+#   HERMES_UID/GID    — runtime owner inside the container (default: 10000)
 set -euo pipefail
 
 LOCAL_CODEX_HOME="${LOCAL_CODEX_HOME:-$HOME/.codex}"
@@ -24,6 +25,8 @@ VPS_USER="${VPS_USER:-botji}"
 VPS_HOST="${VPS_HOST:-}"
 VPS_DATA_PATH="${VPS_DATA_PATH:-/opt/botji/data/botji}"
 SSH_KEY="${SSH_KEY:-}"
+HERMES_UID="${HERMES_UID:-10000}"
+HERMES_GID="${HERMES_GID:-$HERMES_UID}"
 
 if [ -z "$VPS_HOST" ]; then
   echo "ERROR: VPS_HOST is required."
@@ -83,14 +86,14 @@ REMOTE_CODEX_HOME="$VPS_DATA_PATH/.codex"
 
 echo "==> Creating remote dir: $VPS_USER@$VPS_HOST:$REMOTE_CODEX_HOME"
 # shellcheck disable=SC2029
-ssh $SSH_OPTS "$VPS_USER@$VPS_HOST" "mkdir -p $REMOTE_CODEX_HOME && chmod 700 $REMOTE_CODEX_HOME"
+ssh $SSH_OPTS "$VPS_USER@$VPS_HOST" "mkdir -p $REMOTE_CODEX_HOME && chown $HERMES_UID:$HERMES_GID $REMOTE_CODEX_HOME 2>/dev/null || true && chmod 700 $REMOTE_CODEX_HOME"
 
 echo "==> Copying auth files..."
 for f in "${AUTH_FILES[@]}"; do
   fname="$(basename "$f")"
   scp $SSH_OPTS "$f" "$VPS_USER@$VPS_HOST:$REMOTE_CODEX_HOME/$fname"
   # shellcheck disable=SC2029
-  ssh $SSH_OPTS "$VPS_USER@$VPS_HOST" "chmod 600 $REMOTE_CODEX_HOME/$fname"
+  ssh $SSH_OPTS "$VPS_USER@$VPS_HOST" "chown $HERMES_UID:$HERMES_GID $REMOTE_CODEX_HOME/$fname 2>/dev/null || true; chmod 600 $REMOTE_CODEX_HOME/$fname"
   echo "    copied: $fname"
 done
 
