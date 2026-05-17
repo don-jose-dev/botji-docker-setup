@@ -6,3 +6,4 @@ kind: standalone
 requires_env: []
 provides_tools:
   - botji_render
+provides_image_gen_provider: botji-codex

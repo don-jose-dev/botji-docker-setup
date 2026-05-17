@@ -63,12 +63,6 @@ _HARD_CONFLICT_KEYWORDS = frozenset({
     "not present", "does not exist", "extra element",
 })
 
-# Negative markers that typically appear inside a conflict claim but NOT in a match claim.
-_NEGATION_MARKERS = frozenset({
-    "missing", "removed", "absent", "not present", "not visible", "not in source",
-    "does not exist", "no ", "lack", "lost", "omitted",
-})
-
 
 def _classify_conflict(text: str) -> str:
     """Return 'hard' or 'soft' based on conflict text keywords."""
@@ -76,31 +70,6 @@ def _classify_conflict(text: str) -> str:
     if any(kw in lower for kw in _HARD_CONFLICT_KEYWORDS):
         return "hard"
     return "soft"
-
-
-def _claim_noun_set(text: str) -> frozenset[str]:
-    """Extract substantive words (len > 4, alpha) as a rough topic fingerprint."""
-    return frozenset(w for w in text.lower().split() if len(w) > 4 and w.isalpha())
-
-
-def _match_superseded_by_conflict(match_text: str, conflicts: list[str]) -> bool:
-    """Return True when a conflict explicitly negates the claim made in a match.
-
-    A match is superseded when it shares ≥2 substantive topic words with a conflict
-    AND the conflict contains at least one negation marker. This removes the common
-    LLM artefact where the model simultaneously places the same layout element in
-    both the "matches" and "conflicts" arrays with contradictory assessments.
-    """
-    match_nouns = _claim_noun_set(match_text)
-    if not match_nouns:
-        return False
-    for conflict in conflicts:
-        conflict_lower = conflict.lower()
-        if any(marker in conflict_lower for marker in _NEGATION_MARKERS):
-            conflict_nouns = _claim_noun_set(conflict)
-            if len(match_nouns & conflict_nouns) >= 2:
-                return True
-    return False
 
 
 def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
@@ -126,14 +95,6 @@ def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
         unknowns = _coerce_review_items(data.get("unknowns") or [])
         matches = _coerce_review_items(data.get("matches") or [])
         corrections = _coerce_review_items(data.get("required_corrections") or data.get("corrections") or [])
-
-        # Reconcile contradictions: when a conflict explicitly negates the same claim as
-        # a match (sharing topic nouns + containing a negation marker), the conflict wins
-        # and the match is removed. This prevents the summary from asserting the same
-        # element is simultaneously "preserved" and "missing".
-        all_conflicts = hard + soft
-        if all_conflicts and matches:
-            matches = [m for m in matches if not _match_superseded_by_conflict(m, all_conflicts)]
 
         # Hard conflicts always block; soft conflicts only warn
         if hard:

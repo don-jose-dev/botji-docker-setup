@@ -78,3 +78,116 @@ For architecture, interiors, cabinetry, product design, diagrams, construction, 
    For 100% preservation, prefer exact_copy or schema/CAD/vector output over generative image output.
 5. Preserve user vocabulary and project constraints in the contract.
 6. For drawings with modules or bays, inventory the ordering, counts, appliance/object positions, labels, and forbidden inventions before generation.
+
+---
+
+## Photo Fidelity Mode (2D→3D transforms)
+
+Use when source is a raster image (phone photo, render, screenshot, reference) — not a parseable CAD file.
+
+### Choose the right mode
+
+| Source type | Mode | Steps |
+|---|---|---|
+| Phone photo, render, screenshot, reference image | **Photo mode** | 4 steps |
+| DXF, PDF, IFC, SVG with parseable geometry | **Technical mode** | 8 steps |
+| User provides only dimensions, no drawing | **Spec mode** | 4 steps |
+| User says "just generate" or waives fidelity | **Concept mode** | 2 steps |
+
+### Photo mode pipeline (4 steps, ~60–90s)
+
+Do NOT run `artifact_extract`, `artifact_normalize`, `schema_validate`, or `user_confirm` on a photo. Those steps are for technical drawings only.
+
+```
+1. artifact_register(path, role="source", declared_type="image")
+
+2. artifact_transform(
+     operation="edit_image",
+     source_artifact_ids=[source_id],
+     contract_id=contract_id,
+     camera_brief="[body · lens · view angle]",
+     light_brief="[quality · direction · color temp]",
+     mood_brief="[photography/rendering genre]",
+     subject_inventory=["[element 1 with count and position]", "[element 2]"],
+     hard_preserve=[
+       "Overall spatial layout and composition",
+       "Object count: exactly [N] [primary elements]",
+       "[named structural constraints from source]"
+     ],
+     forbidden_elements=[
+       "Do not add any objects not visible in the source image",
+       "Do not add plants, furniture, decor, people, or clutter not in source",
+       "Do not remove or reorder structural elements",
+       "Do not add extra [panels/shelves/modules] beyond source",
+       "Do not extend any element beyond its source boundary"
+     ]
+   )
+
+3. artifact_review(source_artifact_ids=[source_id], output_artifact_id=output_id,
+     fidelity_requirements=hard_preserve, use_openai_vision=True)
+
+4. Deliver: send image first, then review badge
+```
+
+Use structured brief fields — NOT a freeform `instructions` string. The plugin assembles the final prompt from these fields.
+
+**If user provides dimensions** ("Size: 2400mm × 1500mm"), add to `hard_preserve` — do NOT run schema_validate:
+```
+hard_preserve=["Overall dimensions: 2400mm wide × 1500mm tall — set scale and proportions from this", ...]
+```
+
+### Technical mode pipeline (8 steps)
+
+Use when source has machine-readable geometry (DXF, PDF, IFC, SVG):
+
+```
+1. artifact_register          — register source; get artifact_id and sha256
+2. artifact_extract           — extract geometry, layers, entities, dimensions
+3. schema_validate            — validate dimension sums, counts, positions
+4. user_confirm               — confirm inferred measurements (only if ambiguous)
+5. artifact_normalize         — emit botji.artifact_schema.v1 as transform contract
+6. artifact_transform         — drive output from schema contract
+7. artifact_review            — compare output against source schema
+8. persist lineage            — source → schema → render → review all linked
+```
+
+Schema is the geometry authority. The render must match the schema, not just look similar.
+
+**Zone alignment rule:** For multi-zone layouts (upper/lower cabinets, floor plan + elevation), vertical module boundaries must align or the user must confirm: "The zone boundaries don't align. Top: [dims]. Bottom: [dims]. Intentional?"
+
+### Spec mode (dimensions only, no drawing)
+
+```
+1. Build dimensional spec from user text (no artifact_register needed)
+2. image_generate with visual brief including spec dimensions
+3. Brief visual comparison against spec
+4. Deliver with claim level "reviewed"
+```
+
+Set `schema_authority: user_provided`. Disclose dimensions are interpreted, not extracted.
+
+### Concept mode (user waives fidelity)
+
+Set `schema_authority: user_waived`, `final_claim_level: draft`. One step: `image_generate` with style brief.
+
+### Photo mode fidelity review
+
+| Review result | Action |
+|---|---|
+| `preserve_change: conflict` + objects added not in source | Block — regenerate with stricter FORBIDDEN list |
+| `preserve_change: conflict` + layout/count wrong | Block — regenerate |
+| `preserve_change: conflict` + minor proportion/style drift | Warn user, deliver with reduced fidelity score |
+| `preserve_change: partial` + style differences only | Pass — deliver with honest caption |
+| `groundedness: conflict` due to invalid route | Fix route evidence, re-review |
+
+Do not auto-block for minor style drift. Block when object count changes or source elements are invented or removed.
+
+Photo mode claim level is always `reviewed`. Never `verified` for an image edit.
+
+### Delivery
+
+Send image first, then:
+```
+✅ 3D render · route: edit_image · claim: reviewed · fidelity: [N]%
+[1-line match/conflict summary]
+```

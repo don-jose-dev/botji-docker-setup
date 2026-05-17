@@ -56,6 +56,40 @@ Every Codex task must include:
 - Treat Codex output as draft evidence; Hermes must still run the source-fidelity review.
 - For tool-backed engineering responses, persist the Prompt Contract and review JSON when file tools are available.
 
+## botji_render and the Responses API flow
+
+### botji_render vs artifact_transform
+
+| Tool | When to use |
+|---|---|
+| `artifact_transform(operation="edit_image")` | Source-bound image work — a source artifact must be registered and passed as `input_image`. PRIMARY for photo→3D and all fidelity-preserving edits. |
+| `botji_render` | Rendering a schema or spec into an image when there is no pixel source to preserve (e.g. a DXF schema → styled render, or a spec-only brief). Calls the Responses API internally. |
+
+Do not use `botji_render` when the user provided a source image. Use `artifact_transform` instead to preserve the source pixel input.
+
+### Image generation via Responses API
+
+Image generation goes through the Codex Responses API with the `image_generation` tool. The flow:
+
+1. Hermes calls `artifact_transform` or `botji_render` with a structured brief.
+2. The plugin sends the brief + source image (if any) to the Responses API `image_generation` tool.
+3. Codex returns the generated image; the plugin registers it as an output artifact.
+4. `artifact_review` compares the output against the source artifact and hard requirements.
+
+### 3-attempt mutation strategy
+
+On failed or low-fidelity generations, the plugin retries with progressively tighter constraints — not looser ones. Quality degrades gracefully:
+
+- Attempt 1: full brief with preferred camera/mood.
+- Attempt 2: add/expand FORBIDDEN list based on what the first attempt hallucinated.
+- Attempt 3: simplify scene — strip non-essential elements, harden object count rules.
+
+After 3 failed attempts, stop and report. Do not silently accept a low-fidelity output.
+
+### user_id passthrough
+
+Every `artifact_transform`, `botji_render`, and `image_generate` call must pass `user_id` through to the plugin. This is required for fair-share queueing — the plugin rate-limits per user. Omitting `user_id` breaks queue fairness and may cause incorrect billing attribution.
+
 ## Default safety
 
 - Codex works in `/workspace`.

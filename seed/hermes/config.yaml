@@ -149,7 +149,7 @@ platform_toolsets:
   google_chat:
   - hermes-google_chat
 image_gen:
-  provider: openai-codex
+  provider: botji-codex   # botji-render registers this provider
   model: gpt-image-2-high
   openai-codex:
     model: gpt-image-2-high
@@ -159,6 +159,7 @@ plugins:
   - botji-render      # gpt-image-2 with lease + fair-share queue + bounded retries
   - botji-allowlist   # file-backed Telegram allowlist with hot reload
   - botji-gate        # Default-FAIL delivery gate (transform_llm_output)
+  - observability/langfuse  # active only when HERMES_LANGFUSE_PUBLIC_KEY is set
 stt:
   enabled: true
   local:

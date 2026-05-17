@@ -29,9 +29,9 @@ legacy_plugin = "${LEGACY_PLUGIN}"
 PLUGIN_CONTRACTS = {
     "botji-artifacts": {
         "submodules": [
-            "_constants", "_utils", "_detect", "_registry", "_extraction",
-            "_rendering", "_normalization", "_codex", "_vision", "_review",
-            "_handlers", "_schemas", "_prompts",
+            "_constants", "_utils", "_detect", "_registry", "_metadata",
+            "_extraction", "_rendering", "_normalization", "_codex", "_vision",
+            "_review", "_handlers", "_schemas", "_prompts",
         ],
         "symbols": {
             "_handlers": ["_handle_artifact_register", "_handle_artifact_transform",

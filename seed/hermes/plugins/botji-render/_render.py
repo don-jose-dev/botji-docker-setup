@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 _ATTEMPT_TIMEOUTS_SECONDS = (180.0, 180.0, 90.0)
 _PROVIDER_HARD_CEILING_SECONDS = 195.0
+_CODEX_CHAT_MODEL = os.environ.get("BOTJI_CODEX_IMAGE_CHAT_MODEL", "gpt-5.4")
 _CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 
 
@@ -119,12 +120,11 @@ def _sync_generate(
     size: str,
     quality: str,
     output_format: str,
-    chat_model: str,
 ) -> str | None:
     """Synchronous Responses API streaming call. Run via asyncio.to_thread."""
     image_b64: str | None = None
     with client.responses.stream(
-        model=chat_model,
+        model=_CODEX_CHAT_MODEL,
         store=False,
         input=[{"type": "message", "role": "user", "content": content}],
         tools=[{
@@ -166,7 +166,6 @@ async def _call_provider_once(
     size: str,
     quality: str,
     output_format: str,
-    chat_model: str,
     timeout_seconds: float,
 ) -> str:
     """Run one Responses API image generation with a hard timeout.
@@ -182,7 +181,6 @@ async def _call_provider_once(
                 size=size,
                 quality=quality,
                 output_format=output_format,
-                chat_model=chat_model,
             ),
             timeout=timeout_seconds,
         )
@@ -219,8 +217,6 @@ async def render(
     On exhaustion returns ``{"success": False, "error": "...",
     "error_kind": "timeout"|"provider_error", "attempts": 3}``.
     """
-    chat_model = os.environ.get("BOTJI_CODEX_IMAGE_CHAT_MODEL", "gpt-5.4-mini")
-
     request_hash = compute_request_hash(
         prompt, size, quality, output_format,
         [str(p) for p in source_image_paths],
@@ -268,7 +264,6 @@ async def render(
                         size=size,
                         quality=quality_for_attempt,
                         output_format=output_format,
-                        chat_model=chat_model,
                         timeout_seconds=timeout,
                     )
                 except RenderError as exc:

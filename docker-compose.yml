@@ -61,13 +61,19 @@ services:
       BOTJI_ARTIFACT_ENABLE_PDF_WRITE: ${BOTJI_ARTIFACT_ENABLE_PDF_WRITE:-false}
       BOTJI_IMAGE_MODEL: ${BOTJI_IMAGE_MODEL:-gpt-image-2}
       BOTJI_VISION_REVIEW_MODEL: ${BOTJI_VISION_REVIEW_MODEL:-gpt-5.4-mini}
-      BOTJI_CODEX_IMAGE_CHAT_MODEL: ${BOTJI_CODEX_IMAGE_CHAT_MODEL:-gpt-5.4-mini}
+      BOTJI_CODEX_IMAGE_CHAT_MODEL: ${BOTJI_CODEX_IMAGE_CHAT_MODEL:-gpt-5.4}
 
       # Tool/debug defaults. Keep noisy logs off until needed.
       WEB_TOOLS_DEBUG: ${WEB_TOOLS_DEBUG:-false}
       VISION_TOOLS_DEBUG: ${VISION_TOOLS_DEBUG:-false}
       MOA_TOOLS_DEBUG: ${MOA_TOOLS_DEBUG:-false}
       IMAGE_TOOLS_DEBUG: ${IMAGE_TOOLS_DEBUG:-false}
+
+      # Langfuse observability (optional — plugin is inert without these)
+      HERMES_LANGFUSE_PUBLIC_KEY: ${HERMES_LANGFUSE_PUBLIC_KEY:-}
+      HERMES_LANGFUSE_SECRET_KEY: ${HERMES_LANGFUSE_SECRET_KEY:-}
+      HERMES_LANGFUSE_BASE_URL: ${HERMES_LANGFUSE_BASE_URL:-https://cloud.langfuse.com}
+      HERMES_LANGFUSE_ENV: ${HERMES_LANGFUSE_ENV:-production}
     healthcheck:
       # 60 s interval (was 30 s) halves the /health log noise that buried real
       # signal in agent.log; gateway boot can take up to ~90 s when the plugin
