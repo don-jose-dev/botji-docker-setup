@@ -81,74 +81,76 @@ jobs:
         run: |
           SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes"
           HOST="${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
-          echo "=== FULL HERMES LOGS (last 300 lines) ==="
-          $SSH "$HOST" "docker logs botji-hermes --tail 300 2>&1"
+
+          echo "=== CONTAINER STARTUP + RECENT LOGS (last 100 lines) ==="
+          $SSH "$HOST" "docker logs botji-hermes --tail 100 --timestamps 2>&1"
           echo ""
-          echo "=== CODEX AUTH FILE CHECK ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'ls -la /opt/data/.codex/ 2>&1; echo ---; echo CODEX_HOME=\$CODEX_HOME; echo ---; [ -f /opt/data/.codex/auth.json ] && echo auth.json exists, size=\$(stat -c%s /opt/data/.codex/auth.json) bytes || echo auth.json MISSING; echo ---; head -c 60 /opt/data/.codex/auth.json 2>&1 || true; echo'"
+
+          echo "=== GATEWAY LOG — last 200 lines (user messages, step timing) ==="
+          $SSH "$HOST" "docker exec botji-hermes bash -c 'tail -200 /opt/data/logs/gateway.log 2>/dev/null || echo GATEWAY_LOG_MISSING'"
           echo ""
-          echo "=== HERMES TOPLEVEL HELP ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'hermes --help 2>&1 | head -50'"
+
+          echo "=== AGENT LOG — last 300 lines (tool calls, step durations) ==="
+          $SSH "$HOST" "docker exec botji-hermes bash -c 'tail -300 /opt/data/logs/agent.log 2>/dev/null || echo AGENT_LOG_MISSING'"
           echo ""
-          echo "=== HERMES AUTH HELP (verbose) ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'hermes auth 2>&1 | head -40; echo ---; hermes auth --help 2>&1 | head -40'"
+
+          echo "=== ERRORS LOG — last 50 lines ==="
+          $SSH "$HOST" "docker exec botji-hermes bash -c 'tail -50 /opt/data/logs/errors.log 2>/dev/null || echo ERRORS_LOG_MISSING'"
           echo ""
-          echo "=== HERMES SOURCE: where auth is looked up ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'grep -rIn --include=\"*.py\" -E \"No Codex credentials\" /opt/hermes 2>/dev/null'"
+
+          echo "=== ARTIFACT INDEX (all records: model, route, timing) ==="
+          $SSH "$HOST" "docker exec botji-hermes bash -c 'cat /opt/data/artifacts/index/artifacts.jsonl 2>/dev/null | python3 -c \"
+import sys, json
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    r = json.loads(line)
+    print(json.dumps({
+        k: r.get(k) for k in [
+            'artifact_id','role','adapter','created_at',
+            'model','chat_model','provider','route','contract_id',
+            'quality','size','sha256','size_bytes','parents'
+        ]
+    }, default=str))
+\" 2>/dev/null || cat /opt/data/artifacts/index/artifacts.jsonl 2>/dev/null | tail -30'"
           echo ""
-          echo "=== managed_tool_gateway.py first 80 lines ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'sed -n \"1,80p\" /opt/hermes/tools/managed_tool_gateway.py'"
+
+          echo "=== LATEST 5 EVIDENCE FILES (step durations, tool calls) ==="
+          $SSH "$HOST" "docker exec botji-hermes bash -c 'find /opt/data/artifacts/evidence -name \"*.json\" -printf \"%T@ %p\\n\" 2>/dev/null | sort -n | tail -5 | cut -d\" \" -f2- | while read f; do echo \"--- \$f ---\"; cat \"\$f\" 2>&1 | python3 -c \"import sys,json; d=json.load(sys.stdin); print(json.dumps({k: d.get(k) for k in [\\\"evidence_id\\\",\\\"extractor\\\",\\\"claim_level\\\",\\\"summary\\\",\\\"created_at\\\"]}, default=str))\"; echo; done'"
           echo ""
-          echo "=== HERMES_HOME/auth.json present? ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'ls -la /opt/data/auth.json 2>&1; echo ---; head -c 200 /opt/data/auth.json 2>&1; echo'"
+
+          echo "=== LATEST 3 REVIEWS (verdict + key axes) ==="
+          $SSH "$HOST" "docker exec botji-hermes bash -c 'find /opt/data/artifacts/reviews -name \"*.json\" -printf \"%T@ %p\\n\" 2>/dev/null | sort -n | tail -3 | cut -d\" \" -f2- | while read f; do echo \"--- \$f ---\"; cat \"\$f\" 2>&1 | python3 -c \"
+import sys,json
+d=json.load(sys.stdin)
+print(\\\"verdict:\\\", d.get(\\\"verdict\\\"))
+print(\\\"contract_id:\\\", d.get(\\\"contract_id\\\"))
+print(\\\"output_ref:\\\", d.get(\\\"reviewed_output_ref\\\"))
+for ax in d.get(\\\"axes\\\",[]):
+    sev = ax.get(\\\"severity\\\",\\\"none\\\")
+    if sev in (\\\"blocking\\\",\\\"medium\\\") or ax.get(\\\"compare_status\\\") in (\\\"conflict\\\",\\\"partial\\\"):
+        print(\\\"  AX\\\", ax[\\\"axis\\\"], ax[\\\"compare_status\\\"], sev)
+        n = ax.get(\\\"notes\\\",\\\"\\\")
+        if n:
+            try: nd=json.loads(n); print(\\\"    conflicts:\\\",nd.get(\\\"conflicts\\\",[])); print(\\\"    matches:\\\",nd.get(\\\"matches\\\",[])[:2])
+            except: print(\\\"    notes:\\\",str(n)[:200])
+\"; echo; done'"
           echo ""
-          echo "=== TELEGRAM_ALLOWED_USERS (IDs are public, not secret) ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'echo TELEGRAM_ALLOWED_USERS=\$TELEGRAM_ALLOWED_USERS; echo TELEGRAM_BOT_USERNAME=\$TELEGRAM_BOT_USERNAME; echo TELEGRAM_HOME_CHANNEL=\$TELEGRAM_HOME_CHANNEL; echo GATEWAY_ALLOW_ALL_USERS=\$GATEWAY_ALLOW_ALL_USERS'"
+
+          echo "=== CONFIG: model + image_gen provider ==="
+          $SSH "$HOST" "docker exec botji-hermes bash -c 'grep -E \"default:|provider:|model:|BOTJI_IMAGE_MODEL|BOTJI_VISION|BOTJI_CODEX\" /opt/data/config.yaml 2>/dev/null | head -20; echo ---; env | grep -E \"BOTJI_IMAGE|BOTJI_VISION|BOTJI_CODEX\" 2>/dev/null || true'"
           echo ""
-          echo "=== ARTIFACTS ROOT TREE ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'ls -la /opt/data/artifacts/ 2>&1; echo ---; find /opt/data/artifacts -maxdepth 3 -type d 2>/dev/null | head -30'"
+
+          echo "=== TELEGRAM_ALLOWED_USERS ==="
+          $SSH "$HOST" "docker exec botji-hermes bash -c 'echo TELEGRAM_ALLOWED_USERS=\$TELEGRAM_ALLOWED_USERS; echo GATEWAY_ALLOW_ALL_USERS=\$GATEWAY_ALLOW_ALL_USERS; echo TELEGRAM_BOT_USERNAME=\$TELEGRAM_BOT_USERNAME'"
           echo ""
-          echo "=== LATEST 10 ARTIFACT OUTPUTS ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'find /opt/data/artifacts -type f -printf \"%T@ %p\\n\" 2>/dev/null | sort -n | tail -15 | cut -d\" \" -f2-'"
+
+          echo "=== CONTAINER STATUS + UPTIME ==="
+          $SSH "$HOST" "docker inspect botji-hermes --format='Started: {{.State.StartedAt}}  Status: {{.State.Health.Status}}' 2>/dev/null"
           echo ""
-          echo "=== LATEST 3 REVIEW JSONS (fidelity scores) ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'find /opt/data/artifacts -name \"*review*.json\" -printf \"%T@ %p\\n\" 2>/dev/null | sort -n | tail -3 | cut -d\" \" -f2- | while read f; do echo \"--- \$f ---\"; cat \"\$f\" 2>&1 | head -80; echo; done'"
-          echo ""
-          echo "=== LATEST 3 CONTRACTS ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'find /opt/data/artifacts -name \"*contract*.json\" -printf \"%T@ %p\\n\" 2>/dev/null | sort -n | tail -3 | cut -d\" \" -f2- | while read f; do echo \"--- \$f ---\"; cat \"\$f\" 2>&1 | head -40; echo; done'"
-          echo ""
-          echo "=== HERMES USER PASSWD ENTRY ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'getent passwd hermes; getent passwd 10000; echo \"HOME64=\$(echo -n \$HOME | base64)\"'"
-          echo ""
-          echo "=== HERMES PROCESS HOME + ENV ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'echo HOME=\$HOME; echo HERMES_HOME=\$HERMES_HOME; echo USER=\$(whoami); echo UID=\$(id -u)'"
-          echo ""
-          echo "=== ALL AUTH.JSON FILES IN CONTAINER ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'find / -name auth.json 2>/dev/null | head -20'"
-          echo ""
-          echo "=== /opt/data TREE (top 3 levels) ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'find /opt/data -maxdepth 3 -type f 2>/dev/null | head -40'"
-          echo ""
-          echo "=== HERMES HOME OR .hermes DIR ==="
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'ls -la ~/.hermes/ 2>&1 || echo no_dotfile_hermes; ls -la /opt/data/.hermes 2>&1 || echo no_opt_dotfile_hermes; ls -la \$HOME 2>&1 | head -20'"
-          echo ""
-          echo "=== ALL DOCKER CONTAINERS ON VPS ==="
-          $SSH "$HOST" "docker ps -a"
-          echo ""
-          echo "=== ALL DOCKER IMAGES ==="
-          $SSH "$HOST" "docker images | head -20"
-          echo ""
-          echo "=== SYSTEMD BOTJI SERVICES ==="
-          $SSH "$HOST" "systemctl list-units '*botji*' --all --no-pager 2>&1 || true"
-          echo ""
-          echo "=== PROCESSES USING THE BOT TOKEN ==="
-          $SSH "$HOST" "ps auxf | grep -iE 'hermes|telegram|gateway' | grep -v grep || echo 'no host hermes processes'"
-          echo ""
-          echo "=== TELEGRAM_BOT_TOKEN ENTRIES IN .env (last 8 chars only) ==="
-          $SSH "$HOST" "cd /opt/botji && grep TELEGRAM_BOT_TOKEN .env | sed 's/.*\(.\{8\}\)$/...\1/'"
-          echo ""
-          echo "--- CODEX STATUS ---"
-          $SSH "$HOST" "docker exec botji-hermes bash -c 'codex --version 2>&1' 2>&1 || echo CODEX_EXEC_FAILED"
+
+          echo "=== CODEX + AUTH STATUS ==="
+          $SSH "$HOST" "docker exec botji-hermes bash -c 'codex --version 2>&1; echo ---; head -c 120 /opt/data/auth.json 2>/dev/null; echo'"
 
   deploy:
     name: Deploy to VPS
