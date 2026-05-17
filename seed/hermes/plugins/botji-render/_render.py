@@ -43,7 +43,7 @@ from _lease import (
     lookup_result,
     record_result,
 )
-from _queue import reserve_slot
+from _fairshare import reserve_slot
 
 logger = logging.getLogger(__name__)
 

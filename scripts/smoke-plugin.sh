@@ -49,11 +49,11 @@ PLUGIN_CONTRACTS = {
         },
     },
     "botji-render": {
-        "submodules": ["_lease", "_queue", "_render"],
+        "submodules": ["_lease", "_fairshare", "_render"],
         "symbols": {
-            "_lease":  ["acquire", "compute_request_hash", "lookup_result", "record_result"],
-            "_queue":  ["reserve_slot", "queue_depth"],
-            "_render": ["render", "RenderError"],
+            "_lease":     ["acquire", "compute_request_hash", "lookup_result", "record_result"],
+            "_fairshare": ["reserve_slot", "queue_depth"],
+            "_render":    ["render", "RenderError"],
         },
     },
     "botji-allowlist": {
@@ -104,7 +104,18 @@ for plugin_dir in plugin_dirs:
     for name in contract["submodules"]:
         total_submodules += 1
         try:
-            importlib.import_module(name)
+            mod = importlib.import_module(name)
+            # Stdlib-collision guard: a submodule like _queue.py can be shadowed
+            # by Python's built-in _queue C extension because the stdlib's
+            # sys.modules cache hits first. Verify the loaded module's __file__
+            # actually points at our plugin directory.
+            mod_file = getattr(mod, "__file__", "") or ""
+            expected_prefix = os.path.realpath(plugin_dir)
+            if mod_file and not os.path.realpath(mod_file).startswith(expected_prefix):
+                raise ImportError(
+                    f"name '{name}' collided with stdlib/site-packages module at "
+                    f"{mod_file!s}; rename the plugin submodule to a unique name."
+                )
             print(f"  ok  {plugin_name}/{name}", flush=True)
         except Exception as exc:
             print(f"  FAIL  {plugin_name}/{name}: {exc}", flush=True)
