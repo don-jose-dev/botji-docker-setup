@@ -51,9 +51,6 @@ services:
       # Codex CLI. Credentials persist under the tenant Hermes volume.
       CODEX_HOME: /opt/data/.codex
       BOTJI_WORKDIR: /workspace
-      BOTJI_CONTRACT_SCHEMA: /opt/data/schemas/prompt_contract.schema.json
-      BOTJI_REVIEW_SCHEMA: /opt/data/schemas/source_fidelity_review.schema.json
-      BOTJI_ARTIFACT_SCHEMA: /opt/data/schemas/artifact_schema.schema.json
       BOTJI_DEFAULT_TRUTH_MODE: ${BOTJI_DEFAULT_TRUTH_MODE:-fidelity}
       BOTJI_ARTIFACT_ROOT: /opt/data/artifacts
       BOTJI_ARTIFACT_MAX_BYTES: ${BOTJI_ARTIFACT_MAX_BYTES:-104857600}
