@@ -98,11 +98,55 @@ if [ -s /tmp/codex-auth.b64 ]; then
   chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/.codex" "$DATA_DIR/.codex/auth.json" 2>/dev/null || true
   chmod 600 "$DATA_DIR/.codex/auth.json"
   echo "    Codex auth.json written to $DATA_DIR/.codex/"
-  # Hermes looks for auth.json at $HERMES_HOME/auth.json (= /opt/data/auth.json inside container)
-  base64 -d /tmp/codex-auth.b64 > "$DATA_DIR/auth.json"
+
+  # Hermes openai-codex does not read the raw Codex CLI auth shape directly.
+  # Convert ~/.codex/auth.json tokens into the Hermes provider auth store.
+  python3 - "$DATA_DIR/.codex/auth.json" "$DATA_DIR/auth.json" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+codex_auth_path = Path(sys.argv[1])
+hermes_auth_path = Path(sys.argv[2])
+
+codex_auth = json.loads(codex_auth_path.read_text())
+tokens = codex_auth.get("tokens")
+if not isinstance(tokens, dict):
+    raise SystemExit("Codex auth.json is missing tokens")
+for key in ("access_token", "refresh_token"):
+    if not isinstance(tokens.get(key), str) or not tokens[key].strip():
+        raise SystemExit(f"Codex auth.json is missing {key}")
+
+try:
+    hermes_auth = json.loads(hermes_auth_path.read_text()) if hermes_auth_path.exists() else {}
+except Exception:
+    hermes_auth = {}
+if not isinstance(hermes_auth, dict):
+    hermes_auth = {}
+
+providers = hermes_auth.get("providers")
+if not isinstance(providers, dict):
+    providers = {}
+    hermes_auth["providers"] = providers
+
+state = providers.get("openai-codex")
+if not isinstance(state, dict):
+    state = {}
+providers["openai-codex"] = state
+
+state["tokens"] = tokens
+state["last_refresh"] = (
+    codex_auth.get("last_refresh")
+    or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+)
+state["auth_mode"] = "chatgpt"
+
+hermes_auth_path.write_text(json.dumps(hermes_auth, indent=2, sort_keys=True) + "\n")
+PY
   chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/auth.json" 2>/dev/null || true
   chmod 600 "$DATA_DIR/auth.json"
-  echo "    Hermes auth.json written to $DATA_DIR/auth.json"
+  echo "    Hermes openai-codex auth state written to $DATA_DIR/auth.json"
 else
   echo "    CODEX_AUTH_B64 not set — skipping auth.json"
 fi

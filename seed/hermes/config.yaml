@@ -1,5 +1,5 @@
 model:
-  default: gpt-5.4-mini
+  default: gpt-5.5
   provider: openai-codex
   base_url: https://chatgpt.com/backend-api/codex
 terminal:
@@ -36,20 +36,20 @@ prompt_caching:
 auxiliary:
   vision:
     provider: codex
-    model: gpt-5.4-mini
+    model: gpt-5.5
     timeout: 120
     download_timeout: 30
   web_extract:
     provider: codex
-    model: gpt-5.4-mini
+    model: gpt-5.5
   session_search:
     provider: codex
-    model: gpt-5.4-mini
+    model: gpt-5.5
     timeout: 60
     max_concurrency: 2
   compression:
     provider: codex
-    model: gpt-5.4-mini
+    model: gpt-5.5
 memory:
   memory_enabled: true
   user_profile_enabled: true

@@ -28,8 +28,8 @@ import zipfile
 
 
 API_MODEL = os.environ.get("BOTJI_IMAGE_MODEL", "gpt-image-2")
-VISION_REVIEW_MODEL = os.environ.get("BOTJI_VISION_REVIEW_MODEL", "gpt-5.4-mini")
-CODEX_CHAT_MODEL = os.environ.get("BOTJI_CODEX_IMAGE_CHAT_MODEL", "gpt-5.4")
+VISION_REVIEW_MODEL = os.environ.get("BOTJI_VISION_REVIEW_MODEL", "gpt-5.5")
+CODEX_CHAT_MODEL = os.environ.get("BOTJI_CODEX_IMAGE_CHAT_MODEL", "gpt-5.5")
 CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 CODEX_IMAGE_INSTRUCTIONS = (
     "You are an image-generation assistant. For source-bound requests, use "

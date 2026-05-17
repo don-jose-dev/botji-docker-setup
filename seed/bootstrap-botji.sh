@@ -43,6 +43,7 @@ copy_file() {
     chown "$OWNER" "$dst" 2>/dev/null || true
     echo "seeded file: $dst"
   else
+    chown "$OWNER" "$dst" 2>/dev/null || true
     echo "kept existing file: $dst"
   fi
 }
@@ -59,6 +60,7 @@ copy_dir() {
     chown -R "$OWNER" "$dst" 2>/dev/null || true
     echo "seeded dir: $dst"
   else
+    chown -R "$OWNER" "$dst" 2>/dev/null || true
     echo "kept existing dir: $dst"
   fi
 }
@@ -82,6 +84,7 @@ copy_file "$SEED/hermes/schemas/artifact_lineage.schema.json" "$DATA/schemas/art
 copy_file "$SEED/hermes/schemas/artifact_schema.schema.json" "$DATA/schemas/artifact_schema.schema.json"
 
 copy_file "$SEED/codex/config.toml" "$DATA/.codex/config.toml"
+chmod 600 "$DATA/.codex/config.toml" 2>/dev/null || true
 
 # Workspace writes are best-effort — the directory may be owned by root on first boot.
 set +e
