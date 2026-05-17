@@ -14,6 +14,10 @@ on:
           - deploy
           - logs
 
+concurrency:
+  group: botji-production-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: don-jose-dev/botji-hermes
@@ -22,6 +26,7 @@ jobs:
   build:
     name: Build and push image
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: github.event_name == 'push' || github.event.inputs.action == 'deploy'
     permissions:
       contents: read
@@ -39,7 +44,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ github.token }}
 
       - name: Extract metadata
         id: meta
@@ -66,6 +71,7 @@ jobs:
   logs:
     name: Fetch container logs
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: production
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'logs'
     permissions:
@@ -73,26 +79,73 @@ jobs:
 
     steps:
       - name: Set up SSH key
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY_B64: ${{ secrets.VPS_SSH_KEY_B64 }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
+          printf '%s' "$VPS_SSH_KEY_B64" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "${VPS_SSH_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            for attempt in 1 2 3 4 5; do
+              if ssh-keyscan -T 10 "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+                break
+              fi
+              sleep 5
+            done
+          fi
+          test -s ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Fetch logs
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes"
-          HOST="${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no scripts/vps-diag.sh "$HOST:/tmp/vps-diag.sh"
-          $SSH "$HOST" "chmod +x /tmp/vps-diag.sh && bash /tmp/vps-diag.sh"
+          set -euo pipefail
+          retry() {
+            local attempts="$1"
+            local delay="$2"
+            shift 2
+            local n=1
+            until "$@"; do
+              local exit_code=$?
+              if [ "$n" -ge "$attempts" ]; then
+                echo "ERROR: command failed after $n attempts: $*" >&2
+                return "$exit_code"
+              fi
+              echo "WARN: command failed ($exit_code), retry $n/$attempts in ${delay}s: $*" >&2
+              sleep "$delay"
+              n=$((n + 1))
+            done
+          }
+
+          SSH_OPTS=(
+            -i ~/.ssh/deploy_key
+            -o StrictHostKeyChecking=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=20
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=3
+          )
+          HOST="${VPS_USER}@${VPS_HOST}"
+
+          retry 8 15 ssh "${SSH_OPTS[@]}" "$HOST" "echo ssh-ok"
+          retry 5 15 scp "${SSH_OPTS[@]}" scripts/vps-diag.sh "$HOST:/tmp/vps-diag.sh"
+          retry 3 20 ssh "${SSH_OPTS[@]}" "$HOST" "chmod +x /tmp/vps-diag.sh && bash /tmp/vps-diag.sh"
 
   deploy:
     name: Deploy to VPS
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: production
     if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event.inputs.action == 'deploy')
     permissions:
@@ -104,37 +157,97 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up SSH key
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY_B64: ${{ secrets.VPS_SSH_KEY_B64 }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
+          printf '%s' "$VPS_SSH_KEY_B64" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "${VPS_SSH_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            for attempt in 1 2 3 4 5; do
+              if ssh-keyscan -T 10 "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+                break
+              fi
+              sleep 5
+            done
+          fi
+          test -s ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
           ssh-keygen -l -f ~/.ssh/deploy_key
 
       - name: Write CI vars file
+        env:
+          DEPLOY_PATH_SECRET: ${{ secrets.DEPLOY_PATH }}
+          GHCR_USER_VALUE: ${{ github.actor }}
+          GHCR_TOKEN_SECRET: ${{ github.token }}
+          IMAGE_REF_VALUE: ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image_digest }}
+          GIT_BRANCH_VALUE: ${{ github.ref_name }}
+          TELEGRAM_BOT_TOKEN_SECRET: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_USERNAME_SECRET: ${{ secrets.TELEGRAM_BOT_USERNAME }}
+          VPS_ENV_SECRET: ${{ secrets.VPS_ENV }}
+          CODEX_AUTH_B64_SECRET: ${{ secrets.CODEX_AUTH_B64 }}
         run: |
-          {
-            echo "DEPLOY_PATH='${{ secrets.DEPLOY_PATH }}'"
-            echo "GHCR_USER='${{ github.actor }}'"
-            echo "IMAGE_REF='ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image_digest }}'"
-            echo "GIT_BRANCH='${{ github.ref_name }}'"
-            echo "GHCR_TOKEN='${{ secrets.GITHUB_TOKEN }}'"
-            echo "CI_TELEGRAM_BOT_TOKEN='${{ secrets.TELEGRAM_BOT_TOKEN }}'"
-            echo "CI_TELEGRAM_BOT_USERNAME='${{ secrets.TELEGRAM_BOT_USERNAME }}'"
-          } > /tmp/ci-vars.env
-          printf '%s' "${{ secrets.VPS_ENV }}" | base64 > /tmp/vps-env.b64
-          # Codex auth — written separately so it never appears in .env
-          printf '%s' "${{ secrets.CODEX_AUTH_B64 }}" > /tmp/codex-auth.b64
+          set -euo pipefail
+          : > /tmp/ci-vars.env
+          write_var() {
+            local key="$1"
+            local value="${2:-}"
+            printf '%s=%q\n' "$key" "$value" >> /tmp/ci-vars.env
+          }
+
+          write_var DEPLOY_PATH "$DEPLOY_PATH_SECRET"
+          write_var GHCR_USER "$GHCR_USER_VALUE"
+          write_var IMAGE_REF "$IMAGE_REF_VALUE"
+          write_var GIT_BRANCH "$GIT_BRANCH_VALUE"
+          write_var GHCR_TOKEN "$GHCR_TOKEN_SECRET"
+          write_var CI_TELEGRAM_BOT_TOKEN "$TELEGRAM_BOT_TOKEN_SECRET"
+          write_var CI_TELEGRAM_BOT_USERNAME "$TELEGRAM_BOT_USERNAME_SECRET"
+
+          printf '%s' "$VPS_ENV_SECRET" | base64 -w 0 > /tmp/vps-env.b64
+          printf '%s' "$CODEX_AUTH_B64_SECRET" > /tmp/codex-auth.b64
+          chmod 600 /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64
 
       - name: Deploy via SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes"
-          HOST="${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
+          set -euo pipefail
+          retry() {
+            local attempts="$1"
+            local delay="$2"
+            shift 2
+            local n=1
+            until "$@"; do
+              local exit_code=$?
+              if [ "$n" -ge "$attempts" ]; then
+                echo "ERROR: command failed after $n attempts: $*" >&2
+                return "$exit_code"
+              fi
+              echo "WARN: command failed ($exit_code), retry $n/$attempts in ${delay}s: $*" >&2
+              sleep "$delay"
+              n=$((n + 1))
+            done
+          }
 
-          # Copy files to server
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          SSH_OPTS=(
+            -i ~/.ssh/deploy_key
+            -o StrictHostKeyChecking=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=20
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=3
+          )
+          HOST="${VPS_USER}@${VPS_HOST}"
+
+          retry 8 15 ssh "${SSH_OPTS[@]}" "$HOST" "echo ssh-ok"
+          retry 5 15 scp "${SSH_OPTS[@]}" \
             scripts/vps-deploy.sh /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 \
             "$HOST:/tmp/"
-
-          # Run deploy
-          $SSH "$HOST" "chmod +x /tmp/vps-deploy.sh && bash /tmp/vps-deploy.sh"
+          retry 3 30 ssh "${SSH_OPTS[@]}" "$HOST" \
+            "chmod +x /tmp/vps-deploy.sh && bash /tmp/vps-deploy.sh"

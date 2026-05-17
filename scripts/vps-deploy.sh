@@ -2,6 +2,25 @@
 # Runs ON the VPS via SSH. CI vars come from /tmp/ci-vars.env (scp'd by Actions).
 set -euo pipefail
 
+ROLLBACK_ON_ERROR=0
+ROLLBACK_DONE=0
+cleanup() {
+  local exit_code=$?
+  if [ "$exit_code" -ne 0 ] && [ "${ROLLBACK_ON_ERROR:-0}" = "1" ] && [ "${ROLLBACK_DONE:-0}" != "1" ]; then
+    rollback_to_previous "script_error" || true
+  fi
+  rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 /tmp/vps-deploy.sh
+}
+trap cleanup EXIT
+
+if command -v flock >/dev/null 2>&1; then
+  exec 9>/tmp/botji-deploy.lock
+  if ! flock -w 600 9; then
+    echo "ERROR: another deploy is still running" >&2
+    exit 1
+  fi
+fi
+
 # Load CI variables
 source /tmp/ci-vars.env
 DEPLOY_PATH="${DEPLOY_PATH:-/opt/botji}"
@@ -11,6 +30,11 @@ echo "    Image: $IMAGE_REF"
 echo "    Branch: $GIT_BRANCH"
 
 cd "$DEPLOY_PATH"
+
+PREVIOUS_GIT_HEAD="$(git rev-parse HEAD 2>/dev/null || true)"
+PREVIOUS_IMAGE="$(docker inspect botji-hermes --format='{{.Config.Image}}' 2>/dev/null || true)"
+echo "    Previous commit: ${PREVIOUS_GIT_HEAD:-none}"
+echo "    Previous image: ${PREVIOUS_IMAGE:-none}"
 
 echo "==> GHCR login"
 echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
@@ -103,47 +127,74 @@ chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$WORKSPACE_DIR" 2>/dev/null 
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   --profile bootstrap run --rm bootstrap
 
-echo "==> Force-update code components (plugin, skills, schemas, prompts)"
-# These contain code, not user data — always reseed from the latest image.
-for skill_dir in seed/hermes/skills/botji-*; do
-  [ -d "$skill_dir" ] || continue
-  skill_name="$(basename "$skill_dir")"
-  rm -rf "$DATA_DIR/skills/$skill_name"
-  cp -R "$skill_dir" "$DATA_DIR/skills/" 2>/dev/null || true
-done
-# Seed every botji-* plugin from the repo into the tenant data volume.
-# The list is implicit (whatever ships under seed/hermes/plugins/) so new
-# plugins don't require a deploy-script edit. The smoke gate below catches
-# any that fail to import before the container restarts.
-mkdir -p "$DATA_DIR/plugins"
-for plugin_dir in seed/hermes/plugins/botji-*; do
-  [ -d "$plugin_dir" ] || continue
-  plugin_name="$(basename "$plugin_dir")"
-  rm -rf "$DATA_DIR/plugins/$plugin_name"
-  cp -R "$plugin_dir" "$DATA_DIR/plugins/"
-  echo "    seeded plugin: $plugin_name"
-done
+sync_code_components() {
+  # Code artefacts — always reseed from the checked-out release. The glob-based
+  # approach means new plugins/skills ship automatically without editing this script.
+  mkdir -p "$DATA_DIR/skills" "$DATA_DIR/plugins" "$DATA_DIR/prompts" "$DATA_DIR/schemas"
+  for skill_dir in seed/hermes/skills/botji-*; do
+    [ -d "$skill_dir" ] || continue
+    skill_name="$(basename "$skill_dir")"
+    rm -rf "$DATA_DIR/skills/$skill_name"
+    cp -R "$skill_dir" "$DATA_DIR/skills/" 2>/dev/null || true
+  done
+  for plugin_dir in seed/hermes/plugins/botji-*; do
+    [ -d "$plugin_dir" ] || continue
+    plugin_name="$(basename "$plugin_dir")"
+    rm -rf "$DATA_DIR/plugins/$plugin_name"
+    cp -R "$plugin_dir" "$DATA_DIR/plugins/"
+    echo "    seeded plugin: $plugin_name"
+  done
+  rm -rf "$DATA_DIR/prompts"
+  cp -R seed/hermes/prompts "$DATA_DIR/"
+  cp seed/hermes/schemas/*.json "$DATA_DIR/schemas/" 2>/dev/null || true
+  chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" \
+    "$DATA_DIR/plugins" "$DATA_DIR/skills" "$DATA_DIR/prompts" "$DATA_DIR/schemas" 2>/dev/null || true
+  mkdir -p "$DATA_DIR/verdicts"
+  chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/verdicts" 2>/dev/null || true
+}
 
-rm -rf "$DATA_DIR/prompts"
-cp -R seed/hermes/prompts "$DATA_DIR/"
-cp seed/hermes/schemas/*.json "$DATA_DIR/schemas/" 2>/dev/null || true
-chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" \
-  "$DATA_DIR/plugins" "$DATA_DIR/skills" "$DATA_DIR/prompts" "$DATA_DIR/schemas" 2>/dev/null || true
+rollback_to_previous() {
+  ROLLBACK_DONE=1
+  local failed_status="$1"
+  echo "==> Rolling back after failed deploy ($failed_status)" >&2
+
+  if [ -n "${PREVIOUS_GIT_HEAD:-}" ]; then
+    git reset --hard "$PREVIOUS_GIT_HEAD" || true
+    sync_code_components || true
+    echo "    Repo and code components restored to $PREVIOUS_GIT_HEAD" >&2
+  fi
+
+  if [ -n "${PREVIOUS_IMAGE:-}" ]; then
+    export BOTJI_PROD_IMAGE="$PREVIOUS_IMAGE"
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+      up -d --force-recreate --no-build --remove-orphans || true
+    for i in $(seq 1 15); do
+      ROLLBACK_STATUS=$(docker inspect botji-hermes \
+        --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")
+      [ "$ROLLBACK_STATUS" = "healthy" ] && break
+      sleep 4
+    done
+    echo "    Rollback status: ${ROLLBACK_STATUS:-unknown}" >&2
+    [ "${ROLLBACK_STATUS:-}" = "healthy" ] || docker logs botji-hermes --tail 40 >&2 || true
+  else
+    echo "    No previous image available; manual intervention required" >&2
+  fi
+}
+
+ROLLBACK_ON_ERROR=1
+
+echo "==> Force-update code components (plugin, skills, schemas, prompts)"
+sync_code_components
 echo "    Plugins, skills, schemas, prompts updated from seed."
-mkdir -p "$DATA_DIR/verdicts"
-chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/verdicts" 2>/dev/null || true
-echo "    Verdicts dir ensured: $DATA_DIR/verdicts"
 
 echo "==> Pre-flight plugin smoke test"
-# Imports every plugin's submodules + asserts public symbols exist for every
-# plugin defined in PLUGIN_CONTRACTS within smoke-plugin.sh.  Aborts the deploy
-# before container start if any plugin is broken — prevents the silent ~60 min
-# outages we saw on 2026-05-17 between 11:24 and 12:20 where bad imports shipped
-# to prod and the agent silently bypassed the fidelity harness.
+# Imports every plugin's submodules + asserts public symbols exist. Aborts the
+# deploy before container start if any plugin is broken — prevents silent outages
+# where bad imports ship to prod and the agent bypasses the fidelity harness.
 if [ -x scripts/smoke-plugin.sh ]; then
   if ! PLUGINS_ROOT="$DATA_DIR/plugins" bash scripts/smoke-plugin.sh; then
     echo "ERROR: Plugin smoke test FAILED — aborting deploy before container start." >&2
-    echo "       Run locally to debug: PLUGINS_ROOT=seed/hermes/plugins bash scripts/smoke-plugin.sh" >&2
+    echo "       Run locally: PLUGINS_ROOT=seed/hermes/plugins bash scripts/smoke-plugin.sh" >&2
     exit 2
   fi
 else
@@ -235,10 +286,23 @@ STATUS=$(docker inspect botji-hermes \
   --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")
 echo "    Status: $STATUS"
 if [ "$STATUS" = "healthy" ]; then
+  mkdir -p "$DATA_DIR/.botji"
+  cat > "$DATA_DIR/.botji/LAST_DEPLOY.json" <<EOF
+{
+  "deployed_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "git_branch": "$GIT_BRANCH",
+  "git_commit": "$(git rev-parse HEAD)",
+  "image_ref": "$IMAGE_REF",
+  "container_health": "$STATUS"
+}
+EOF
+  chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/.botji/LAST_DEPLOY.json" 2>/dev/null || true
+  ROLLBACK_ON_ERROR=0
   echo "==> Deploy complete."
 else
   echo "ERROR: Container not healthy ($STATUS)" >&2
-  docker logs botji-hermes --tail 20 >&2 || true
+  docker logs botji-hermes --tail 40 >&2 || true
+  rollback_to_previous "$STATUS"
   exit 1
 fi
 
