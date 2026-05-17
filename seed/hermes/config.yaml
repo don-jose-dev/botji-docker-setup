@@ -74,6 +74,17 @@ agent:
   max_turns: 60
   verbose: false
   reasoning_effort: medium
+  # Force native vision attachment on user-attached images. gpt-5.4-mini is
+  # multimodal (models.dev supports_vision=True for openai-codex/gpt-5.4-mini);
+  # without this, auxiliary.vision.provider being set causes the auto router to
+  # short-circuit into text mode (vision_analyze pre-pass). Native mode skips
+  # the ~7 s describe step and sends pixels straight to the chat model,
+  # eliminating the describe-drift fidelity loss that triggered the
+  # "layout present / layout missing" contradictions in earlier reviews.
+  # Trade-off: prompt cache misses on image-carrying turns (text follow-ups
+  # in the same session still cache). If you switch to a non-vision chat
+  # model, set this back to "auto" so routing falls back to text gracefully.
+  image_input_mode: native
   personalities:
     helpful: You are a helpful, friendly AI assistant.
     concise: You are a concise assistant. Keep responses brief and to the point.

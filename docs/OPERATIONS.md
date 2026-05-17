@@ -148,6 +148,65 @@ for the full mapping.
 
 ---
 
+## Image routing (gateway → chat model)
+
+Hermes decides per-turn whether user-attached images go to the chat model as
+**native pixels** or as a **text description** produced by `vision_analyze`.
+The decision is made in `agent/image_routing.py::decide_image_input_mode()`
+from two inputs:
+
+1. `agent.image_input_mode` in `config.yaml` — `native` / `text` / `auto`.
+2. The active provider/model's `supports_vision` flag in `models.dev`.
+
+### Current setting
+
+```yaml
+agent:
+  image_input_mode: native    # pixels go straight to the chat model
+```
+
+Native is the right choice here because `openai-codex/gpt-5.4-mini` is
+multimodal (`supports_vision=True`) and the auxiliary vision backend and the
+chat model share the same OAuth — pre-analyzing buys nothing and costs ~7 s
+per image turn plus describe-drift fidelity loss.
+
+### When to revert to `auto` or `text`
+
+Set this to `auto` if you switch the chat model to one that is *not*
+vision-capable (auto falls back to text mode gracefully when capability
+lookup returns False). Set to `text` only if prompt-cache savings on
+image-carrying turns outweigh the fidelity cost — typically when the same
+image is iterated on across many turns and you can afford the describe step.
+
+### Verifying the routing
+
+After deploy, the next image turn should log either:
+
+```
+Image routing: native (mode=native).
+```
+
+or the legacy:
+
+```
+Image routing: text (mode=text). Pre-analyzing 1 image(s) via vision_analyze.
+```
+
+If you still see `mode=text` with `image_input_mode: native` in config, the
+container hasn't picked up the new `config.yaml` — `docker compose restart hermes`.
+
+### Trade-off summary
+
+| | text mode | native mode (current) |
+|---|---|---|
+| Per-image-turn overhead | +7 s for `vision_analyze` | 0 s |
+| Image fidelity | text-described (lossy) | pixels (exact) |
+| Cache on image turns | cached (text stub) | miss |
+| Cache on text follow-ups | cached | cached |
+| Failure if model loses vision | graceful text fallback | hard 4xx |
+
+---
+
 ## Telegram operations
 
 ### Add a user
