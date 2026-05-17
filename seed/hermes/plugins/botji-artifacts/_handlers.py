@@ -231,22 +231,11 @@ def _handle_artifact_review(args: dict[str, Any], **_: Any) -> str:
         else:
             notice = "[DELIVERY GATE: CLEAR] Artifact passed source-fidelity review."
 
-        # Write a Default-FAIL verdict file under /opt/data/verdicts/ keyed
-        # on the session id. The botji-gate plugin reads this file in its
-        # transform_llm_output hook and architecturally blocks the response
-        # when the gate is closed — promoting the verdict from advisory
-        # (agent must comply) to authoritative (framework rewrites response).
-        session_id = str(_.get("session_id") or args.get("session_id") or "").strip()
-        if session_id:
-            _write_verdict_file(
-                session_id=session_id,
-                verdict=verdict,
-                delivery_gate=delivery_gate,
-                recommended_action=recommended_action,
-                primary_blocker=primary_blocker,
-                retry_guidance=retry_guidance,
-                review=review,
-            )
+        # Verdict file is written by the transform_tool_result hook in
+        # botji-artifacts/__init__.py — plugin tool handlers don't receive
+        # session_id (registry.dispatch only forwards task_id+user_task),
+        # but the post-tool hook does. Keeping _write_verdict_file in this
+        # module as the shared writer; the hook is the call site.
 
         return _json({
             "success": True,

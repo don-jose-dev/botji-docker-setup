@@ -12,3 +12,5 @@ provides_tools:
   - artifact_review
   - artifact_list
   - artifact_read
+provides_hooks:
+  - transform_tool_result

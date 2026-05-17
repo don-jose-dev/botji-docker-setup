@@ -22,8 +22,11 @@ prompts/        — AI instruction templates as .md files
 """
 from __future__ import annotations
 
+import json
+import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 # Add this directory to sys.path so sibling submodules are importable.
 _PLUGIN_DIR = str(Path(__file__).parent)
@@ -47,7 +50,58 @@ from _handlers import (  # noqa: E402
     _handle_artifact_review,
     _handle_artifact_list,
     _handle_artifact_read,
+    _write_verdict_file,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _on_artifact_review_result(
+    tool_name: str,
+    args: dict,
+    result: Any,
+    *,
+    session_id: str = "",
+    **_: Any,
+) -> None:
+    """transform_tool_result hook: persist the verdict file for botji-gate.
+
+    Plugin tool handlers do not receive session_id (registry.dispatch only
+    forwards task_id + user_task). The transform_tool_result hook, however,
+    is called with session_id by model_tools.handle_function_call. This is
+    where we write the verdict file so botji-gate can read it back keyed on
+    the same session_id its transform_llm_output hook receives.
+
+    Returns None — we only side-effect; the result string is unchanged.
+    """
+    if tool_name != "artifact_review" or not session_id:
+        return None
+    try:
+        payload = json.loads(result) if isinstance(result, str) else (result or {})
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(payload, dict) or not payload.get("success"):
+        return None
+    review = payload.get("review")
+    if not isinstance(review, dict):
+        return None
+    try:
+        _write_verdict_file(
+            session_id=session_id,
+            verdict=str(payload.get("verdict") or ""),
+            delivery_gate=str(payload.get("delivery_gate") or ""),
+            recommended_action=str(payload.get("recommended_action") or ""),
+            primary_blocker=payload.get("primary_blocker"),
+            retry_guidance=payload.get("retry_guidance"),
+            review=review,
+        )
+        logger.info(
+            "botji-artifacts: wrote verdict file session=%s gate=%s",
+            session_id, payload.get("delivery_gate"),
+        )
+    except Exception:
+        logger.exception("botji-artifacts: failed to write verdict file")
+    return None
 
 
 def register(ctx) -> None:
@@ -100,3 +154,4 @@ def register(ctx) -> None:
         handler=_handle_artifact_read,
         description=ARTIFACT_READ_SCHEMA["description"],
     )
+    ctx.register_hook("transform_tool_result", _on_artifact_review_result)
