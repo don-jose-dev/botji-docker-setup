@@ -184,6 +184,41 @@ The `Allowed transform:` prefix tells the review that this addition was user-aut
 
 ---
 
+## Spatial manifest — mandatory for any sketch-source transform
+
+When the source is a sketch, floor plan, or 2D schematic and the user wants a 3D render:
+
+**Before calling any tool**, write a spatial manifest in your reply. Format:
+```
+SPATIAL MANIFEST — [scene type]
+LEFT WALL (L→R): [element 1] — [element 2] — [element 3]
+RIGHT WALL (L→R): [element 1] — [element 2]
+BACK WALL: [elements if present]
+CENTRAL ELEMENT: [type, if present]
+TOTAL ELEMENT COUNT: [N]
+CRITICAL ADJACENCY: [A] directly adj. to [B] — zero gap
+```
+
+**Why this is mandatory:**
+- gpt-image-2 hallucinates elements between adjacent objects (extra cabinets, extra panels, inserted fillers)
+- Without an explicit element count, it adds or removes objects between attempts
+- The manifest becomes the source of truth for review: if `artifact_review` blocks, the review compares against the manifest, not the drawing
+
+**Spatial manifest → transform brief → review → delivery.** Skipping the manifest step produces unanchored FORBIDDEN lists that miss the actual violations.
+
+**On a blocked retry:**
+Pass `prior_blocker` to `artifact_transform` from the review result:
+```python
+artifact_transform(
+    ...
+    prior_blocker=review["primary_blocker"],  # verbatim from last review
+    forbidden_elements=[...original list...]  # escalated constraint prepended automatically
+)
+```
+The plugin prepends the prior blocker as the first FORBIDDEN entry so gpt-image-2 cannot repeat the same violation.
+
+---
+
 ## Context discipline (performance)
 
 Context fills fast. Every call to `vision_analyze` injects ~150 K chars into the conversation history and costs a compression event (~60 s) within 1-2 turns. Avoid it.

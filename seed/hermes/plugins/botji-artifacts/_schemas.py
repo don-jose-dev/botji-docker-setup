@@ -140,6 +140,10 @@ ARTIFACT_TRANSFORM_SCHEMA = _tool_schema(
                 "items": {"type": "string"},
                 "description": "Elements to explicitly forbid in edit_image output — name what gpt-image-2 is likely to hallucinate for this scene.",
             },
+            "prior_blocker": {
+                "type": "string",
+                "description": "primary_blocker text from the previous review verdict. When set, it is prepended as the first FORBIDDEN constraint so the retry directly targets the prior failure.",
+            },
         },
         "required": ["source_artifact_ids"],
     },

@@ -148,6 +148,14 @@ def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
         forbidden = [str(s).strip() for s in (args.get("forbidden_elements") or []) if str(s).strip()]
         raw_instructions = str(args.get("instructions") or "").strip()
 
+        # Retry escalation: if the caller provides the prior attempt's primary_blocker,
+        # prepend it verbatim as the first FORBIDDEN constraint so gpt-image-2 cannot
+        # repeat the exact same violation on the next attempt.
+        prior_blocker = str(args.get("prior_blocker") or "").strip()
+        if prior_blocker:
+            escalated = f"CRITICAL — prior attempt was blocked for: {prior_blocker}. DO NOT repeat this."
+            forbidden = [escalated] + forbidden
+
         if any([camera, light, mood, subject, preserve, forbidden]):
             parts: list[str] = []
             if camera:    parts.append(f"CAMERA: {camera}")
