@@ -49,7 +49,13 @@ def _openai_codex_image_generate(
     resolved_size = _codex_size_for_sources(size, source_artifacts)
     content: list[dict[str, Any]] = [{
         "type": "input_text",
-        "text": load_prompt("image_generation").replace("{{FIDELITY_MODE}}", fidelity_mode).replace("{{INSTRUCTIONS}}", prompt),
+        "text": (
+            load_prompt("premium_baseline")
+            + "\n\n"
+            + load_prompt("image_generation")
+                .replace("{{FIDELITY_MODE}}", fidelity_mode)
+                .replace("{{INSTRUCTIONS}}", prompt)
+        ),
     }]
     for index, artifact in enumerate(source_artifacts, start=1):
         content.append({"type": "input_text", "text": f"Source image {index}: {artifact['artifact_id']}"})
