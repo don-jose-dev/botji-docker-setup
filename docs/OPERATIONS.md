@@ -209,34 +209,31 @@ container hasn't picked up the new `config.yaml` — `docker compose restart her
 
 ## Telegram operations
 
-### Add a user
+### Add a user (preferred — file-backed allowlist, no restart)
 
-Edit `/opt/botji/.env`:
+Edit `/opt/botji/data/botji/allowed_users.json`:
 
-```
-TELEGRAM_ALLOWED_USERS=825981247,6912656288,<new-id>
-```
-
-Then **recreate the container** so the new `.env` is read at container-create
-time:
-
-```sh
-cd /opt/botji
-IMG=$(docker inspect botji-hermes --format '{{.Config.Image}}')
-BOTJI_PROD_IMAGE="$IMG" docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-  up -d --force-recreate hermes
+```json
+{
+  "users": ["825981247", "6912656288", "<new-id>"],
+  "_comment": "Each entry is a Telegram numeric ID. Hot-reloaded on next message; no restart needed."
+}
 ```
 
-`docker compose restart` is **not enough** — it reuses the existing container's
-env vars from create time and silently ignores `.env` changes. Persistent
-volumes (data, plugins, config.yaml) survive the recreate.
+The `botji-allowlist` plugin watches the file via mtime and re-reads on
+every Telegram message. The new user can DM immediately — no restart, no
+container recreate, no env-var edit.
 
-Verify after recreate:
+To find a user's Telegram ID: have them DM the bot once, then
+`grep 'rejected telegram user' /opt/data/logs/gateway.log` — the ID is logged.
 
-```sh
-docker exec botji-hermes printenv TELEGRAM_ALLOWED_USERS
-# Should list every authorized chat ID.
-```
+### Add a user (legacy — env-var fallback)
+
+If `allowed_users.json` is missing on first boot, the plugin bootstraps it
+from the `TELEGRAM_ALLOWED_USERS` env var. After bootstrap, the env var is
+ignored. To revert to env-var mode, delete the JSON file and recreate the
+container — but the file-backed path is strictly better and you should
+prefer it.
 
 ### Get a user's Telegram ID
 

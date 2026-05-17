@@ -231,6 +231,23 @@ def _handle_artifact_review(args: dict[str, Any], **_: Any) -> str:
         else:
             notice = "[DELIVERY GATE: CLEAR] Artifact passed source-fidelity review."
 
+        # Write a Default-FAIL verdict file under /opt/data/verdicts/ keyed
+        # on the session id. The botji-gate plugin reads this file in its
+        # transform_llm_output hook and architecturally blocks the response
+        # when the gate is closed — promoting the verdict from advisory
+        # (agent must comply) to authoritative (framework rewrites response).
+        session_id = str(_.get("session_id") or args.get("session_id") or "").strip()
+        if session_id:
+            _write_verdict_file(
+                session_id=session_id,
+                verdict=verdict,
+                delivery_gate=delivery_gate,
+                recommended_action=recommended_action,
+                primary_blocker=primary_blocker,
+                retry_guidance=retry_guidance,
+                review=review,
+            )
+
         return _json({
             "success": True,
             "delivery_gate_notice": notice,
@@ -245,4 +262,43 @@ def _handle_artifact_review(args: dict[str, Any], **_: Any) -> str:
         })
     except Exception as exc:
         return _json({"success": False, "error": str(exc), "error_type": type(exc).__name__})
+
+
+def _write_verdict_file(
+    *,
+    session_id: str,
+    verdict: str,
+    delivery_gate: str,
+    recommended_action: str,
+    primary_blocker: Any,
+    retry_guidance: Any,
+    review: dict[str, Any],
+) -> None:
+    """Persist the per-axis verdict the botji-gate hook reads.
+
+    Format matches what botji-gate expects: top-level delivery_gate string
+    plus an ``axes`` dict mapping axis name -> True/False. The hook reads
+    the file by session_id and blocks delivery when any axis is False.
+    """
+    verdict_root = Path(os.environ.get("BOTJI_VERDICT_ROOT", "/opt/data/verdicts"))
+    verdict_root.mkdir(parents=True, exist_ok=True)
+    axes_map = {
+        ax.get("axis"): (ax.get("severity") in (None, "none", "low") and ax.get("compare_status") != "conflict")
+        for ax in (review.get("axes") or [])
+        if ax.get("axis")
+    }
+    payload = {
+        "verdict": verdict,
+        "delivery_gate": delivery_gate,
+        "recommended_action": recommended_action,
+        "primary_blocker": primary_blocker,
+        "retry_guidance": retry_guidance,
+        "axes": axes_map,
+        "review_id": review.get("review_id"),
+        "reviewed_output_ref": review.get("reviewed_output_ref"),
+    }
+    out_path = verdict_root / f"{session_id}.verdict.json"
+    tmp_path = out_path.with_suffix(".verdict.json.tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    tmp_path.replace(out_path)  # atomic rename so the gate never reads a partial file
 

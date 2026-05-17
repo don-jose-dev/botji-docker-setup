@@ -40,14 +40,15 @@ jobs:
       - name: Compile-check every plugin module
         # py_compile catches syntax errors before runtime; cheap and deterministic.
         run: |
-          python -m compileall -q seed/hermes/plugins/botji-artifacts/
+          python -m compileall -q seed/hermes/plugins/
 
       - name: Run plugin smoke test
-        # Imports every submodule, exercises plugin entry point, verifies public symbols.
-        # The same script runs as the pre-flight gate in vps-deploy.sh.
+        # Imports every submodule of every botji-* plugin, exercises each plugin
+        # entry point, verifies public symbols.  Same script + contract that runs
+        # as the pre-flight gate in vps-deploy.sh.
         run: |
           chmod +x scripts/smoke-plugin.sh
-          PLUGIN_DIR="$(pwd)/seed/hermes/plugins/botji-artifacts" \
+          PLUGINS_ROOT="$(pwd)/seed/hermes/plugins" \
             bash scripts/smoke-plugin.sh
 
       - name: Compile-check every runtime script

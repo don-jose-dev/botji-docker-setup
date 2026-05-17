@@ -1,0 +1,6 @@
+name: botji-gate
+version: 1.0.0
+description: "Default-FAIL delivery gate via transform_llm_output hook. Architectural enforcement of fidelity verdicts."
+author: Botji
+kind: standalone
+requires_env: []

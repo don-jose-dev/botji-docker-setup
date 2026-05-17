@@ -1,0 +1,6 @@
+name: botji-allowlist
+version: 1.0.0
+description: "File-backed Telegram allowlist with hot-reload. No container recreate to add users."
+author: Botji
+kind: standalone
+requires_env: []

@@ -103,24 +103,36 @@ for skill in botji-artifact-fidelity botji-2d-to-3d botji-source-fidelity botji-
   rm -rf "$DATA_DIR/skills/$skill"
   cp -R "seed/hermes/skills/$skill" "$DATA_DIR/skills/" 2>/dev/null || true
 done
-rm -rf "$DATA_DIR/plugins/botji-artifacts"
-cp -R seed/hermes/plugins/botji-artifacts "$DATA_DIR/plugins/"
+# Seed every botji-* plugin from the repo into the tenant data volume.
+# The list is implicit (whatever ships under seed/hermes/plugins/) so new
+# plugins don't require a deploy-script edit. The smoke gate below catches
+# any that fail to import before the container restarts.
+mkdir -p "$DATA_DIR/plugins"
+for plugin_dir in seed/hermes/plugins/botji-*; do
+  [ -d "$plugin_dir" ] || continue
+  plugin_name="$(basename "$plugin_dir")"
+  rm -rf "$DATA_DIR/plugins/$plugin_name"
+  cp -R "$plugin_dir" "$DATA_DIR/plugins/"
+  echo "    seeded plugin: $plugin_name"
+done
+
 rm -rf "$DATA_DIR/prompts"
 cp -R seed/hermes/prompts "$DATA_DIR/"
 cp seed/hermes/schemas/*.json "$DATA_DIR/schemas/" 2>/dev/null || true
 chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" \
   "$DATA_DIR/plugins" "$DATA_DIR/skills" "$DATA_DIR/prompts" "$DATA_DIR/schemas" 2>/dev/null || true
-echo "    Plugin, skills, schemas, prompts updated from seed."
+echo "    Plugins, skills, schemas, prompts updated from seed."
 
 echo "==> Pre-flight plugin smoke test"
-# Imports every botji-artifacts submodule and asserts public symbols exist.
-# Aborts the deploy before container start if the plugin is broken — prevents the
-# silent ~60 min outages we saw on 2026-05-17 between 11:24 and 12:20 where bad
-# imports shipped to prod and the agent silently bypassed the fidelity harness.
+# Imports every plugin's submodules + asserts public symbols exist for every
+# plugin defined in PLUGIN_CONTRACTS within smoke-plugin.sh.  Aborts the deploy
+# before container start if any plugin is broken — prevents the silent ~60 min
+# outages we saw on 2026-05-17 between 11:24 and 12:20 where bad imports shipped
+# to prod and the agent silently bypassed the fidelity harness.
 if [ -x scripts/smoke-plugin.sh ]; then
-  if ! PLUGIN_DIR="$DATA_DIR/plugins/botji-artifacts" bash scripts/smoke-plugin.sh; then
+  if ! PLUGINS_ROOT="$DATA_DIR/plugins" bash scripts/smoke-plugin.sh; then
     echo "ERROR: Plugin smoke test FAILED — aborting deploy before container start." >&2
-    echo "       Run locally to debug: PLUGIN_DIR=seed/hermes/plugins/botji-artifacts bash scripts/smoke-plugin.sh" >&2
+    echo "       Run locally to debug: PLUGINS_ROOT=seed/hermes/plugins bash scripts/smoke-plugin.sh" >&2
     exit 2
   fi
 else
