@@ -36,6 +36,7 @@ if _PLUGIN_DIR not in sys.path:
 from _schemas import (  # noqa: E402
     ARTIFACT_REGISTER_SCHEMA,
     ARTIFACT_EXTRACT_SCHEMA,
+    ARTIFACT_EXTRACT_MANIFEST_SCHEMA,
     ARTIFACT_NORMALIZE_SCHEMA,
     ARTIFACT_TRANSFORM_SCHEMA,
     ARTIFACT_REVIEW_SCHEMA,
@@ -45,6 +46,7 @@ from _schemas import (  # noqa: E402
 from _handlers import (  # noqa: E402
     _handle_artifact_register,
     _handle_artifact_extract,
+    _handle_artifact_extract_manifest,
     _handle_artifact_normalize,
     _handle_artifact_transform,
     _handle_artifact_review,
@@ -129,6 +131,13 @@ def register(ctx) -> None:
         schema=ARTIFACT_EXTRACT_SCHEMA,
         handler=_handle_artifact_extract,
         description=ARTIFACT_EXTRACT_SCHEMA["description"],
+    )
+    ctx.register_tool(
+        name="artifact_extract_manifest",
+        toolset="file",
+        schema=ARTIFACT_EXTRACT_MANIFEST_SCHEMA,
+        handler=_handle_artifact_extract_manifest,
+        description=ARTIFACT_EXTRACT_MANIFEST_SCHEMA["description"],
     )
     ctx.register_tool(
         name="artifact_normalize",

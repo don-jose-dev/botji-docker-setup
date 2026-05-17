@@ -316,6 +316,67 @@ def _collect_codex_image_b64(
     return image_b64
 
 
+def _codex_extract_manifest(artifact: dict[str, Any]) -> dict[str, Any]:
+    """Extract a structured spatial manifest from an image using vision.
+
+    Calls the Codex Responses API with the manifest_extract prompt and returns
+    a parsed dict. Raises RuntimeError if Codex is unavailable or returns no text.
+    """
+    client = _build_codex_client()
+    if client is None:
+        raise RuntimeError("No Codex/ChatGPT OAuth token available for manifest extraction")
+
+    content: list[dict[str, Any]] = [
+        {"type": "input_text", "text": load_prompt("manifest_extract")},
+        {"type": "input_image", "image_url": _data_url(Path(artifact["path"]), artifact.get("detected_type") or "image/png")},
+    ]
+    text_parts: list[str] = []
+    with client.responses.stream(
+        model=CODEX_CHAT_MODEL,
+        store=False,
+        instructions="You are a spatial-analysis assistant. Extract structured manifests from images. Return only valid JSON.",
+        input=[{"type": "message", "role": "user", "content": content}],
+    ) as stream:
+        for event in stream:
+            delta = getattr(event, "delta", None)
+            if isinstance(delta, str):
+                text_parts.append(delta)
+        response = stream.get_final_response()
+
+    text = getattr(response, "output_text", None) or "".join(text_parts)
+    if not text:
+        raise RuntimeError("manifest extraction returned no text")
+
+    # Parse JSON — strip markdown fences if present
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        lines = lines[1:] if lines and lines[0].startswith("```") else lines
+        lines = lines[:-1] if lines and lines[-1].strip().startswith("```") else lines
+        stripped = "\n".join(lines).strip()
+
+    try:
+        import json as _json
+        manifest = _json.loads(stripped)
+    except Exception:
+        start, end = stripped.find("{"), stripped.rfind("}")
+        if start != -1 and end > start:
+            try:
+                import json as _json
+                manifest = _json.loads(stripped[start:end + 1])
+            except Exception:
+                manifest = {}
+        else:
+            manifest = {}
+
+    return {
+        "provider": "openai-codex",
+        "model": CODEX_CHAT_MODEL,
+        "manifest": manifest,
+        "raw_text": text,
+    }
+
+
 def _codex_vision_compare(sources: list[dict[str, Any]], output: dict[str, Any], fidelity_requirements: list[str]) -> dict[str, Any]:
     client = _build_codex_client()
     if client is None:

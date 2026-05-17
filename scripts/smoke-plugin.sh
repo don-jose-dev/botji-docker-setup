@@ -36,9 +36,11 @@ PLUGIN_CONTRACTS = {
         "symbols": {
             "_handlers": ["_handle_artifact_register", "_handle_artifact_transform",
                           "_handle_artifact_review", "_handle_artifact_normalize",
-                          "_handle_artifact_extract", "_handle_artifact_list", "_handle_artifact_read"],
+                          "_handle_artifact_extract", "_handle_artifact_extract_manifest",
+                          "_handle_artifact_list", "_handle_artifact_read"],
             "_schemas":  ["ARTIFACT_TRANSFORM_SCHEMA", "ARTIFACT_REVIEW_SCHEMA",
-                          "ARTIFACT_REGISTER_SCHEMA", "ARTIFACT_NORMALIZE_SCHEMA"],
+                          "ARTIFACT_REGISTER_SCHEMA", "ARTIFACT_NORMALIZE_SCHEMA",
+                          "ARTIFACT_EXTRACT_MANIFEST_SCHEMA"],
             "_review":   ["_build_review", "_reviews_dir"],
             "_rendering": ["_resolve_schema_payload", "_render_schema_preview_png",
                            "_create_output_artifact", "_load_evidence"],

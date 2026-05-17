@@ -28,7 +28,7 @@ from _extraction import (
     _extract_artifact, _build_normalized_schema, _coerce_source_ids,
 )
 from _normalization import _exact_copy_transform, _render_schema_transform
-from _codex import _openai_codex_image_generate, _resolve_provider_route
+from _codex import _openai_codex_image_generate, _resolve_provider_route, _codex_extract_manifest
 from _review import _build_review, _reviews_dir
 from _vision import _coerce_review_items
 
@@ -80,6 +80,47 @@ def _handle_artifact_extract(args: dict[str, Any], **_: Any) -> str:
             raise ValueError(f"requested adapter {adapter} does not match artifact adapter {artifact.get('adapter')}")
         evidence = _extract_artifact(artifact, str(args.get("detail") or "metadata"), str(args.get("intent") or "review"))
         return _json({"success": True, "artifact_id": artifact["artifact_id"], "evidence": evidence})
+    except Exception as exc:
+        return _json({"success": False, "error": str(exc), "error_type": type(exc).__name__})
+
+
+def _handle_artifact_extract_manifest(args: dict[str, Any], **_: Any) -> str:
+    """Extract a structured spatial manifest from an image artifact using vision.
+
+    Returns a manifest with scene_type, source_modality, elements[], element_count,
+    adjacency_constraints[], layout_hints[], and fidelity_requirements[] that are
+    ready to pass directly to artifact_review.
+    """
+    try:
+        artifact = _load_artifact(str(args.get("artifact_id")))
+        if artifact.get("adapter") != "image":
+            raise ValueError(f"artifact_extract_manifest requires an image artifact, got adapter={artifact.get('adapter')}")
+
+        result = _codex_extract_manifest(artifact)
+        manifest = result.get("manifest") or {}
+
+        evidence = _store_evidence(
+            artifact,
+            extractor="codex_manifest_extractor",
+            claim_level="reviewed",
+            summary=(
+                f"Spatial manifest extracted: scene={manifest.get('scene_type', 'unknown')}, "
+                f"modality={manifest.get('source_modality', 'unknown')}, "
+                f"elements={manifest.get('element_count', '?')}"
+            ),
+            data={
+                "manifest": manifest,
+                "provider": result.get("provider"),
+                "model": result.get("model"),
+            },
+        )
+        return _json({
+            "success": True,
+            "artifact_id": artifact["artifact_id"],
+            "manifest": manifest,
+            "fidelity_requirements": manifest.get("fidelity_requirements") or [],
+            "evidence_id": evidence.get("evidence_id"),
+        })
     except Exception as exc:
         return _json({"success": False, "error": str(exc), "error_type": type(exc).__name__})
 

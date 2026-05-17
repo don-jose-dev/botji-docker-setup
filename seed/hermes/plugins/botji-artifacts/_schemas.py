@@ -89,6 +89,18 @@ ARTIFACT_NORMALIZE_SCHEMA = _tool_schema(
     },
 )
 
+ARTIFACT_EXTRACT_MANIFEST_SCHEMA = _tool_schema(
+    "artifact_extract_manifest",
+    "Extract a structured spatial manifest from an image artifact using vision. Returns scene_type, source_modality, element list (in left-to-right order per wall/zone), adjacency constraints, layout hints, and pre-built fidelity_requirements ready for artifact_review. Use before artifact_transform for any sketch-to-render or fidelity transform.",
+    {
+        "type": "object",
+        "properties": {
+            "artifact_id": {"type": "string", "description": "ID of an image artifact to analyse."},
+        },
+        "required": ["artifact_id"],
+    },
+)
+
 ARTIFACT_TRANSFORM_SCHEMA = _tool_schema(
     "artifact_transform",
     "Create a source-aware derivative artifact. Default behavior is byte-exact preservation; schema renders are deterministic; image edits require an explicit edit_image operation and use a real source-image provider route.",

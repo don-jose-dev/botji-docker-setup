@@ -62,11 +62,21 @@ Verify the manifest against the sketch. If a label is ambiguous, write both inte
 
 ---
 
-## Step 1 — Register source
+## Step 1 — Register source + extract manifest
 
+```python
+# Register
+source = artifact_register(path=..., role="source", declared_type="image")
+
+# Extract manifest automatically (preferred over writing it by hand)
+manifest_result = artifact_extract_manifest(artifact_id=source["artifact_id"])
+manifest = manifest_result["manifest"]
+fidelity_reqs = manifest_result["fidelity_requirements"]
+# manifest contains: scene_type, source_modality, elements[], element_count,
+# adjacency_constraints[], layout_hints[]
 ```
-artifact_register(path=..., role="source", declared_type="image")
-```
+
+If `artifact_extract_manifest` fails (Codex unavailable), fall back to writing the manifest manually as shown in Step 0.
 
 ---
 
@@ -133,9 +143,9 @@ For each adjacency constraint in the manifest, write a named FORBIDDEN entry:
 artifact_review(
     source_artifact_ids=[source_id],
     output_artifact_id=output_id,
-    fidelity_requirements=[
+    # Use fidelity_reqs from artifact_extract_manifest — or build manually from Step 0
+    fidelity_requirements=fidelity_reqs or [
         "Total element count: exactly [N] units",
-        # One entry per adjacency constraint from manifest:
         "[Adjacency constraint verbatim from manifest]",
     ],
     use_openai_vision=True
