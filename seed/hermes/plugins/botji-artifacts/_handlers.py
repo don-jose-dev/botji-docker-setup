@@ -1,24 +1,10 @@
 """Tool handler functions — thin dispatchers that call into submodules."""
 from __future__ import annotations
 
-import base64
-import datetime as _dt
-import hashlib
 import json
-import mimetypes
 import os
-import re
-import shutil
-import struct
-import sys
-import uuid
-from collections import Counter
-from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Iterable
-from xml.etree import ElementTree as ET
-import wave
-import zipfile
+from typing import Any
 from _constants import ARTIFACT_SCHEMA_VERSION
 from _utils import _json, _resolve_allowed_path, _artifact_root
 from _registry import (

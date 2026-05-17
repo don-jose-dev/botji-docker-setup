@@ -2,23 +2,11 @@
 from __future__ import annotations
 
 import base64
-import datetime as _dt
-import hashlib
 import json
-import mimetypes
 import os
-import re
-import shutil
-import struct
 import sys
-import uuid
-from collections import Counter
-from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Iterable
-from xml.etree import ElementTree as ET
-import wave
-import zipfile
+from typing import Any
 from _constants import (
     API_MODEL, CODEX_CHAT_MODEL, CODEX_BASE_URL, VISION_REVIEW_MODEL, MAX_SOURCE_ARTIFACTS,
 )
@@ -356,19 +344,21 @@ def _codex_extract_manifest(artifact: dict[str, Any]) -> dict[str, Any]:
         stripped = "\n".join(lines).strip()
 
     try:
-        import json as _json
-        manifest = _json.loads(stripped)
+        manifest = json.loads(stripped)
     except Exception:
         start, end = stripped.find("{"), stripped.rfind("}")
         if start != -1 and end > start:
             try:
-                import json as _json
-                manifest = _json.loads(stripped[start:end + 1])
+                manifest = json.loads(stripped[start:end + 1])
             except Exception:
                 manifest = {}
         else:
             manifest = {}
 
+    if not manifest:
+        raise RuntimeError(
+            f"manifest extraction returned unparseable output: {text[:200]!r}"
+        )
     return {
         "provider": "openai-codex",
         "model": CODEX_CHAT_MODEL,

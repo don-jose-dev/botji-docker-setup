@@ -170,7 +170,6 @@ ARTIFACT_REVIEW_SCHEMA = _tool_schema(
             "contract_id": {"type": "string", "default": "manual"},
             "source_artifact_ids": {"type": "array", "items": {"type": "string"}},
             "output_artifact_id": {"type": "string"},
-            "required_axes": {"type": "array", "items": {"type": "string"}},
             "evidence_ids": {"type": "array", "items": {"type": "string"}},
             "fidelity_requirements": {
                 "type": "array",
