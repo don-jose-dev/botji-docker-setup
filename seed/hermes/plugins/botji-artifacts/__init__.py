@@ -52,56 +52,67 @@ from _handlers import (  # noqa: E402
     _handle_artifact_read,
     _write_verdict_file,
 )
+from _truncate import transform as _truncate_transform  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 
-def _on_artifact_review_result(
+def _on_tool_result(
     tool_name: str,
     args: dict,
     result: Any,
     *,
     session_id: str = "",
     **_: Any,
-) -> None:
-    """transform_tool_result hook: persist the verdict file for botji-gate.
+) -> str | None:
+    """transform_tool_result hook: verdict-write for reviews, truncate large outputs.
+
+    Two responsibilities multiplexed by tool_name:
+
+    1. ``artifact_review`` → side-effect: write the verdict file that botji-gate
+       reads. Return None so the agent sees the full review payload unchanged.
+
+    2. Any other tool → delegate to _truncate.transform which decides whether to
+       rewrite a large result. vision_analyze (162K chars) and skill_view (15K
+       chars × N skills) are the main offenders — they get capped/dedup'd so
+       compression doesn't fire every 2-3 turns.
 
     Plugin tool handlers do not receive session_id (registry.dispatch only
-    forwards task_id + user_task). The transform_tool_result hook, however,
-    is called with session_id by model_tools.handle_function_call. This is
-    where we write the verdict file so botji-gate can read it back keyed on
-    the same session_id its transform_llm_output hook receives.
-
-    Returns None — we only side-effect; the result string is unchanged.
+    forwards task_id + user_task). transform_tool_result IS called with
+    session_id by model_tools.handle_function_call — this is where we get it.
     """
-    if tool_name != "artifact_review" or not session_id:
-        return None
+    if tool_name == "artifact_review" and session_id:
+        try:
+            payload = json.loads(result) if isinstance(result, str) else (result or {})
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if isinstance(payload, dict) and payload.get("success"):
+            review = payload.get("review")
+            if isinstance(review, dict):
+                try:
+                    _write_verdict_file(
+                        session_id=session_id,
+                        verdict=str(payload.get("verdict") or ""),
+                        delivery_gate=str(payload.get("delivery_gate") or ""),
+                        recommended_action=str(payload.get("recommended_action") or ""),
+                        primary_blocker=payload.get("primary_blocker"),
+                        retry_guidance=payload.get("retry_guidance"),
+                        review=review,
+                    )
+                    logger.info(
+                        "botji-artifacts: wrote verdict file session=%s gate=%s",
+                        session_id, payload.get("delivery_gate"),
+                    )
+                except Exception:
+                    logger.exception("botji-artifacts: failed to write verdict file")
+        return None  # don't truncate review output — agent needs full detail to ship
+
+    # Everything else: delegate truncation policy.
     try:
-        payload = json.loads(result) if isinstance(result, str) else (result or {})
-    except (json.JSONDecodeError, TypeError):
-        return None
-    if not isinstance(payload, dict) or not payload.get("success"):
-        return None
-    review = payload.get("review")
-    if not isinstance(review, dict):
-        return None
-    try:
-        _write_verdict_file(
-            session_id=session_id,
-            verdict=str(payload.get("verdict") or ""),
-            delivery_gate=str(payload.get("delivery_gate") or ""),
-            recommended_action=str(payload.get("recommended_action") or ""),
-            primary_blocker=payload.get("primary_blocker"),
-            retry_guidance=payload.get("retry_guidance"),
-            review=review,
-        )
-        logger.info(
-            "botji-artifacts: wrote verdict file session=%s gate=%s",
-            session_id, payload.get("delivery_gate"),
-        )
+        return _truncate_transform(tool_name, args or {}, result, session_id)
     except Exception:
-        logger.exception("botji-artifacts: failed to write verdict file")
-    return None
+        logger.exception("botji-artifacts: truncation hook failed (tool=%s)", tool_name)
+        return None
 
 
 def register(ctx) -> None:
@@ -154,4 +165,4 @@ def register(ctx) -> None:
         handler=_handle_artifact_read,
         description=ARTIFACT_READ_SCHEMA["description"],
     )
-    ctx.register_hook("transform_tool_result", _on_artifact_review_result)
+    ctx.register_hook("transform_tool_result", _on_tool_result)

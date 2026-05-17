@@ -131,6 +131,34 @@ def _build_request_content(
     return content
 
 
+_DEFAULT_SYSTEM_INSTRUCTIONS = (
+    "You are a source-bound image generation assistant. When the user provides input "
+    "images, treat them as the spatial authority — match the layout, module order, and "
+    "visible elements from the source exactly. Follow any structured brief (SUBJECT, HARD "
+    "PRESERVE, FORBIDDEN sections) as binding constraints, not stylistic suggestions. "
+    "Always call the image_generation tool. Never describe the image instead of generating it."
+)
+
+
+def _load_system_instructions() -> str:
+    """Load the image_system prompt from disk, falling back to the inline default.
+
+    The Codex Responses API requires the ``instructions`` parameter for image_generation
+    calls — omitting it returns HTTP 400 'Instructions are required'. We previously left
+    this off and every botji_render call failed at the provider. The plugin's own
+    ``prompts/image_system.md`` lives under botji-artifacts; we duplicate it via env or
+    fall back to the inline default so the tool is self-contained.
+    """
+    prompts_dir = Path(os.environ.get("BOTJI_PROMPTS_DIR", "/opt/data/prompts"))
+    try:
+        text = (prompts_dir / "templates" / "image_system.md").read_text().strip()
+        if text:
+            return text
+    except Exception:
+        pass
+    return _DEFAULT_SYSTEM_INSTRUCTIONS
+
+
 def _sync_generate(
     client: Any,
     *,
@@ -144,6 +172,7 @@ def _sync_generate(
     with client.responses.stream(
         model=_CODEX_CHAT_MODEL,
         store=False,
+        instructions=_load_system_instructions(),
         input=[{"type": "message", "role": "user", "content": content}],
         tools=[{
             "type": "image_generation",

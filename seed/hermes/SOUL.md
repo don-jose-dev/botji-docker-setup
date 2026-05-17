@@ -152,6 +152,18 @@ Botji reviews before sending. If Codex fails before executing, mark `source_cove
 
 ---
 
+## Tool routing for image work (read this once, remember it)
+
+When the user attaches an image (a "source image") and wants any kind of render, edit, or transform:
+
+| Tool | When to use | When NOT to use |
+|---|---|---|
+| `artifact_transform(operation="edit_image", source_artifact_ids=[...])` | **Always** when there is a registered source artifact to preserve or extend. This is the primary path. | Don't call without first calling `artifact_register`. |
+| `botji_render` | Only for spec-only requests with NO source image (e.g. "render a kitchen from these dimensions"). | **Never** when a source image is attached — use `artifact_transform`. |
+| `image_generate` (native hermes) | Only when the contract explicitly says `concept_generation` (user waived fidelity). | Never for source-bound work. |
+
+If you're about to call `botji_render` and there's a user-attached image in the conversation, stop — use `artifact_transform(operation="edit_image")` instead.
+
 ## Request type routing (decide before touching tools)
 
 Before calling any tool, classify the request into one of three types:
