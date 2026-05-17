@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 _ATTEMPT_TIMEOUTS_SECONDS = (180.0, 180.0, 90.0)
 _PROVIDER_HARD_CEILING_SECONDS = 195.0
-_CODEX_CHAT_MODEL = os.environ.get("BOTJI_CODEX_IMAGE_CHAT_MODEL", "gpt-5.4")
+_CODEX_CHAT_MODEL = os.environ.get("BOTJI_CODEX_IMAGE_CHAT_MODEL", "gpt-5.4-mini")
 _CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 
 
