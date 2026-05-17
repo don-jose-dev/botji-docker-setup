@@ -1,23 +1,8 @@
 """File type detection — MIME, adapter, and structure sniffing."""
 from __future__ import annotations
 
-import base64
-import datetime as _dt
-import hashlib
-import json
 import mimetypes
-import os
-import re
-import shutil
-import struct
-import sys
-import uuid
-from collections import Counter
-from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Iterable
-from xml.etree import ElementTree as ET
-import wave
 import zipfile
 from _constants import (
     IMAGE_SUFFIXES, TEXT_SUFFIXES, PDF_SUFFIXES, DXF_SUFFIXES, DOCX_SUFFIXES,

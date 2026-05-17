@@ -1,32 +1,16 @@
 """Exact-copy and schema-render transform operations."""
 from __future__ import annotations
 
-import base64
-import datetime as _dt
-import hashlib
 import json
-import mimetypes
-import os
-import re
 import shutil
-import struct
-import sys
-import uuid
-from collections import Counter
-from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Iterable
-from xml.etree import ElementTree as ET
-import wave
-import zipfile
+from typing import Any
 from _constants import ARTIFACT_SCHEMA_VERSION
-from _utils import _json, _now, _new_id, _sha256, _artifact_root
-from _detect import _detect_type
-from _registry import _append_record, _store_evidence, _load_artifact
-from _extraction import _build_normalized_schema
+from _utils import _new_id, _sha256, _artifact_root
+from _registry import _store_evidence, _load_artifact
 from _rendering import (
     _create_output_artifact, _render_schema_preview_png, _schema_to_markdown,
-    _resolve_schema_payload, _load_evidence,
+    _resolve_schema_payload,
 )
 
 

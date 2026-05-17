@@ -3,20 +3,18 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
 from _constants import (
-    API_MODEL, CODEX_CHAT_MODEL, CODEX_BASE_URL, VISION_REVIEW_MODEL, MAX_SOURCE_ARTIFACTS,
+    API_MODEL, CODEX_CHAT_MODEL, CODEX_BASE_URL,
 )
 from _utils import _artifact_root, _now, _new_id, _sha256
 from _registry import _append_record, _store_evidence, _load_artifact
 from _detect import _detect_type
 from _prompts import load_prompt
 from _vision import (
-    _data_url, _vision_review_prompt, _extract_json_object,
-    _coerce_review_items, _assess_vision_payload,
+    _data_url, _vision_review_prompt,
 )
 
 

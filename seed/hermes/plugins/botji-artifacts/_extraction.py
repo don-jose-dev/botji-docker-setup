@@ -6,7 +6,6 @@ from typing import Any
 from _constants import (
     ARTIFACT_SCHEMA_VERSION, MAX_SOURCE_ARTIFACTS,
 )
-from _utils import _json, _now, _new_id, _artifact_root, _hermes_home, _sha256
 from _registry import _store_evidence
 from _metadata import (
     _image_metadata, _text_metadata, _pdf_metadata, _dxf_metadata,

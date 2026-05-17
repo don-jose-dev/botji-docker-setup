@@ -51,6 +51,12 @@ jobs:
           PLUGINS_ROOT="$(pwd)/seed/hermes/plugins" \
             bash scripts/smoke-plugin.sh
 
+      - name: Check for unused imports (ruff F401)
+        # Catches dead imports left over from refactors before they reach master.
+        run: |
+          python -m pip install --quiet ruff
+          ruff check seed/hermes/plugins/ --select F401,F841 --output-format concise
+
       - name: Compile-check every runtime script
         run: |
           for f in runtime/bin/botji-*; do
@@ -73,3 +79,11 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
           shellcheck -S warning scripts/vps-deploy.sh scripts/smoke-plugin.sh scripts/server-setup.sh
+
+      - name: Lint Dockerfile (hadolint)
+        # Catches common Dockerfile mistakes before the full Docker build runs in
+        # deploy.yml — avoids 5-minute build failures on trivially fixable issues.
+        run: |
+          docker run --rm -i hadolint/hadolint hadolint \
+            --ignore DL3008 --ignore DL3009 --ignore DL3015 \
+            - < Dockerfile

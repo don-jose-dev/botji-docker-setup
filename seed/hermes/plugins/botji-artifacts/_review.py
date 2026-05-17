@@ -81,7 +81,6 @@ def _build_review(
     # they produce a blockout/wireframe diagram. Visual similarity review against the
     # source image is inapplicable and must be skipped to avoid false-positive blocks.
     is_schema_render = (route == "artifact_transform.render_schema")
-    route_or_lineage_blocked = bool(missing_lineage or not route_ok)
     if not route_ok:
         blockers.append("Output route is not a source-aware artifact route.")
         corrections.append("Use artifact_transform instead of prompt-only generation.")

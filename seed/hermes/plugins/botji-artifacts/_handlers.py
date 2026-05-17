@@ -16,7 +16,6 @@ from _extraction import (
 from _normalization import _exact_copy_transform, _render_schema_transform
 from _codex import _openai_codex_image_generate, _resolve_provider_route, _codex_extract_manifest
 from _review import _build_review, _reviews_dir
-from _vision import _coerce_review_items
 
 
 def _handle_artifact_register(args: dict[str, Any], **_: Any) -> str:
@@ -201,7 +200,7 @@ def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
         for artifact in source_artifacts:
             if artifact.get("adapter") != "image":
                 raise ValueError(f"edit_image requires image artifacts, got {artifact.get('artifact_id')} adapter={artifact.get('adapter')}")
-        provider_route = _resolve_provider_route(str(args.get("provider_route") or "auto"))
+        _resolve_provider_route(str(args.get("provider_route") or "auto"))
         common = {
             "source_artifacts": source_artifacts,
             "prompt": prompt,
