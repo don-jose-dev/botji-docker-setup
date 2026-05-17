@@ -217,7 +217,26 @@ Edit `/opt/botji/.env`:
 TELEGRAM_ALLOWED_USERS=825981247,6912656288,<new-id>
 ```
 
-Then `docker compose restart hermes`. No image rebuild needed.
+Then **recreate the container** so the new `.env` is read at container-create
+time:
+
+```sh
+cd /opt/botji
+IMG=$(docker inspect botji-hermes --format '{{.Config.Image}}')
+BOTJI_PROD_IMAGE="$IMG" docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  up -d --force-recreate hermes
+```
+
+`docker compose restart` is **not enough** — it reuses the existing container's
+env vars from create time and silently ignores `.env` changes. Persistent
+volumes (data, plugins, config.yaml) survive the recreate.
+
+Verify after recreate:
+
+```sh
+docker exec botji-hermes printenv TELEGRAM_ALLOWED_USERS
+# Should list every authorized chat ID.
+```
 
 ### Get a user's Telegram ID
 
