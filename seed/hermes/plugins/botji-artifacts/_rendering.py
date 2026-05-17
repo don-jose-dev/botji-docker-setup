@@ -151,39 +151,113 @@ def _render_schema_preview_png(schema_payload: dict[str, Any], output_path: Path
         _render_generic_schema_preview_png(schema_payload, output_path, title)
 
 
+def _load_pil_font(size: int) -> Any:
+    """Load a TrueType font at the requested size, falling back to PIL's default bitmap font."""
+    try:
+        from PIL import ImageFont
+        _FONT_SEARCH_PATHS = [
+            # Linux (Debian/Ubuntu/Alpine — most Docker images)
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            # macOS
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/Library/Fonts/Arial.ttf",
+            # Windows
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/calibri.ttf",
+        ]
+        for fp in _FONT_SEARCH_PATHS:
+            if Path(fp).exists():
+                return ImageFont.truetype(fp, size)
+    except Exception:
+        pass
+    try:
+        from PIL import ImageFont
+        return ImageFont.load_default()
+    except Exception:
+        return None
+
+
 def _render_generic_schema_preview_png(schema_payload: dict[str, Any], output_path: Path, title: str) -> None:
     from PIL import Image, ImageDraw
 
+    font_title = _load_pil_font(28)
+    font_section = _load_pil_font(20)
+    font_body = _load_pil_font(17)
+
     width, height = 1400, 900
-    image = Image.new("RGB", (width, height), "white")
+    bg = (248, 248, 248)
+    image = Image.new("RGB", (width, height), bg)
     draw = ImageDraw.Draw(image)
-    draw.rectangle((40, 40, width - 40, height - 40), outline=(30, 30, 30), width=3)
-    draw.text((70, 70), title, fill=(0, 0, 0))
+
+    # Outer border
+    draw.rectangle((20, 20, width - 20, height - 20), outline=(60, 60, 60), width=2)
+
+    # Title bar
+    draw.rectangle((20, 20, width - 20, 80), fill=(40, 60, 90))
+    draw.text((40, 30), title[:120], fill=(255, 255, 255), font=font_title)
+
     artifact = schema_payload.get("artifact") or {}
     deterministic = schema_payload.get("deterministic") or {}
     contract = schema_payload.get("fidelity_contract") or {}
-    lines = [
-        f"schema: {schema_payload.get('schema_version', ARTIFACT_SCHEMA_VERSION)}",
+    semantic = schema_payload.get("semantic_schema") or {}
+
+    # Metadata column
+    meta_lines = [
+        f"schema:  {schema_payload.get('schema_version', ARTIFACT_SCHEMA_VERSION)}",
         f"profile: {schema_payload.get('profile', 'unknown')}",
-        f"artifact: {artifact.get('artifact_id', 'unknown')}",
         f"adapter: {artifact.get('adapter', 'unknown')}",
-        f"type: {artifact.get('detected_type', 'unknown')}",
-        f"sha256: {str(artifact.get('sha256', ''))[:24]}...",
+        f"type:    {artifact.get('detected_type', 'unknown')}",
+        f"sha256:  {str(artifact.get('sha256', ''))[:28]}…",
     ]
-    for key in ("width", "height", "page_count", "line_count", "char_count", "dxfversion", "insunits", "size_bytes"):
+    for key in ("width", "height", "page_count", "line_count", "char_count", "dxfversion", "size_bytes"):
         if key in deterministic:
-            lines.append(f"{key}: {deterministic[key]}")
+            meta_lines.append(f"{key}: {deterministic[key]}")
+
+    y = 100
+    draw.text((40, y), "METADATA", fill=(40, 60, 90), font=font_section)
+    y += 30
+    for line in meta_lines:
+        draw.text((50, y), line, fill=(30, 30, 30), font=font_body)
+        y += 26
+
+    # Hard requirements column
     hard = contract.get("hard_requirements") or []
     if hard:
-        lines.append("")
-        lines.append("hard requirements:")
-        lines.extend(f"- {item[:110]}" for item in hard[:10])
-    y = 130
-    for line in lines:
-        draw.text((70, y), line, fill=(20, 20, 20))
+        y += 16
+        draw.text((40, y), "HARD REQUIREMENTS", fill=(140, 40, 40), font=font_section)
         y += 30
+        for item in hard[:18]:
+            draw.text((50, y), f"• {item[:110]}", fill=(100, 20, 20), font=font_body)
+            y += 26
+            if y > height - 60:
+                break
+
+    # Advisory preferences
+    advisory = contract.get("advisory_preferences") or []
+    if advisory and y < height - 100:
+        y += 16
+        draw.text((40, y), "ADVISORY", fill=(60, 100, 40), font=font_section)
+        y += 30
+        for item in advisory[:8]:
+            draw.text((50, y), f"– {item[:110]}", fill=(40, 80, 30), font=font_body)
+            y += 26
+            if y > height - 60:
+                break
+
+    # Semantic schema key count (if present)
+    if semantic:
+        sem_keys = list(semantic.keys())[:12]
+        y += 16
+        if y < height - 80:
+            draw.text((40, y), "SEMANTIC KEYS", fill=(60, 60, 140), font=font_section)
+            y += 30
+            draw.text((50, y), ", ".join(sem_keys), fill=(40, 40, 120), font=font_body)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(output_path)
+    image.save(output_path, optimize=True)
 
 
 def _render_primitives_schema_preview_png(schema_payload: dict[str, Any], output_path: Path, title: str) -> None:

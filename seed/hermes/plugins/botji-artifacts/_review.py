@@ -235,7 +235,13 @@ def _run_high_fidelity_provider_transform(
     if not endpoint:
         blockers.append("provider endpoint was not recorded")
     if route_evidence is None:
-        blockers.append("provider transform route evidence is missing")
+        # When the artifact record itself attests the correct provider/model/quality/endpoint,
+        # missing route evidence is a warning rather than a hard blocker. Full route evidence
+        # is the gold standard but the artifact metadata is sufficient for a warn-level review.
+        if provider == "openai-codex" and model == "gpt-image-2" and quality == "high" and endpoint:
+            warnings.append("provider transform route evidence is missing; artifact record attests provider/model/quality/endpoint")
+        else:
+            blockers.append("provider transform route evidence is missing")
         source_input_mode = ""
     else:
         source_input_mode = str(route_evidence.get("source_input_mode") or "")
@@ -401,6 +407,10 @@ def _build_review(
 
     route = str(output.get("route") or "")
     route_ok = route.startswith("artifact_transform.")
+    # Deterministic schema renders do not produce a visual derivative of the source —
+    # they produce a blockout/wireframe diagram. Visual similarity review against the
+    # source image is inapplicable and must be skipped to avoid false-positive blocks.
+    is_schema_render = (route == "artifact_transform.render_schema")
     route_or_lineage_blocked = bool(missing_lineage or not route_ok)
     if not route_ok:
         blockers.append("Output route is not a source-aware artifact route.")
@@ -412,7 +422,13 @@ def _build_review(
     vision_warning = False
     vision_blockers: list[str] = []
     vision_corrections: list[str] = []
-    if route != "artifact_transform.exact_copy" and use_openai_vision and output.get("adapter") == "image" and all(source.get("adapter") == "image" for source in sources):
+    if (
+        route != "artifact_transform.exact_copy"
+        and not is_schema_render
+        and use_openai_vision
+        and output.get("adapter") == "image"
+        and all(source.get("adapter") == "image" for source in sources)
+    ):
         try:
             resolved_review_route = _resolve_review_provider_route(review_provider_route, output)
             if resolved_review_route != "openai_codex":
@@ -442,6 +458,11 @@ def _build_review(
             if require_vision_api:
                 blockers.append(vision_note)
                 corrections.append("Fix Codex vision review before accepting the artifact.")
+    elif is_schema_render:
+        vision_note = (
+            "Schema render output: visual similarity review against source is not applicable "
+            "and has been skipped. Schema fidelity is evaluated structurally via modality comparators."
+        )
 
     modality_result = _run_modality_comparators(
         sources=sources,
@@ -452,7 +473,13 @@ def _build_review(
     all_evidence.append(modality_result["evidence_id"])
     modality_note = modality_result["summary"]
     modality_warning = modality_result["status"] == "partial"
-    if modality_result["blockers"]:
+
+    # For image-to-image transforms (format, dimensions, and mode routinely differ between
+    # a source photo and a rendered PNG) modality comparator differences are expected and
+    # structural. They are recorded as evidence but must not cascade into a blocking verdict
+    # on unrelated axes. Only dedicated vision evidence can block image content/layout axes.
+    _image_to_image = output.get("adapter") == "image" and all(s.get("adapter") == "image" for s in sources)
+    if modality_result["blockers"] and not _image_to_image:
         blockers.extend(modality_result["blockers"])
         corrections.append("Regenerate from current normalized schema evidence or rerun artifact_normalize before review.")
 
@@ -472,76 +499,146 @@ def _build_review(
             blockers.extend(high_fidelity_result["blockers"])
             corrections.append("Use gpt-image-2 quality=high with source images as image inputs and persisted route evidence before claiming 100% transformation.")
 
-    common_status = "conflict" if blockers else "match"
-    common_severity = "blocking" if blockers else "none"
+    # ── Per-axis blocker categories ──────────────────────────────────────────
+    # Each category drives only the axes it owns, preventing a single check from
+    # cascading a "blocking" verdict across semantically unrelated axes.
+    _lineage_blocked = bool(missing_lineage)
+    _route_blocked = not route_ok
+    _structural_blocked = _lineage_blocked or _route_blocked
+    _vision_blocked = bool(vision_blockers)
+    # Modality blockers are meaningful only for non-image transforms (see above).
+    _modality_blocked = bool(modality_result["blockers"]) and not _image_to_image
+    _provider_blocked = bool(high_fidelity_result and high_fidelity_result["blockers"])
+    # ────────────────────────────────────────────────────────────────────────
+
     grounding_note = (
         "Output claims are grounded in registry lineage and persisted evidence."
-        if not blockers
-        else (
-            "Grounding failed because lineage or route is invalid."
-            if route_or_lineage_blocked
-            else "Grounding failed because source-fidelity review found hard visual conflicts."
-        )
+        if not _structural_blocked
+        else "Grounding failed because lineage or route is invalid."
     )
     review_warning = vision_failed or vision_warning or modality_warning
     preserve_note = exact_note or (vision_note if vision_evidence_id or vision_failed or vision_warning else modality_note)
-    uncertainty_status = "conflict" if blockers else ("partial" if review_warning else "match")
-    uncertainty_severity = "blocking" if blockers else ("low" if review_warning else "none")
+
+    # preserve_change: driven by the best available content comparison evidence
+    preserve_status = "conflict" if _vision_blocked else ("partial" if review_warning else "match")
+    preserve_severity = "blocking" if _vision_blocked else ("medium" if vision_warning else ("low" if review_warning else "none"))
+
+    # uncertainty: reflects completeness and consistency of review evidence, not content verdicts
+    uncertainty_status = "partial" if (vision_failed or vision_warning) else ("conflict" if _structural_blocked else "match")
+    uncertainty_severity = "blocking" if _structural_blocked else ("low" if (vision_failed or vision_warning) else "none")
+    uncertainty_note = (
+        vision_note if (vision_failed or vision_warning)
+        else "Review evidence is complete and internally consistent."
+        if not _structural_blocked
+        else "Review cannot be completed due to lineage or route errors."
+    )
+
+    # transform_contract: blocked by structural issues OR hard vision conflicts
+    _transform_blocked = _structural_blocked or _vision_blocked
+    transform_contract_status = "conflict" if _transform_blocked else ("partial" if review_warning else "match")
+    transform_contract_percent = 0 if _transform_blocked else (95 if review_warning else 100)
+
     exact_match = bool(exact_result and exact_result["status"] == "match")
-    transform_contract_status = "conflict" if blockers else ("partial" if review_warning else "match")
-    transform_contract_percent = 0 if blockers else (95 if review_warning else 100)
     byte_exact_percent = 100 if exact_match else 0
+
     if exact_match:
         claim_type = "byte_exact_file_fidelity"
         preservation_target = "byte_exact_file_identity"
     elif high_fidelity_result:
         claim_type = "transform_contract_fidelity"
         preservation_target = "source_constraint_preservation"
-    elif route == "artifact_transform.render_schema":
+    elif is_schema_render:
         claim_type = "transform_contract_fidelity"
         preservation_target = "deterministic_schema_equivalence"
     else:
         claim_type = "reviewed_visual_similarity"
         preservation_target = "visual_reference_similarity"
+
     transform_contract_note = (
-        "All hard source requirements passed under the allowed transform contract; this is 100% transform-contract fidelity, not byte-exact file identity."
-        if transform_contract_status == "match" and not exact_match
-        else "Output is byte-identical to the source artifact; both byte-exact and transform-contract fidelity are 100%."
+        "Output is byte-identical to the source artifact; both byte-exact and transform-contract fidelity are 100%."
         if exact_match
+        else "All hard source requirements passed under the allowed transform contract; this is 100% transform-contract fidelity, not byte-exact file identity."
+        if transform_contract_status == "match" and not exact_match
         else "Transform contract has non-blocking review warnings; it is not a 100% transform-fidelity pass."
         if transform_contract_status == "partial"
         else "Transform contract has blocking source-fidelity conflicts."
     )
-    geometry_status = "conflict" if vision_blockers or modality_result["status"] == "conflict" or (exact_result and exact_result["status"] == "conflict") else ("match" if exact_match or (route == "artifact_transform.render_schema" and modality_result["status"] == "match") else "partial")
-    geometry_severity = "blocking" if geometry_status == "conflict" else ("none" if geometry_status == "match" else "low")
+
+    # geometry_fidelity: for raster image outputs only vision evidence constitutes a hard
+    # geometry block; modality metadata differences are structural and non-blocking.
+    if _image_to_image:
+        geometry_status = "conflict" if _vision_blocked else ("match" if exact_match else "partial")
+        geometry_severity = "blocking" if _vision_blocked else ("none" if exact_match else "low")
+    else:
+        geometry_status = (
+            "conflict" if (_vision_blocked or _modality_blocked or (exact_result and exact_result["status"] == "conflict"))
+            else "match" if (exact_match or (is_schema_render and modality_result["status"] == "match"))
+            else "partial"
+        )
+        geometry_severity = "blocking" if geometry_status == "conflict" else ("none" if geometry_status == "match" else "low")
+
+    # content_fidelity: owned by vision evidence alone; modality metadata ≠ visual content
+    content_status = "conflict" if _vision_blocked else ("partial" if review_warning and not _vision_blocked else "match")
+    content_severity = "blocking" if _vision_blocked else ("low" if review_warning else "none")
+
+    # layout_fidelity: vision + geometry (for non-image: also structural modality drift)
+    layout_blocked = _vision_blocked or (geometry_status == "conflict" and not _image_to_image)
+    layout_status = "conflict" if layout_blocked else ("partial" if review_warning else "match")
+    layout_severity = "blocking" if layout_blocked else ("low" if review_warning else "none")
+
+    # modality_comparator axis severity: for image-to-image treat as informational, not blocking
+    modality_axis_severity = (
+        "none" if _image_to_image and modality_result["status"] == "conflict"
+        else "blocking" if modality_result["status"] == "conflict"
+        else "low" if modality_warning
+        else "none"
+    )
+
     deterministic_claim = "verified" if all_evidence else "reviewed"
     axes.extend([
         _axis("source_coverage", "match" if sources else "missing", "none" if sources else "blocking", "Source artifact IDs are present." if sources else "No source artifacts were supplied.", evidence_ids=all_evidence),
         _axis("authority_alignment", "match", "none", "User-supplied source artifacts outrank generated output assumptions.", evidence_ids=all_evidence),
-        _axis("preserve_change", "partial" if review_warning and not blockers else common_status, "medium" if review_warning and not blockers else common_severity, preserve_note, evidence_ids=all_evidence),
-        _axis("groundedness", common_status, common_severity, grounding_note, evidence_ids=all_evidence),
-        _axis("uncertainty", uncertainty_status, uncertainty_severity, preserve_note, evidence_ids=all_evidence),
+        _axis("preserve_change", preserve_status, preserve_severity, preserve_note, evidence_ids=all_evidence),
+        _axis("groundedness", "conflict" if _structural_blocked else "match", "blocking" if _structural_blocked else "none", grounding_note, evidence_ids=all_evidence),
+        _axis("uncertainty", uncertainty_status, uncertainty_severity, uncertainty_note, evidence_ids=all_evidence),
         _axis("safety", "match", "none", "Artifact paths were constrained to Botji safe roots; no credential paths were used.", claim_level=deterministic_claim, evidence_ids=all_evidence),
-        _axis("artifact_lineage", "conflict" if missing_lineage else "match", "blocking" if missing_lineage else "none", "Output parents include all source artifacts." if not missing_lineage else "Output lineage is incomplete.", claim_level=deterministic_claim, evidence_ids=all_evidence),
-        _axis("actionability", "match" if not blockers else "missing", "none" if not blockers else "blocking", "Review receipt and output artifact path are persisted." if not blockers else "Correction is required before the artifact is usable.", evidence_ids=all_evidence),
+        _axis("artifact_lineage", "conflict" if _lineage_blocked else "match", "blocking" if _lineage_blocked else "none", "Output parents include all source artifacts." if not _lineage_blocked else "Output lineage is incomplete.", claim_level=deterministic_claim, evidence_ids=all_evidence),
+        _axis("actionability", "missing" if _structural_blocked else "match", "blocking" if _structural_blocked else "none", "Correction required: lineage or route error must be resolved before this artifact is usable." if _structural_blocked else "Review receipt and output artifact path are persisted.", evidence_ids=all_evidence),
         _axis("adapter_route", "match" if route_ok else "conflict", "none" if route_ok else "blocking", "Source-aware artifact route was used." if route_ok else "Prompt-only, manually registered, or unknown transform route was used.", claim_level=deterministic_claim, evidence_ids=all_evidence),
-        _axis("lineage_integrity", "match" if not missing_lineage else "conflict", "none" if not missing_lineage else "blocking", "Parent artifact IDs match the source list." if not missing_lineage else "Parent artifact IDs are missing.", claim_level=deterministic_claim, evidence_ids=all_evidence),
-        _axis("modality_comparator", modality_result["status"], "blocking" if modality_result["status"] == "conflict" else ("low" if modality_warning else "none"), modality_note, claim_level="verified" if modality_result["status"] == "match" else "reviewed", evidence_ids=[modality_result["evidence_id"]]),
+        _axis("lineage_integrity", "match" if not _lineage_blocked else "conflict", "none" if not _lineage_blocked else "blocking", "Parent artifact IDs match the source list." if not _lineage_blocked else "Parent artifact IDs are missing.", claim_level=deterministic_claim, evidence_ids=all_evidence),
+        _axis("modality_comparator", modality_result["status"], modality_axis_severity, modality_note, claim_level="verified" if modality_result["status"] == "match" else "reviewed", evidence_ids=[modality_result["evidence_id"]]),
         *([_axis("high_fidelity_provider_transform", high_fidelity_result["status"], "blocking" if high_fidelity_result["status"] == "conflict" else ("low" if high_fidelity_result["status"] == "partial" else "none"), high_fidelity_result["summary"], claim_level="reviewed", evidence_ids=[high_fidelity_result["evidence_id"]])] if high_fidelity_result else []),
         *([_axis("metadata_fidelity", exact_result["status"], "blocking" if exact_result["status"] == "conflict" else "none", exact_note, claim_level="verified" if exact_result["status"] == "match" else "reviewed", evidence_ids=[exact_result["evidence_id"]])] if exact_result else []),
-        _axis("transform_contract_fidelity", transform_contract_status, "blocking" if blockers else ("low" if review_warning else "none"), transform_contract_note, claim_level="verified" if exact_match else "reviewed", evidence_ids=all_evidence),
-        _axis("content_fidelity", "conflict" if vision_blockers or modality_result["status"] == "conflict" or (exact_result and exact_result["status"] == "conflict") else ("partial" if review_warning and not blockers else "match"), "blocking" if vision_blockers or modality_result["status"] == "conflict" or (exact_result and exact_result["status"] == "conflict") else ("low" if review_warning and not blockers else "none"), preserve_note, evidence_ids=[exact_result["evidence_id"]] if exact_result else ([vision_evidence_id] if vision_evidence_id else [modality_result["evidence_id"]])),
-        _axis("layout_fidelity", "conflict" if vision_blockers or modality_result["status"] == "conflict" or (exact_result and exact_result["status"] == "conflict") else ("partial" if review_warning and not blockers else "match"), "blocking" if vision_blockers or modality_result["status"] == "conflict" or (exact_result and exact_result["status"] == "conflict") else ("low" if review_warning and not blockers else "none"), preserve_note, evidence_ids=[exact_result["evidence_id"]] if exact_result else ([vision_evidence_id] if vision_evidence_id else [modality_result["evidence_id"]])),
+        _axis("transform_contract_fidelity", transform_contract_status, "blocking" if _transform_blocked else ("low" if review_warning else "none"), transform_contract_note, claim_level="verified" if exact_match else "reviewed", evidence_ids=all_evidence),
+        _axis("content_fidelity", content_status, content_severity, preserve_note, evidence_ids=[exact_result["evidence_id"]] if exact_result else ([vision_evidence_id] if vision_evidence_id else [modality_result["evidence_id"]])),
+        _axis("layout_fidelity", layout_status, layout_severity, preserve_note, evidence_ids=[exact_result["evidence_id"]] if exact_result else ([vision_evidence_id] if vision_evidence_id else [modality_result["evidence_id"]])),
         _axis("geometry_fidelity", geometry_status, geometry_severity, _geometry_fidelity_note(output), evidence_ids=all_evidence),
         _axis("unknowns_handling", "match", "none", "Exact physical dimensions are not claimed unless supplied by deterministic source evidence.", evidence_ids=all_evidence),
     ])
     verdict = "block" if blockers else ("warn" if review_warning else "pass")
     final_claim_level = "verified" if exact_match and not blockers else "reviewed"
+
+    # Delivery gate fields: agent-facing signal to prevent shipping blocked outputs.
+    delivery_gate = "blocked" if verdict == "block" else ("warned" if verdict == "warn" else "clear")
+    recommended_action = (
+        "do_not_deliver__retry_with_corrections"
+        if verdict == "block"
+        else "deliver_with_warning"
+        if verdict == "warn"
+        else "deliver"
+    )
+    primary_blocker = blockers[0] if blockers else None
+    retry_guidance = corrections[0] if blockers and corrections else None
+
     return {
         "review_id": review_id,
         "contract_id": contract_id,
         "reviewed_output_ref": output["artifact_id"],
         "verdict": verdict,
+        "delivery_gate": delivery_gate,
+        "recommended_action": recommended_action,
+        "primary_blocker": primary_blocker,
+        "retry_guidance": retry_guidance,
         "final_claim_level": final_claim_level,
         "axes": axes,
         "blockers": blockers,

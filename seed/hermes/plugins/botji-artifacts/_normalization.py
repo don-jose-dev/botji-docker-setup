@@ -117,6 +117,20 @@ def _render_schema_transform(
         output_path = output_dir / "schema-preview.png"
         _render_schema_preview_png(schema_payload, output_path, render_title)
         declared_type = "image"
+        # Guard: a degenerate preview (pure metadata text with tiny default font) produces
+        # a ~12–15 KB PNG that vision reviewers correctly identify as a "text panel", not a
+        # layout diagram. Fail fast here so the agent retries with richer schema data rather
+        # than registering an unusable artifact.
+        preview_size = output_path.stat().st_size
+        _SCHEMA_PREVIEW_MIN_BYTES = 40_000
+        if preview_size < _SCHEMA_PREVIEW_MIN_BYTES:
+            shutil.rmtree(output_dir, ignore_errors=True)
+            raise ValueError(
+                f"render_schema produced a degenerate preview ({preview_size:,} bytes < "
+                f"{_SCHEMA_PREVIEW_MIN_BYTES:,} bytes). "
+                "Populate semantic_schema.render_primitives with spatial layout blocks before "
+                "calling render_schema, or use operation=edit_image for a provider-rendered output."
+            )
 
     output_record = _create_output_artifact(
         output_id=output_id,
