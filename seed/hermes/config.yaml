@@ -55,10 +55,8 @@ prompt_caching:
   cache_ttl: 5m
 auxiliary:
   vision:
-    # gpt-4.1 has better mAP on structural comparison than gpt-5.4-mini —
-    # particularly important for vision_analyze used in the fidelity review path.
     provider: codex
-    model: gpt-4.1
+    model: gpt-5.4-mini
     timeout: 120
     download_timeout: 30
   web_extract:
