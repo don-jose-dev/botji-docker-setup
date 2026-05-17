@@ -91,6 +91,21 @@ chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$WORKSPACE_DIR" 2>/dev/null 
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   --profile bootstrap run --rm bootstrap
 
+echo "==> Force-update code components (plugin, skills, schemas, prompts)"
+# These contain code, not user data — always reseed from the latest image.
+for skill in botji-artifact-fidelity botji-2d-to-3d botji-source-fidelity botji-prompt-contract botji-codex-engineering; do
+  rm -rf "$DATA_DIR/skills/$skill"
+  cp -R "seed/hermes/skills/$skill" "$DATA_DIR/skills/" 2>/dev/null || true
+done
+rm -rf "$DATA_DIR/plugins/botji-artifacts"
+cp -R seed/hermes/plugins/botji-artifacts "$DATA_DIR/plugins/"
+rm -rf "$DATA_DIR/prompts"
+cp -R seed/hermes/prompts "$DATA_DIR/"
+cp seed/hermes/schemas/*.json "$DATA_DIR/schemas/" 2>/dev/null || true
+chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" \
+  "$DATA_DIR/plugins" "$DATA_DIR/skills" "$DATA_DIR/prompts" "$DATA_DIR/schemas" 2>/dev/null || true
+echo "    Plugin, skills, schemas, prompts updated from seed."
+
 echo "==> Write Codex / Hermes auth"
 if [ -s /tmp/codex-auth.b64 ]; then
   mkdir -p "$DATA_DIR/.codex"
