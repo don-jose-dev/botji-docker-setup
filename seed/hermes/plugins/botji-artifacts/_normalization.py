@@ -23,10 +23,10 @@ from _constants import ARTIFACT_SCHEMA_VERSION
 from _utils import _json, _now, _new_id, _sha256, _artifact_root
 from _detect import _detect_type
 from _registry import _append_record, _store_evidence, _load_artifact
-from _extraction import _build_normalized_schema, _load_evidence
+from _extraction import _build_normalized_schema
 from _rendering import (
     _create_output_artifact, _render_schema_preview_png, _schema_to_markdown,
-    _resolve_schema_payload,
+    _resolve_schema_payload, _load_evidence,
 )
 
 
