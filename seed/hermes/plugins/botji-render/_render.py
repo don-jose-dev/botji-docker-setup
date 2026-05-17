@@ -50,6 +50,24 @@ _CODEX_CHAT_MODEL = os.environ.get("BOTJI_CODEX_IMAGE_CHAT_MODEL", "gpt-5.4")
 _CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 
 
+def _normalize_size(size: str) -> str:
+    """gpt-image-2 requires width and height divisible by 16. Floor each
+    dimension; the API returns HTTP 400 otherwise (e.g. '1536x883'). Falls
+    back to 1024x1024 on parse failure."""
+    if not isinstance(size, str):
+        return "1024x1024"
+    parts = size.strip().lower().split("x")
+    if len(parts) != 2:
+        return "1024x1024"
+    try:
+        w, h = int(parts[0]), int(parts[1])
+    except ValueError:
+        return "1024x1024"
+    w = max(16, (w // 16) * 16)
+    h = max(16, (h // 16) * 16)
+    return f"{w}x{h}"
+
+
 class RenderError(Exception):
     """Structured render failure; converted to tool error by the handler."""
 
@@ -217,6 +235,7 @@ async def render(
     On exhaustion returns ``{"success": False, "error": "...",
     "error_kind": "timeout"|"provider_error", "attempts": 3}``.
     """
+    size = _normalize_size(size)
     request_hash = compute_request_hash(
         prompt, size, quality, output_format,
         [str(p) for p in source_image_paths],

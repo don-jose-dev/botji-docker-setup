@@ -105,9 +105,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml \
 
 echo "==> Force-update code components (plugin, skills, schemas, prompts)"
 # These contain code, not user data — always reseed from the latest image.
-for skill in botji-artifact-fidelity botji-2d-to-3d botji-source-fidelity botji-prompt-contract botji-codex-engineering; do
-  rm -rf "$DATA_DIR/skills/$skill"
-  cp -R "seed/hermes/skills/$skill" "$DATA_DIR/skills/" 2>/dev/null || true
+for skill_dir in seed/hermes/skills/botji-*; do
+  [ -d "$skill_dir" ] || continue
+  skill_name="$(basename "$skill_dir")"
+  rm -rf "$DATA_DIR/skills/$skill_name"
+  cp -R "$skill_dir" "$DATA_DIR/skills/" 2>/dev/null || true
 done
 # Seed every botji-* plugin from the repo into the tenant data volume.
 # The list is implicit (whatever ships under seed/hermes/plugins/) so new

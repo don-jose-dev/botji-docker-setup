@@ -218,9 +218,35 @@ def _resolve_review_provider_route(requested: str, output: dict[str, Any]) -> st
     return route
 
 
+def _round_to_16(value: int) -> int:
+    """gpt-image-2 requires width and height divisible by 16. Floor — never up
+    past the original to avoid expanding the canvas."""
+    return max(16, (int(value) // 16) * 16)
+
+
+def _normalize_codex_size(size: str) -> str:
+    """Coerce a free-form 'WxH' size string into a valid gpt-image-2 size.
+
+    The API rejects sizes whose dimensions are not multiples of 16 with
+    HTTP 400. Agents sometimes generate fractional aspects (e.g. 1536x883
+    from a 16:9 source); normalise here so the request always succeeds.
+    Returns the input unchanged if parsing fails — caller decides fallback.
+    """
+    if not isinstance(size, str):
+        return "1024x1024"
+    parts = size.strip().lower().split("x")
+    if len(parts) != 2:
+        return size.strip()
+    try:
+        w, h = int(parts[0]), int(parts[1])
+    except ValueError:
+        return size.strip()
+    return f"{_round_to_16(w)}x{_round_to_16(h)}"
+
+
 def _codex_size_for_sources(size: str, source_artifacts: list[dict[str, Any]]) -> str:
     if isinstance(size, str) and size.strip().lower() != "auto":
-        return size.strip()
+        return _normalize_codex_size(size)
     try:
         from PIL import Image
 

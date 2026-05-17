@@ -71,11 +71,11 @@ copy_file "$SEED/hermes/SOUL.md" "$DATA/SOUL.md"
 if [ -f "$SEED/../BOTJI_V1.md" ]; then
   copy_file "$SEED/../BOTJI_V1.md" "$DATA/BOTJI_V1.md"
 fi
-copy_dir "$SEED/hermes/skills/botji-prompt-contract" "$DATA/skills/botji-prompt-contract"
-copy_dir "$SEED/hermes/skills/botji-source-fidelity" "$DATA/skills/botji-source-fidelity"
-copy_dir "$SEED/hermes/skills/botji-codex-engineering" "$DATA/skills/botji-codex-engineering"
-copy_dir "$SEED/hermes/skills/botji-artifact-fidelity" "$DATA/skills/botji-artifact-fidelity"
-copy_dir "$SEED/hermes/skills/botji-2d-to-3d" "$DATA/skills/botji-2d-to-3d"
+for _skill_src in "$SEED/hermes/skills"/botji-*/; do
+  [ -d "$_skill_src" ] || continue
+  _skill_name="$(basename "$_skill_src")"
+  copy_dir "$_skill_src" "$DATA/skills/$_skill_name"
+done
 copy_file "$SEED/hermes/config.yaml" "$DATA/config.yaml"
 copy_dir "$SEED/hermes/prompts" "$DATA/prompts"
 for _plugin_src in "$SEED/hermes/plugins"/botji-*/; do

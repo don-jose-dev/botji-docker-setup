@@ -27,6 +27,13 @@ if _PLUGIN_DIR not in sys.path:
 
 from _render import render, _CODEX_CHAT_MODEL  # noqa: E402
 
+# Lazy import — agent.image_gen_provider is hermes-internal; we want the plugin
+# to still load (registering the botji_render tool) even if the ABC moves.
+try:
+    from agent.image_gen_provider import ImageGenProvider as _ImageGenProvider  # type: ignore
+except Exception:
+    _ImageGenProvider = object  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,7 +93,7 @@ _TOOL_SCHEMA = {
 }
 
 
-class BotjiEditProvider:
+class BotjiEditProvider(_ImageGenProvider):
     """Registers botji as a hermes-native image gen provider for txt2img requests.
 
     Separate from the botji_render tool (which handles img2img with source artifacts
