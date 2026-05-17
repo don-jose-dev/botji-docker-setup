@@ -271,8 +271,13 @@ def _write_verdict_file(
     """
     verdict_root = Path(os.environ.get("BOTJI_VERDICT_ROOT", "/opt/data/verdicts"))
     verdict_root.mkdir(parents=True, exist_ok=True)
+    # An axis FAILS only when its severity is blocking/medium/high.
+    # compare_status="conflict" with severity="none" means informational only —
+    # it must NOT propagate as a gate failure. The old formula used
+    # `compare_status != "conflict"` which caused modality_comparator (conflict/none)
+    # to always produce False, permanently polluting every verdict.
     axes_map = {
-        ax.get("axis"): (ax.get("severity") in (None, "none", "low") and ax.get("compare_status") != "conflict")
+        ax.get("axis"): ax.get("severity") not in ("blocking", "medium", "high")
         for ax in (review.get("axes") or [])
         if ax.get("axis")
     }

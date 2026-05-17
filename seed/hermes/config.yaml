@@ -38,7 +38,11 @@ compression:
   # each) get summarised away before they push context past the threshold again.
   threshold: 0.50
   target_ratio: 0.35
-  protect_last_n: 20
+  # protect_last_n 8: was 20, then we lowered to 20 from 30. Lowering further to 8
+  # so the compressor can summarise large tool outputs (artifact_review ~18K chars,
+  # artifact_transform ~9K chars, skill_view ~11K chars ×3) that are accumulating
+  # in the recent-messages window and preventing compression from making progress.
+  protect_last_n: 8
   protect_first_n: 3
 prompt_caching:
   cache_ttl: 5m
@@ -68,7 +72,11 @@ memory:
   flush_min_turns: 6
 session_reset:
   mode: both
-  idle_minutes: 1440
+  # idle_minutes 120: was 1440 (24 h). Sessions were accumulating 175+ messages and
+  # 200K+ tokens over 4-hour work sessions, causing double-compression that barely
+  # reduced context. 2-hour idle reset keeps sessions manageable without interrupting
+  # active work flows.
+  idle_minutes: 120
   at_hour: 4
 group_sessions_per_user: true
 streaming:

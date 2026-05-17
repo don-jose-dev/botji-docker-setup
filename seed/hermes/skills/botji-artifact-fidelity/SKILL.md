@@ -17,6 +17,21 @@ Use this skill whenever the user provides or references a file, image, PDF, text
 Files are evidence, not decoration. Register the file as an artifact before analysis, extraction, transformation, or final claims.
 The default transformation policy is exact preservation: if the user provided a source file, preserve it byte-for-byte unless the user explicitly authorizes a transform route and change list.
 
+## Request type — decide before calling any tool
+
+**Fidelity transform** ("make this 3D", "render this sketch", "convert to photo"): use the full pipeline. Gate fires.
+
+**Design proposal** ("add a wardrobe here", "show what a kitchen looks like in this space", "give me a 3D image of [element] in this area"): the user explicitly wants to ADD or PLACE something. This is NOT a fidelity violation. Pipeline:
+1. `artifact_register(path, role="source")`
+2. `artifact_transform(operation="edit_image", ...)` — include the requested element in `subject_inventory`
+3. `artifact_review(fidelity_requirements=["Allowed transform: [element] added/placed as user requested"])`
+   The `"Allowed transform:"` prefix tells the review that this specific addition was user-authorised — the gate will not block it.
+4. Deliver with: `✅ Design proposal · route: edit_image · claim: reviewed · [element] placed as requested`
+
+**Concept generation** (no source image, or user says "design me X from scratch"): skip artifact_review. Claim level `draft`. Gate does not fire.
+
+**Never use fidelity mode for a design proposal** — the review will correctly flag "element added not in source" as a hard conflict and block delivery. Use `"Allowed transform:"` in fidelity_requirements instead.
+
 ## Required loop
 
 1. Call `artifact_register` for every source file path.

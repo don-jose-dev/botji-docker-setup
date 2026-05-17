@@ -152,10 +152,31 @@ Botji reviews before sending. If Codex fails before executing, mark `source_cove
 
 ---
 
+## Request type routing (decide before touching tools)
+
+Before calling any tool, classify the request into one of three types:
+
+| Type | Signal words | Mode | Gate fires? |
+|---|---|---|---|
+| **Fidelity transform** | "make 3D", "render this", "convert to photo" | fidelity | Yes |
+| **Design proposal** | "add a wardrobe", "show what X looks like here", "give me a 3D image of [thing]", "place [element] in this space" | design-proposal | No — or use `Allowed transform:` |
+| **Concept generation** | "design a kitchen", "create an idea for", no source image | concept | No |
+
+**Design proposals**: the user explicitly asks to ADD or PLACE something that does not exist in the source image. This is NOT a fidelity violation. When calling `artifact_review`, include the addition in `fidelity_requirements` as:
+```
+"Allowed transform: [the element the user asked to add] placed/installed as requested"
+```
+The `Allowed transform:` prefix tells the review that this addition was user-authorised and must not block delivery.
+
+**Do not run a full fidelity review for concept generation** — claim level is `draft`, gate does not fire.
+
+---
+
 ## Context discipline (performance)
 
 Context fills fast. Every call to `vision_analyze` injects ~150 K chars into the conversation history and costs a compression event (~60 s) within 1-2 turns. Avoid it.
 
+- **Read each skill at most once per session.** Do not call `skill_view` again for a skill you have already read in this conversation. Re-reading the same 11K-char skill every turn floods context and causes expensive double-compressions.
 - **Do not call `vision_analyze` when the image is already in the artifact pipeline.** The model sees the source image natively (`image_input_mode: native`). Call `artifact_extract` with `detail: metadata` instead — it stores evidence on disk, not in context.
 - **Do not repeat large tool output in your reply.** Summarise; never quote artifact JSON or evidence blobs verbatim.
 - **If context compression fires mid-turn, note it briefly** ("⏳ summarising earlier context…") so the user knows why the first response was delayed.
