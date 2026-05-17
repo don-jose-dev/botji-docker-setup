@@ -1,6 +1,6 @@
 ---
 name: botji-2d-to-3d
-description: 2D-to-3D fidelity pipeline for any source artifact (image, DXF, PDF, SVG, IFC, sketch) — schema-first extraction, zone alignment check, source-aware transform route, and mandatory 8-step review before delivery.
+description: 2D-to-3D fidelity pipeline for photos, reference images, technical drawings, DXF, PDF, and sketches. Two modes — fast photo/reference path (4 steps, ~60-90s) or full technical path (8 steps) — with mandatory artifact review before delivery.
 tags:
   - botji
   - fidelity
@@ -11,132 +11,195 @@ tags:
 
 # Botji 2D-to-3D Fidelity Skill
 
-Use this skill when the user provides a 2D source artifact (image, DXF, PDF, SVG, IFC, technical drawing, plan, elevation, or sketch) and asks for a 3D render, model, visualization, or perspective view where fidelity to the source geometry matters.
+Use this skill when the user uploads a photo, reference image, technical drawing, DXF, PDF, SVG, IFC, or sketch and asks for a 3D render, perspective view, visualization, or derivative image.
 
-## Core rule
+---
 
-Schema first. Do not generate 3D output from a text prompt alone when a 2D source artifact with readable dimensions exists. Extract a geometry schema, confirm uncertain measurements with the user, then drive output from the schema — not from the prompt.
+## Choose the right mode first — do not run the 8-step pipeline on a photo
 
-**User override:** If the user explicitly says "just generate something" or "don't worry about exact dimensions", set `schema_authority: user_waived`, lower `final_claim_level` to `draft`, and proceed with best-effort generation. Disclose the waiver in the review.
+| Source type | Mode | Steps |
+|---|---|---|
+| Phone photo, render, screenshot, reference image | **Photo mode** | 4 steps |
+| DXF, PDF, IFC, SVG with parseable geometry | **Technical mode** | 8 steps |
+| User provides only dimensions/size spec, no drawing | **Spec mode** | 4 steps |
+| User says "just generate" or "don't worry about exact dims" | **Concept mode** | 2 steps |
 
-## Pipeline (mandatory for all 2D→3D work)
+---
+
+## PHOTO MODE — for phone photos, reference renders, screenshots (4 steps, ~60–90s)
+
+Use when the source is a raster image without parseable CAD geometry.
 
 ```
-2D source artifact
-  → 1. artifact_register          — register source file; get artifact_id and sha256
-  → 2. artifact_extract           — extract geometry/schema evidence from source
-  → 3. schema_validate            — validate dimension sums, positions, object counts
-  → 4. user_confirm               — confirm schema when any measurement is inferred, not parsed
-  → 5. artifact_normalize         — emit botji.artifact_schema.v1 as the single transform contract
-  → 6. artifact_transform         — drive 3D/render output from the schema contract
-  → 7. artifact_review            — compare 3D output against source schema; emit review JSON
-  → 8. persist lineage            — source → schema → render → review all linked
+1. artifact_register(path, role="source", declared_type="image")
+2. artifact_transform(
+     operation="edit_image",
+     source_artifact_ids=[source_id],
+     contract_id=contract_id,
+     instructions=<visual_brief>
+   )
+3. artifact_review(source_artifact_ids=[source_id], output_artifact_id=output_id,
+     fidelity_requirements=[hard_requirements], use_openai_vision=True)
+4. Deliver: send image first, then review badge
 ```
 
-Skip no step. If a step cannot be completed (tool unavailable, parse failure, missing measurement), stop and disclose before proceeding to the next step.
+Do NOT run artifact_extract, schema_validate, artifact_normalize, or user_confirm on a photo. These steps are for technical drawings with parseable geometry only.
 
-**Step 6 requirement:** Always use `artifact_transform` (not `image_generate`) for the 3D output. `artifact_transform` sets the correct `route` field that the fidelity review requires. If you use `image_generate` instead, you must call `artifact_register` with `route="artifact_transform.edit_image.openai_codex"` and `parents=[source_artifact_id]` to declare the transform lineage before calling `artifact_review`.
+### Visual brief for step 2 — build from source image
 
-## Schema authority rule
+```
+CAMERA: [e.g. Sony A7 IV · 24mm tilt-shift · front elevation] or [35mm · 3/4 perspective]
+LIGHT: soft diffused overcast · front-left 30° · 5500K neutral or [warm evening · side window]
+MOOD: architectural interior photography · editorial showroom or [landscape · natural light]
+SUBJECT (left-to-right / top-to-bottom inventory from source image):
+  - [element 1 with position and count]
+  - [element 2]
+HARD PRESERVE — never alter these:
+  - Overall spatial layout and composition
+  - Object count: exactly [N] [primary elements]
+  - [all named structural elements from source]
+ALLOWED CHANGES:
+  - Convert 2D flat appearance to 3D volume and depth
+  - Lighting and materials appropriate for render style
+  - Camera angle as specified (default: natural 3/4 perspective)
+FORBIDDEN — gpt-image-2 adds these if not listed:
+  - Do not add any objects not visible in the source image
+  - Do not add plants, furniture, decor, people, or clutter not in source
+  - Do not remove or reorder structural elements
+  - Do not add extra panels, shelves, modules, or compartments
+  - Do not change the count of [main structural elements]
+  - Do not extend any element beyond its source boundary
+```
 
-The extracted and user-confirmed schema is the geometry authority. Any 3D transform must treat the schema as a hard constraint, not a suggestion. The following schema fields are always hard requirements:
+### Size spec with photo
 
-- Module count and order
-- Module dimensions (widths, heights, depths) in the declared unit
-- Object positions (e.g. sink, cooktop, door, window) by module index
-- Total run width / bounding box (must equal sum of module widths)
-- Zone boundaries (e.g. upper vs lower cabinet grids must align unless explicitly flagged)
+If the user provides dimensions ("Size: 2400mm × 1500mm"), add to HARD PRESERVE in the brief — do NOT run schema_validate:
 
-The following are advisory unless the user made them mandatory:
+```
+HARD PRESERVE:
+  - Overall dimensions: 2400mm wide × 1500mm tall (set scale and proportions from this)
+```
 
-- Material, finish, color, texture
-- Lighting, camera angle, shadow style
-- Exact photorealism vs concept quality
+### Photo mode fidelity claim
 
-## Zone alignment rule
-
-When the source has multiple horizontal zones (e.g. upper wall cabinets + lower base cabinets, floor plan + elevation), the vertical module boundaries must align between zones, or the misalignment must be:
-
-1. Present in the source drawing, AND
-2. Explicitly confirmed by the user as intentional before the 3D transform is run.
-
-If boundaries differ between zones and there is no user confirmation, block the pipeline at step 4 and ask:
-
-> "The [upper/lower] zone boundaries don't align. Top: [dims]. Bottom: [dims]. Is this intentional in your design, or should one set be corrected before the 3D render?"
-
-## 3D transform routes (in priority order)
-
-1. **Schema-render** (`artifact_transform(operation: "render_schema")`) — deterministic SVG or geometry-first preview. Always run this first for any professional layout. This is the 100%-fidelity bridge between 2D schema and 3D output.
-2. **Source-image edit** (`artifact_transform(operation: "edit_image")`) — pass source image as pixel reference into a provider edit API. Use only when a confirmed schema exists and the change list is explicit. This produces a reviewed (not verified) output.
-3. **Schema-driven 3D engine** — Blender headless, FreeCAD, or equivalent, driven by schema dimensions. This is the gold standard for verified geometry. Use when the container has a 3D engine available.
-4. **Concept generation** (`image_generate`) — allowed only when the Prompt Contract sets `visual_mode: concept_generation` and there is no source geometry to preserve. Never use this for fidelity work.
-
-If route 1 or 2 fails, block and disclose the failure. Do not silently fall back to a lower-fidelity route.
-
-## Fidelity scores
-
-Persist `fidelity_scores` in every review:
+Always `final_claim_level: reviewed`. Never `verified` for an image edit.
 
 ```json
-{
-  "fidelity_scores": {
-    "schema_extraction_confidence": "verified|reviewed|inferred",
-    "zone_alignment_confirmed": true,
-    "transform_contract_fidelity_percent": 100,
-    "byte_exact_file_fidelity_percent": 0,
-    "claim_type": "transform_contract_fidelity",
-    "preservation_target": "source_constraint_preservation",
-    "basis": ["artifact_registry", "schema_extraction", "artifact_transform_route", "artifact_review"]
-  }
+"fidelity_scores": {
+  "transform_contract_fidelity_percent": 100,
+  "byte_exact_file_fidelity_percent": 0,
+  "claim_type": "transform_contract_fidelity",
+  "schema_extraction_confidence": "inferred"
 }
 ```
 
-`transform_contract_fidelity_percent: 100` means every hard schema requirement passed. It does not mean byte-exact pixel identity.
+---
 
-## Prompt Contract additions for 2D→3D work
+## TECHNICAL MODE — for DXF, PDF, IFC, SVG with parseable geometry (8 steps)
 
-Add to the contract:
+Use when the source has machine-readable geometry.
 
-```json
-{
-  "transform_type": "2d_to_3d",
-  "source_type": "image|dxf|pdf|svg|ifc|sketch",
-  "schema_authority": "extracted|user_provided|inferred",
-  "zone_alignment_confirmed": false,
-  "selected_route": "render_schema|edit_image|3d_engine|concept_generation",
-  "forbidden_routes": ["image_generate"],
-  "required_verification_steps": ["schema_extraction", "zone_alignment_check", "artifact_review"]
-}
+```
+1. artifact_register          — register source; get artifact_id and sha256
+2. artifact_extract           — extract geometry, layers, entities, dimensions
+3. schema_validate            — validate dimension sums, counts, positions
+4. user_confirm               — confirm inferred measurements (ask only if ambiguous)
+5. artifact_normalize         — emit botji.artifact_schema.v1 as transform contract
+6. artifact_transform         — drive output from schema contract
+7. artifact_review            — compare output against source schema
+8. persist lineage            — source → schema → render → review all linked
 ```
 
-## Review axes for 2D→3D
+Schema is the geometry authority. The render must match the schema, not just look similar.
 
-Always include the 8 base axes plus:
+### Zone alignment rule
 
-- `layout_fidelity` — did the 3D output preserve zone boundaries and module order?
-- `geometry_fidelity` — are proportions consistent with the schema dimensions?
-- `content_fidelity` — are all objects, appliances, labels, and structures present?
-- `adapter_route` — was the correct source-aware route used?
-- `lineage_integrity` — are source → schema → render → review all linked?
-- `unknowns_handling` — are all inferred dimensions and assumptions disclosed?
+For multi-zone layouts (upper/lower cabinets, floor plan + elevation), vertical module boundaries must align or the user must confirm the mismatch:
 
-## Blocking rules specific to 2D→3D
+> "The zone boundaries don't align. Top: [dims]. Bottom: [dims]. Intentional?"
 
-Block before final send when:
+---
 
-- Schema was not extracted; prompt-only generation was used instead.
-- Zone boundaries differ and user has not confirmed the misalignment.
-- The selected route failed and was replaced by a lower-fidelity fallback.
-- `transform_contract_fidelity_percent` is not 100 and no user approval was obtained.
-- The 3D output has more, fewer, or reordered modules compared to the source schema.
-- Any hard schema requirement (dimension, position, count) is unmet.
+## SPEC MODE — dimensions only, no drawing (4 steps)
 
-## Quality gates before final 3D delivery
+When user provides size spec without a source image:
 
-1. Was the source artifact registered before any generation step?
-2. Was a schema extracted and validated (dimension sums check out)?
-3. Were zone boundaries confirmed as aligned or intentionally misaligned?
-4. Did the selected route match the contract (no silent fallback)?
-5. Was the 3D output compared against the schema before delivery?
-6. Are all inferred assumptions labeled as such in the review?
-7. Is `transform_contract_fidelity_percent: 100` supported by evidence?
+```
+1. Build dimensional spec from user text (no artifact_register needed)
+2. image_generate with visual brief including spec dimensions
+3. Brief visual comparison against spec
+4. Deliver with claim level "reviewed"
+```
+
+Set `schema_authority: user_provided`. Disclose dimensions are interpreted, not extracted.
+
+---
+
+## CONCEPT MODE — user waives fidelity
+
+Set `schema_authority: user_waived`, `final_claim_level: draft`. One step: image_generate with style brief.
+
+---
+
+## Transform route rules
+
+| Route | When |
+|---|---|
+| `artifact_transform(operation="edit_image")` | Photo source, preserve layout. PRIMARY for photo mode. |
+| `artifact_transform(operation="render_schema")` | Technical drawing, schema-first preview. |
+| `image_generate` | Concept mode only — no source to preserve. |
+
+**No fallback rule:** If `edit_image` fails, stop and report. Do not switch to `image_generate` for source-bound work.
+
+**Route evidence:** If `image_generate` was used as a fallback, call `artifact_register(route="artifact_transform.edit_image.openai_codex", parents=[source_id])` before `artifact_review` or groundedness will block.
+
+---
+
+## Fidelity review interpretation for photo mode
+
+| Review result | Action |
+|---|---|
+| `preserve_change: conflict` + objects added that are not in source | Block — regenerate with stricter FORBIDDEN list |
+| `preserve_change: conflict` + layout/count wrong | Block — regenerate |
+| `preserve_change: conflict` + minor proportion/style drift | Warn user, deliver with reduced fidelity score |
+| `preserve_change: partial` + style differences only | Pass — deliver with honest caption |
+| `groundedness: conflict` due to invalid route | Fix route evidence, re-review |
+
+Do not auto-block for minor style drift. Block when object count changes or source elements are invented or removed.
+
+---
+
+## Delivery (Telegram)
+
+Send image first, then:
+
+```
+✅ 3D render · route: edit_image · claim: reviewed · fidelity: [N]%
+[1-line match/conflict summary]
+```
+
+Show progress during generation:
+```
+🔄 1/3 — registering source…
+🔄 2/3 — generating 3D render (~60s)…
+✅ 3/3 — fidelity review complete
+```
+
+---
+
+## Common use cases
+
+**"Give a 3D image of [thing] Size: WxH" + photo**
+→ Photo mode. Parse dimensions as HARD PRESERVE scale. 4 steps.
+
+**"Use full wall" (follow-up)**
+→ Photo mode. Update HARD PRESERVE: fill wall edge-to-edge. 1-2 tool calls.
+
+**"Give a similar model of this 3D image"**
+→ Photo mode. Source = the sent 3D image. Preserve layout, update style.
+
+**"Create a 2D production drawing of this"**
+→ 3D→2D. artifact_register + artifact_normalize(schema_profile="cad") + render_schema. Output: dimension-labeled schematic.
+
+**"Mark measurements properly"**
+→ artifact_transform(operation="render_schema") on existing schema. Add measurement labels to SVG output.

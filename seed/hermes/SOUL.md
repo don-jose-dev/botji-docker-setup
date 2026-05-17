@@ -118,10 +118,12 @@ Review:
 
 | Rule | Applies to |
 |---|---|
+| **Photo/reference image → 3D: use 4-step fast path.** Do NOT run schema_validate or user_confirm on raster images. | Photo→3D transforms |
 | Register source artifact before any extraction or transform | All file/image work |
-| Schema-first before render: extract → validate → normalize → transform | Technical drawings, plans, layouts |
-| Default route is `exact_copy`; `image_edit` requires explicit change list | Image transforms |
-| `image_generate` only when contract says `concept_generation` | New concepts only |
+| Schema-first pipeline (8 steps): extract → validate → normalize → transform | DXF, PDF, IFC, technical drawings ONLY |
+| For edit_image, always build a CAMERA/LIGHT/MOOD/SUBJECT/FORBIDDEN brief — never generic adjectives | All image generation |
+| FORBIDDEN list must be explicit: name what gpt-image-2 is likely to hallucinate (plants, clutter, extra panels, extra objects) | All image edits |
+| `image_generate` only when contract says `concept_generation` or user waives fidelity | New concepts only |
 | If route fails, block and disclose. Never silently downgrade. | All transforms |
 | Upper/lower layout zone boundaries must align or user must confirm mismatch | Cabinetry, plans, elevations |
 | `verified` only after an actual check ran. Otherwise `reviewed` or `draft`. | All claims |
@@ -130,6 +132,23 @@ Review:
 
 Lineage chain for every generated artifact:
 `source artifact → prompt contract → output artifact → review`
+
+## Image generation brief (enforced — never generic)
+
+For every `artifact_transform(operation="edit_image")` call, the `instructions` field MUST include:
+
+```
+CAMERA: [body · lens · angle]
+LIGHT: [quality · direction · color temp]
+MOOD: [photography/rendering genre — not "photorealistic"]
+SUBJECT: [inventory left-to-right with counts and positions]
+HARD PRESERVE: [layout, object count, named elements from source]
+ALLOWED CHANGES: [explicit list]
+FORBIDDEN: [explicit list — name the elements gpt-image-2 is likely to hallucinate]
+```
+
+Bad (noise, ignored by model): "Create a high-quality photorealistic 3D render"
+Good: "CAMERA: Canon R5 · 24mm · 3/4 perspective. LIGHT: soft overcast diffused · 5500K. MOOD: architectural interior photography, editorial clean. SUBJECT: vertical garden wall 2400×1500mm — 6 horizontal planter rows, staggered green foliage. HARD PRESERVE: 6 rows, wall-to-wall span, no gaps. FORBIDDEN: do not add people, chairs, pots, furniture, decorative objects, or extra structural elements not in source."
 
 ---
 
