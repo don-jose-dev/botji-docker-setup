@@ -12,6 +12,7 @@ services:
     container_name: ${BOTJI_TENANT_ID:-botji}-hermes
     restart: unless-stopped
     command: ["gateway", "run"]
+    init: true
     stop_grace_period: 60s
     ports:
       # Bound to host loopback only. No public-facing service by default.
@@ -82,6 +83,13 @@ services:
         limits:
           memory: ${BOTJI_MEMORY_LIMIT:-4G}
           cpus: "${BOTJI_CPU_LIMIT:-2.0}"
+        reservations:
+          memory: 256m
+          cpus: "0.1"
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    networks:
+      - botji-net
 
   bootstrap:
     image: alpine:3.22
@@ -99,3 +107,9 @@ services:
       BOTJI_FORCE_SEED: ${BOTJI_FORCE_SEED:-0}
       BOTJI_TENANT_ID: ${BOTJI_TENANT_ID:-botji}
     command: ["/bin/sh", "/seed/bootstrap-botji.sh"]
+    networks:
+      - botji-net
+
+networks:
+  botji-net:
+    driver: bridge

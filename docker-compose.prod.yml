@@ -5,7 +5,7 @@ services:
   hermes:
     # Use pre-built image from GHCR instead of building locally.
     # Set BOTJI_IMAGE_TAG to the exact sha- tag after each CI build for full traceability.
-    image: ${BOTJI_PROD_IMAGE:-ghcr.io/OWNER/botji-hermes:latest}
+    image: ${BOTJI_PROD_IMAGE:?BOTJI_PROD_IMAGE must be set to the GHCR image ref (e.g. ghcr.io/owner/botji-hermes@sha256:...)}
 
     restart: always
 
@@ -28,3 +28,9 @@ services:
     volumes:
       - ${BOTJI_DATA_DIR:-/opt/botji/data}:/opt/data
       - ${BOTJI_WORKSPACE_DIR:-/opt/botji/workspace}:/workspace
+    networks:
+      - botji-net
+
+networks:
+  botji-net:
+    driver: bridge

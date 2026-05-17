@@ -17,6 +17,7 @@ mkdir -p \
   "$DATA/reviews" \
   "$DATA/prompts" \
   "$DATA/logs" \
+  "$DATA/verdicts" \
   "$DATA/.codex" \
   "$DATA/.botji" \
   "$WORKSPACE"
@@ -30,6 +31,7 @@ chown "$OWNER" \
   "$DATA/reviews" \
   "$DATA/prompts" \
   "$DATA/logs" \
+  "$DATA/verdicts" \
   "$DATA/.codex" \
   "$DATA/.botji" \
   "$WORKSPACE" 2>/dev/null || true
@@ -76,7 +78,11 @@ copy_dir "$SEED/hermes/skills/botji-artifact-fidelity" "$DATA/skills/botji-artif
 copy_dir "$SEED/hermes/skills/botji-2d-to-3d" "$DATA/skills/botji-2d-to-3d"
 copy_file "$SEED/hermes/config.yaml" "$DATA/config.yaml"
 copy_dir "$SEED/hermes/prompts" "$DATA/prompts"
-copy_dir "$SEED/hermes/plugins/botji-artifacts" "$DATA/plugins/botji-artifacts"
+for _plugin_src in "$SEED/hermes/plugins"/botji-*/; do
+  [ -d "$_plugin_src" ] || continue
+  _plugin_name="$(basename "$_plugin_src")"
+  copy_dir "$_plugin_src" "$DATA/plugins/$_plugin_name"
+done
 
 copy_file "$SEED/hermes/schemas/prompt_contract.schema.json" "$DATA/schemas/prompt_contract.schema.json"
 copy_file "$SEED/hermes/schemas/source_fidelity_review.schema.json" "$DATA/schemas/source_fidelity_review.schema.json"
@@ -109,7 +115,7 @@ Seeded controls:
 - artifact-fidelity skill
 - 2d-to-3d skill
 - prompt templates
-- artifact registry plugin
+- botji-* plugins (botji-artifacts, botji-render, botji-allowlist, botji-gate)
 - JSON schemas
 - Codex config profiles
 - workspace AGENTS.md

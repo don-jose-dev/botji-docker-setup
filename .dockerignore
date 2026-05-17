@@ -1,0 +1,42 @@
+# Runtime data — never bake into image
+data/
+backups/
+workspace/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Git and Claude state
+.git
+.gitignore
+.gitattributes
+.claude/
+
+# Python bytecode
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Logs and databases
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+
+# Seed / config / docs — not needed inside image
+seed/
+scripts/
+systemd/
+caddy/
+docs/
+README.md
+MANIFEST.json
+Makefile
+.env.example

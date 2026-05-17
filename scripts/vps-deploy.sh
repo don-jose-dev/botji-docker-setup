@@ -122,6 +122,9 @@ cp seed/hermes/schemas/*.json "$DATA_DIR/schemas/" 2>/dev/null || true
 chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" \
   "$DATA_DIR/plugins" "$DATA_DIR/skills" "$DATA_DIR/prompts" "$DATA_DIR/schemas" 2>/dev/null || true
 echo "    Plugins, skills, schemas, prompts updated from seed."
+mkdir -p "$DATA_DIR/verdicts"
+chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/verdicts" 2>/dev/null || true
+echo "    Verdicts dir ensured: $DATA_DIR/verdicts"
 
 echo "==> Pre-flight plugin smoke test"
 # Imports every plugin's submodules + asserts public symbols exist for every

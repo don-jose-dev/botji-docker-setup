@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG HERMES_IMAGE=nousresearch/hermes-agent:main
 FROM ${HERMES_IMAGE}
 
@@ -5,35 +6,31 @@ ARG CODEX_NPM_VERSION=latest
 
 USER root
 
-# Codex CLI is installed on top of the official Hermes image.
-# Keep the official Hermes entrypoint. It owns first-run volume bootstrap and drops privileges.
-RUN npm i -g "@openai/codex@${CODEX_NPM_VERSION}" \
+# Install Codex CLI — separate layer so npm cache survives pip changes.
+RUN --mount=type=cache,target=/root/.npm \
+    npm install -g "@openai/codex@${CODEX_NPM_VERSION}" \
     && codex --version
 
-RUN if command -v apt-get >/dev/null 2>&1; then \
+# System libraries + all Python deps installed into the hermes venv only.
+# The hermes gateway imports plugins through /opt/hermes/.venv/bin/python,
+# so that is the only interpreter that needs these packages.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    if command -v apt-get >/dev/null 2>&1; then \
       apt-get update \
       && apt-get install -y --no-install-recommends \
            libmagic1 python3 python3-pip python3-venv \
            chromium chromium-driver \
       && rm -rf /var/lib/apt/lists/*; \
     fi \
-    && python3 -m pip install --break-system-packages --no-cache-dir \
-      openai \
-      pillow \
-      pymupdf \
-      pypdf \
-      ezdxf \
-      python-magic \
-      jsonschema \
     && /opt/hermes/.venv/bin/python -m ensurepip --upgrade \
-    && /opt/hermes/.venv/bin/python -m pip install --no-cache-dir \
-      openai \
-      pillow \
-      pymupdf \
-      pypdf \
-      ezdxf \
-      python-magic \
-      jsonschema
+    && /opt/hermes/.venv/bin/pip install --no-cache-dir \
+         openai \
+         pillow \
+         pymupdf \
+         pypdf \
+         ezdxf \
+         python-magic \
+         jsonschema
 
 COPY runtime/bin/botji-codex /usr/local/bin/botji-codex
 COPY runtime/bin/botji-codex-review /usr/local/bin/botji-codex-review

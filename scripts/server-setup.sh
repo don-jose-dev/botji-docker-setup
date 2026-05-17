@@ -5,7 +5,12 @@ set -euo pipefail
 
 DEPLOY_PATH="${DEPLOY_PATH:-/opt/botji}"
 BOTJI_USER="${BOTJI_USER:-botji}"
-REPO_URL="${REPO_URL:-https://github.com/OWNER/botji-docker-setup.git}"
+REPO_URL="${REPO_URL:-}"
+if [ -z "$REPO_URL" ]; then
+  echo "ERROR: set REPO_URL before running this script." >&2
+  echo "  Example: REPO_URL=https://github.com/your-org/botji-docker-setup.git bash server-setup.sh" >&2
+  exit 1
+fi
 
 echo "==> Updating system"
 apt-get update -q && apt-get upgrade -yq
@@ -27,7 +32,7 @@ curl https://rclone.org/install.sh | bash
 echo "==> Creating deploy user and directories"
 useradd -m -s /bin/bash "$BOTJI_USER" 2>/dev/null || true
 usermod -aG docker "$BOTJI_USER"
-mkdir -p "$DEPLOY_PATH" "$DEPLOY_PATH/data" "$DEPLOY_PATH/workspace" "$DEPLOY_PATH/backups"
+mkdir -p "$DEPLOY_PATH" "$DEPLOY_PATH/data" "$DEPLOY_PATH/workspace" "$DEPLOY_PATH/backups" "$DEPLOY_PATH/data/botji/verdicts"
 chown -R "$BOTJI_USER:$BOTJI_USER" "$DEPLOY_PATH"
 
 echo "==> Cloning repo"
@@ -39,9 +44,10 @@ fi
 echo "==> Setting up SSH key for CI deploy"
 mkdir -p /home/$BOTJI_USER/.ssh
 chmod 700 /home/$BOTJI_USER/.ssh
-echo "# Paste your CI public key below, then save" > /home/$BOTJI_USER/.ssh/authorized_keys
+: > /home/$BOTJI_USER/.ssh/authorized_keys
 chmod 600 /home/$BOTJI_USER/.ssh/authorized_keys
-chown -R $BOTJI_USER:$BOTJI_USER /home/$BOTJI_USER/.ssh
+chown -R "$BOTJI_USER:$BOTJI_USER" /home/$BOTJI_USER/.ssh
+echo "  WARNING: add your CI deploy public key to /home/$BOTJI_USER/.ssh/authorized_keys"
 
 echo "==> Installing systemd services"
 cp "$DEPLOY_PATH/systemd/botji.service" /etc/systemd/system/
