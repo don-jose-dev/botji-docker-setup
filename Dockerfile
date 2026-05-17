@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       && rm -rf /var/lib/apt/lists/*; \
     fi \
     && /opt/hermes/.venv/bin/python -m ensurepip --upgrade \
-    && /opt/hermes/.venv/bin/pip install --no-cache-dir \
+    && /opt/hermes/.venv/bin/pip install \
          openai \
          pillow \
          pymupdf \

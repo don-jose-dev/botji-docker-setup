@@ -30,7 +30,3 @@ services:
       - ${BOTJI_WORKSPACE_DIR:-/opt/botji/workspace}:/workspace
     networks:
       - botji-net
-
-networks:
-  botji-net:
-    driver: bridge

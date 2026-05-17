@@ -57,10 +57,16 @@ if grep -Eq '^BOTJI_DATA_DIR=/opt/data(/.*)?$' .env; then
   echo "    BOTJI_DATA_DIR normalized to host tenant data path"
 fi
 
-# Force model overrides — ensure no stale VPS env overrides config.yaml
-set_env_var BOTJI_CODEX_IMAGE_CHAT_MODEL "gpt-5.4-mini"
-set_env_var BOTJI_VISION_REVIEW_MODEL "gpt-5.4-mini"
-echo "    Model env vars pinned to gpt-5.4-mini"
+# Apply model overrides from CI if provided; otherwise leave whatever is in .env.
+# Model selection belongs in config.yaml — only override here when CI explicitly sets it.
+if [ -n "${CI_CODEX_IMAGE_CHAT_MODEL:-}" ]; then
+  set_env_var BOTJI_CODEX_IMAGE_CHAT_MODEL "$CI_CODEX_IMAGE_CHAT_MODEL"
+  echo "    BOTJI_CODEX_IMAGE_CHAT_MODEL set from CI: $CI_CODEX_IMAGE_CHAT_MODEL"
+fi
+if [ -n "${CI_VISION_REVIEW_MODEL:-}" ]; then
+  set_env_var BOTJI_VISION_REVIEW_MODEL "$CI_VISION_REVIEW_MODEL"
+  echo "    BOTJI_VISION_REVIEW_MODEL set from CI: $CI_VISION_REVIEW_MODEL"
+fi
 if grep -Eq '^BOTJI_WORKSPACE_DIR=/workspace(/.*)?$' .env; then
   set_env_var BOTJI_WORKSPACE_DIR "./workspace"
   echo "    BOTJI_WORKSPACE_DIR normalized to host workspace path"

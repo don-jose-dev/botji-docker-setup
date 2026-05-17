@@ -12,7 +12,6 @@ services:
     container_name: ${BOTJI_TENANT_ID:-botji}-hermes
     restart: unless-stopped
     command: ["gateway", "run"]
-    init: true
     stop_grace_period: 60s
     ports:
       # Bound to host loopback only. No public-facing service by default.
