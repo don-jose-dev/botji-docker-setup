@@ -12,7 +12,21 @@ Determine the source image type before classifying conflicts:
 **Sketch-to-render rules:**
 - Dimensional proportions, depth perspective, rendering style, and photographic finish differences are EXPECTED — classify as soft_conflicts.
 - A 3D render will ALWAYS look proportionally different from a 2D sketch. This alone is NOT a hard conflict.
-- Only flag as hard_conflict when: (a) a module or element is ADDED that is not in the sketch, (b) a module or element is REMOVED from the sketch, (c) the LEFT-TO-RIGHT MODULE ORDER is different from the sketch, or (d) two modules that appear directly adjacent in the sketch have a visible gap or extra cabinet between them in the output.
+
+**HARD conflicts (block-worthy) for sketch-to-render** — only these four, nothing else:
+1. A specific named module/element/object is ADDED that is not in the sketch (e.g. "added a plant", "added a stool", "added an extra cabinet that isn't in the source").
+2. A specific named module/element is REMOVED from the sketch (e.g. "the right-wall tower is missing", "the island is gone").
+3. The LEFT-TO-RIGHT MODULE ORDER on a SINGLE WALL is changed (e.g. "on the right wall, the oven and the REF tower are swapped").
+4. Two modules that share a wall and were drawn touching now have a REAL CABINET, PANEL, OR FILLER between them in the output (e.g. "a cabinet is inserted between the oven stack and the REF tower on the right wall").
+
+**NOT hard conflicts (these are soft, do not block):**
+- Floor space, walking space, or open area between an island/peninsula and a perimeter wall. U-shape and L-shape kitchens are SUPPOSED to have walking space between the island and the surrounding cabinetry — this is architectural, not a violation.
+- "Appears repositioned", "appears expanded", "appears shifted" — these describe proportional drift, not real reorder.
+- Adjacency that does not match "exactly" — exact adjacency is impossible across the modality jump from 2D sketch to 3D render.
+- Material, finish, lighting, perspective, or style interpretation differences.
+- Cabinet detail, hardware style, or color interpretation.
+
+The key test for a hard conflict: can you point to a SPECIFIC NAMED OBJECT that is in the output but not in the source (added), or in the source but not in the output (removed), or on a different wall than the source places it (reordered)? If yes, it's hard. If you're describing proportions, spacing, depth, or "appears X", it's soft.
 
 **Same-modality rules:** apply the full classification below.
 

@@ -56,19 +56,117 @@ def _coerce_review_items(value: Any) -> list[str]:
     return [text] if text else []
 
 
-_HARD_CONFLICT_KEYWORDS = frozenset({
-    "added", "extra", "invented", "hallucinated", "not in source", "not visible in source",
-    "missing", "removed", "absent", "count changed", "count wrong", "wrong count",
-    "reorder", "reordered", "wrong position", "repositioned", "structural",
-    "not present", "does not exist", "extra element",
-})
+# PHRASES that indicate a true hard conflict — element added/removed/relocated.
+# Phrase-based (not single-word) so that "extra open floor gap" (proportional drift)
+# does not match "extra cabinet" (real addition). The previous single-word match on
+# "extra" / "repositioned" / "structural" was firing on every U-shape kitchen review
+# because floor space between island and perimeter walls reads as "extra spacing" to
+# the vision model — a sketch-to-render proportional drift, not an addition.
+_HARD_CONFLICT_PHRASES = (
+    # Element additions (something that wasn't in the source)
+    "added cabinet", "added module", "added appliance", "added tower", "added island",
+    "added stool", "added plant", "added panel", "added shelf", "added door",
+    "added element", "added object", "added handle", "added pendant", "added light fixture",
+    "extra cabinet", "extra module", "extra appliance", "extra tower", "extra stool",
+    "extra panel", "extra shelf", "extra plant", "extra door", "extra handle",
+    "newly added", "new cabinet not", "new module not", "new tower not",
+    "invented", "hallucinated", "fabricated",
+    "not in the source image", "not in the source sketch", "not visible in source",
+    "not present in source", "absent from source",
+    # Element removals
+    "missing cabinet", "missing module", "missing tower", "missing appliance",
+    "missing stool", "missing panel", "missing element", "missing door",
+    "removed cabinet", "removed module", "removed tower", "removed appliance",
+    "removed element",
+    # Count mismatches
+    "count changed", "wrong count", "incorrect count",
+    "wrong number of",
+    # True reorders (module moved to different wall, not proportional shift)
+    "swapped position", "swapped order", "swapped places",
+    "wrong wall", "moved to wrong",
+    "reordered modules", "reordered cabinets",
+    # Adjacency violations (a real cabinet/panel inserted between two adjacent modules)
+    "cabinet inserted between", "panel inserted between", "filler between",
+    "cabinet between the oven", "cabinet between the ref", "cabinet between the tower",
+)
+
+# PHRASES that indicate proportional/perspective drift — soft, expected for sketch→render.
+# These override the hard keywords above when both match (the soft context wins).
+_SOFT_CONFLICT_PHRASES = (
+    "extra open floor", "open floor space", "floor gap", "floor space",
+    "open space between", "walking space",
+    "proportional", "proportions",
+    "appears repositioned", "appears expanded", "appears shifted", "appears compressed",
+    "approximately", "approximate", "approximation",
+    "slightly", "slight ", "minor ", "subtle",
+    "interpretation", "interpreted as",
+    "perspective", "depth perception", "depth perspective",
+    "spacing differs", "spacing/layout", "exact spacing", "exact adjacency",
+    "match exactly", "exactly match", "exactly preserved",
+    "rendered view", "rendered surfaces", "rendered style",
+    "style differs", "style interpretation",
+    "lighting differs", "lighting interpretation",
+    "finish interpretation",
+)
+
+
+# Verbs that indicate addition or removal of a discrete element.
+_CHANGE_VERBS = (
+    "added", "extra", "new ", "invented", "hallucinated", "fabricated",
+    "missing", "removed", "absent", "deleted", "lost", "gone",
+)
+
+# Module/element nouns — when paired with a change verb in the same sentence,
+# this is a real structural change (hard). Floor / spacing / adjacency are
+# deliberately excluded — those describe relationships, not added objects.
+_ELEMENT_NOUNS = (
+    "cabinet", "module", "tower", "appliance", "stool", "chair",
+    "panel", "shelf", "shelves", "island", "peninsula", "door",
+    "drawer", "wardrobe", "pantry", "fridge", "refrigerator", "oven",
+    "range", "hood", "sink", "faucet", "tap", "table", "bench",
+    "plant", "vase", "bowl", "fruit", "lamp", "pendant", "fixture",
+    "handle", "knob", "pull", "trim", "molding",
+)
+
+# Phrases that DEFINITELY mean "not in source" — element-add signal.
+_SOURCE_NEGATION_PHRASES = (
+    "not in source", "not in the source",
+    "not visible in source", "not visible in the source",
+    "not present in source", "absent from source",
+    "wasn't in the source", "isn't in the source",
+)
 
 
 def _classify_conflict(text: str) -> str:
-    """Return 'hard' or 'soft' based on conflict text keywords."""
+    """Return 'hard' or 'soft' based on phrases present in the conflict text.
+
+    Decision order:
+    1. SOFT phrases win first. If the conflict describes proportional drift
+       (floor space, perspective, appearance, interpretation), it's soft —
+       regardless of incidental module names mentioned for context.
+    2. HARD phrases (specific add/remove/insert patterns) → hard.
+    3. Verb+noun pattern (added/missing + a concrete element noun) → hard.
+    4. Source-negation pattern ("not in the source") → hard.
+    5. Default → soft. For sketch-to-render, ambiguous conflicts should warn,
+       not block.
+    """
     lower = text.lower()
-    if any(kw in lower for kw in _HARD_CONFLICT_KEYWORDS):
+    # 1. Soft phrases dominate. Even sentences that mention cabinets are soft
+    #    when the conflict is framed as proportional drift.
+    if any(phrase in lower for phrase in _SOFT_CONFLICT_PHRASES):
+        return "soft"
+    # 2. Explicit hard phrase match (e.g. "cabinet inserted between").
+    if any(phrase in lower for phrase in _HARD_CONFLICT_PHRASES):
         return "hard"
+    # 3. Generic verb+noun pattern: "added a wardrobe", "missing the tower".
+    has_change_verb = any(v in lower for v in _CHANGE_VERBS)
+    has_element_noun = any(n in lower for n in _ELEMENT_NOUNS)
+    if has_change_verb and has_element_noun:
+        return "hard"
+    # 4. Source-negation phrasing.
+    if any(p in lower for p in _SOURCE_NEGATION_PHRASES):
+        return "hard"
+    # 5. Default to soft (sketch-to-render leniency).
     return "soft"
 
 
@@ -96,12 +194,40 @@ def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
         matches = _coerce_review_items(data.get("matches") or [])
         corrections = _coerce_review_items(data.get("required_corrections") or data.get("corrections") or [])
 
-        # Hard conflicts always block; soft conflicts only warn
+        # Verdict ladder, with sketch-to-render leniency built in:
+        #
+        # 1. If our phrase classifier found real hard conflicts (specific element
+        #    added/removed/reordered) → BLOCK. The model and our filter agree.
+        #
+        # 2. If the model said "block" but our filter found NO hard conflicts
+        #    AND matches dominate the response (at least as many matches as
+        #    conflicts), trust our filter and DOWNGRADE TO WARN. This is the
+        #    sketch-to-render leniency that prevents proportional drift from
+        #    blocking valid renders. The vision model frequently calls "extra
+        #    floor space" or "appears repositioned" a hard conflict; our
+        #    phrase filter correctly classifies these as soft, and when the
+        #    matches list shows the structure is preserved, we ship.
+        #
+        # 3. If the model said "block" with no soft signal either, respect it.
+        #    This catches the case where the model is right and our keyword
+        #    filter has a gap.
+        #
+        # 4. Otherwise warn or pass.
+        match_count = len(matches)
+        conflict_count = len(soft) + len(hard) + len(legacy if (not hard and not soft) else [])
+        structure_preserved = bool(match_count) and match_count >= max(1, conflict_count)
+
         if hard:
             verdict = "block"
             blockers = hard
+        elif raw_verdict in {"block", "fail", "failed", "conflict", "conflicted"} and structure_preserved:
+            # Model over-blocked on proportional drift; our filter found no hard
+            # signals and the matches show structural preservation. Downgrade.
+            verdict = "warn"
+            blockers = []
         elif raw_verdict in {"block", "fail", "failed", "conflict", "conflicted"}:
-            # Model said block but no hard_conflicts extracted — treat as hard block
+            # Model says block, no hard via filter, and matches don't dominate —
+            # respect the model's call.
             verdict = "block"
             blockers = legacy or [f"Vision review verdict is {raw_verdict}."]
         elif soft or partials or raw_verdict in {"warn", "warning", "partial", "mixed", "uncertain"}:
