@@ -79,11 +79,12 @@ memory:
   flush_min_turns: 6
 session_reset:
   mode: both
-  # idle_minutes 120: was 1440 (24 h). Sessions were accumulating 175+ messages and
-  # 200K+ tokens over 4-hour work sessions, causing double-compression that barely
-  # reduced context. 2-hour idle reset keeps sessions manageable without interrupting
-  # active work flows.
-  idle_minutes: 120
+  # idle_minutes 45: sessions grow to 1.2 MB within hours during active image work.
+  # Users who pause for >45 min get a clean session on return; active users never
+  # hit this threshold (they send follow-ups every few minutes). Artifacts are
+  # persisted to disk so no work is lost — the new session can still reference prior
+  # artifact IDs. Daily reset at 4am clears anything that accumulated overnight.
+  idle_minutes: 45
   at_hour: 4
 group_sessions_per_user: true
 streaming:
