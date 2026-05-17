@@ -38,11 +38,18 @@ compression:
   # each) get summarised away before they push context past the threshold again.
   threshold: 0.50
   target_ratio: 0.35
-  # protect_last_n 8: was 20, then we lowered to 20 from 30. Lowering further to 8
-  # so the compressor can summarise large tool outputs (artifact_review ~18K chars,
-  # artifact_transform ~9K chars, skill_view ~11K chars ×3) that are accumulating
-  # in the recent-messages window and preventing compression from making progress.
-  protect_last_n: 8
+  # protect_last_n 14: the compressor tail budget = threshold × target_ratio =
+  # 136K × 0.35 = 47.6K tokens. But protect_last_n is the MINIMUM message count.
+  # At 8, the 8 most-recent messages only total ~25K tokens — the agent wakes up
+  # after compression with no memory of which skills it already read and immediately
+  # calls skill_view 3-4× (15K chars each), consuming 44% of post-compression
+  # budget before any work starts. 2 image-pipeline turns later context is back at
+  # 136K and fires again.
+  # At 14, the protected tail includes skill_view outputs from the previous 2 turns,
+  # the agent recognises it already read those skills, skips re-reads, and compression
+  # fires 2-3× less often. 14 messages × ~3K tokens avg = ~42K retained — aligns
+  # with the 47.6K token tail budget.
+  protect_last_n: 14
   protect_first_n: 3
 prompt_caching:
   cache_ttl: 5m

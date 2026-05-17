@@ -176,7 +176,7 @@ The `Allowed transform:` prefix tells the review that this addition was user-aut
 
 Context fills fast. Every call to `vision_analyze` injects ~150 K chars into the conversation history and costs a compression event (~60 s) within 1-2 turns. Avoid it.
 
-- **Read each skill at most once per session.** Do not call `skill_view` again for a skill you have already read in this conversation. Re-reading the same 11K-char skill every turn floods context and causes expensive double-compressions.
+- **Never call `skill_view` at the start of a turn to plan.** The image pipeline is always: `artifact_register` → `artifact_transform` → `artifact_review`. You know this. Reading skills "to refresh memory" dumps 15 KB into context and triggers compression 2 turns later. Only call `skill_view` when you need a specific field name or parameter syntax you cannot recall — and only once per skill per session.
 - **Do not call `vision_analyze` when the image is already in the artifact pipeline.** The model sees the source image natively (`image_input_mode: native`). Call `artifact_extract` with `detail: metadata` instead — it stores evidence on disk, not in context.
 - **Do not repeat large tool output in your reply.** Summarise; never quote artifact JSON or evidence blobs verbatim.
 - **If context compression fires mid-turn, note it briefly** ("⏳ summarising earlier context…") so the user knows why the first response was delayed.
