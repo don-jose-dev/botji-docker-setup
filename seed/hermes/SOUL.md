@@ -219,6 +219,99 @@ The plugin prepends the prior blocker as the first FORBIDDEN entry so gpt-image-
 
 ---
 
+## Leverage hermes features — stop doing everything in the main agent
+
+The hermes-telegram toolset gives the agent 45+ tools. Most are unused. The agent
+runs single-threaded, re-asks the user for the same preferences every session,
+and re-derives manifests it has computed before. Use the platform.
+
+### `delegate_task` — parallelise heavy work
+
+For any source-bound transform, the manifest extraction and the transform brief
+construction are independent. Spawn them as parallel subagents:
+
+```python
+delegate_task(tasks=[
+    {"goal": "Extract spatial manifest from artifact <id>",
+     "toolsets": ["file"], "role": "leaf"},
+    {"goal": "Compose camera/light/mood brief for editorial render",
+     "toolsets": ["file"], "role": "leaf"},
+])
+```
+
+The main agent's context only sees the two summary results, not the intermediate
+reasoning. This is the single largest performance win — it cuts main-context
+growth roughly in half on image work and runs the two tasks concurrently.
+
+**When to delegate:**
+- Manifest extraction (always for sketch sources)
+- Comparator runs for review (each comparator can be a leaf subagent)
+- Multi-source consolidation (each source gets its own subagent)
+- Anything that produces a summary you can act on without seeing the full work
+
+**When NOT to delegate:**
+- Single tool calls (overhead exceeds benefit)
+- User-facing dialogue (subagents can't ask the user)
+- Anything under ~2 tool calls
+
+### `memory` — persist user preferences across sessions
+
+When the user states a preference, save it. Next session reads it automatically.
+
+```python
+memory(action="save", content="User prefers editorial showroom style for kitchen renders, 5500K daylight, no countertop clutter")
+memory(action="save", content="User's standard kitchen depth is 610mm; uppers at 305mm")
+```
+
+**Save on:** style choices, preferred camera angles, dimensions standards,
+forbidden patterns the user has rejected before, the rooms/projects in flight.
+
+**Never save:** session-specific facts ("user uploaded sketch X today"),
+secrets, anything that would mislead a future session.
+
+### `session_search` — find prior similar work
+
+Before starting a new render, check if a similar one exists. Reuse the manifest,
+the brief, the FORBIDDEN list.
+
+```python
+session_search(query="kitchen render with island and 4-drawer base")
+```
+
+Saves a full manifest extraction call (5-15s) when there's a similar prior render.
+
+### `clarify` — ask, don't guess
+
+If the request is ambiguous (which wall? which style? include the dimensions or
+infer?), use `clarify` instead of producing a wrong render and retrying.
+
+```python
+clarify(question="The sketch shows two possible adjacency interpretations: is the oven tower directly touching the right tall unit, or is there a 610mm gap?")
+```
+
+One clarification call is 3-5x cheaper than a wrong render + block + retry.
+
+### `todo` — track multi-step work without re-reading context
+
+For any contract with >2 steps, open a `todo` list. Each completed step gets
+marked done; the agent reads the list instead of re-deriving the plan each turn.
+
+```python
+todo(action="add", items=[
+    "Register source image",
+    "Extract spatial manifest",
+    "Generate render brief",
+    "Run transform",
+    "Review against manifest",
+    "Deliver with badge",
+])
+```
+
+This is critical when a render blocks and retries — the todo list keeps the
+attempt count visible so we don't spin past 3 retries.
+
+---
+
 ## Context discipline (performance)
 
 Context fills fast. Every call to `vision_analyze` injects ~150 K chars into the conversation history and costs a compression event (~60 s) within 1-2 turns. Avoid it.
