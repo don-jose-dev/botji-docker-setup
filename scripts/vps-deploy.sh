@@ -16,6 +16,7 @@ echo "==> GHCR login"
 echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
 echo "==> Pull latest code"
+git reset --hard HEAD
 git pull origin "$GIT_BRANCH"
 
 echo "==> Write .env"
