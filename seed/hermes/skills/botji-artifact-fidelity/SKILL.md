@@ -176,13 +176,31 @@ Set `schema_authority: user_waived`, `final_claim_level: draft`. One step: `imag
 |---|---|
 | `preserve_change: conflict` + objects added not in source | Block — regenerate with stricter FORBIDDEN list |
 | `preserve_change: conflict` + layout/count wrong | Block — regenerate |
-| `preserve_change: conflict` + minor proportion/style drift | Warn user, deliver with reduced fidelity score |
+| `preserve_change: conflict` + minor proportion/style drift | **Warn only** — deliver with caveat |
 | `preserve_change: partial` + style differences only | Pass — deliver with honest caption |
 | `groundedness: conflict` due to invalid route | Fix route evidence, re-review |
 
 Do not auto-block for minor style drift. Block when object count changes or source elements are invented or removed.
 
 Photo mode claim level is always `reviewed`. Never `verified` for an image edit.
+
+### Sketch-to-render review thresholds
+
+When the source is a sketch, floor plan, or schematic (use `botji-2d-to-3d` skill for the full pipeline):
+
+The review authority is the **spatial manifest** (module count, order, adjacency), NOT pixel geometry. A hand-drawn sketch will NEVER geometrically match a 3D photorealistic render — dimensional and proportion differences are expected.
+
+| What changed | Action |
+|---|---|
+| Module count changed | Block |
+| Module left-to-right order changed | Block |
+| Adjacency violated (gap or filler inserted between adjacent modules) | Block |
+| Appliance added or removed | Block |
+| Proportions/depth/perspective differ from sketch | **Warn only — do not block** |
+| Lighting, material, or finish drift | Pass |
+| Sketch line details not replicated | Pass |
+
+If `delivery_gate == "blocked"` and ALL conflicts are proportion/geometry drift (no count/order/adjacency violations), override the gate and deliver with a warn caveat. The gate is for spatial violations, not artistic interpretation differences.
 
 ### Delivery
 
