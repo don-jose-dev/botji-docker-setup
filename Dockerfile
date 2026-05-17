@@ -22,6 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
            chromium chromium-driver \
       && rm -rf /var/lib/apt/lists/*; \
     fi \
+    && ([ -f /opt/hermes/.venv/bin/python ] || python3 -m venv /opt/hermes/.venv) \
     && /opt/hermes/.venv/bin/python -m ensurepip --upgrade \
     && /opt/hermes/.venv/bin/pip install \
          openai \
