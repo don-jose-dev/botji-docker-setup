@@ -240,5 +240,10 @@ else
   exit 1
 fi
 
+# Prune images not used by any running container. Prevents the ~30 GB disk
+# accumulation seen after each CI deploy (old sha-* images pile up as <none>).
+echo "==> Pruning unused images"
+docker image prune -a -f 2>/dev/null || true
+
 # Cleanup
 rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 /tmp/vps-deploy.sh

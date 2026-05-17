@@ -179,7 +179,8 @@ def _resolve_codex_client() -> Any:
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"hermes auxiliary_client unavailable: {exc}") from exc
     # resolve_provider_client returns (client, model) tuple per hermes docs.
-    result = resolve_provider_client("openai-codex")
+    # Pass model explicitly so hermes can select the right provider endpoint.
+    result = resolve_provider_client("openai-codex", model="gpt-image-2")
     client = result[0] if isinstance(result, tuple) else result
     if client is None:
         raise RuntimeError(
