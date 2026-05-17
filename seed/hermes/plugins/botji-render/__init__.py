@@ -75,11 +75,6 @@ _TOOL_SCHEMA = {
                 "enum": ["low", "medium", "high"],
                 "default": "high",
             },
-            "input_fidelity": {
-                "type": "string",
-                "enum": ["low", "high"],
-                "default": "high",
-            },
             "output_format": {
                 "type": "string",
                 "enum": ["png", "jpeg", "webp"],
@@ -116,7 +111,7 @@ async def _handle_botji_render(args: dict[str, Any], **_: Any) -> str:
         if not user_id:
             return _json({"success": False, "error": "user_id is required", "error_kind": "validation"})
 
-        client = _resolve_codex_client()
+        client = _build_render_client()
 
         result = await render(
             client=client,
@@ -125,7 +120,6 @@ async def _handle_botji_render(args: dict[str, Any], **_: Any) -> str:
             prompt=prompt,
             size=str(args.get("size") or "1024x1536"),
             quality=str(args.get("quality") or "high"),
-            input_fidelity=str(args.get("input_fidelity") or "high"),
             output_format=str(args.get("output_format") or "png"),
         )
         # Trim image_b64 from the returned-to-agent payload — the agent
@@ -167,26 +161,35 @@ def _persist_image_bytes(data: bytes, *, user_id: str, fmt: str) -> Path:
     return out_path
 
 
-def _resolve_codex_client() -> Any:
-    """Resolve the openai-codex Client via hermes auxiliary helpers.
+def _build_render_client() -> Any:
+    """Build a raw openai.OpenAI client authenticated with Codex OAuth.
 
-    Falls back to importing from agent.auxiliary_client if available;
-    raises a clear error if Codex auth is missing so the failure mode
-    is "tool error to agent" rather than "silent stall".
+    gpt-image-2 is only reachable through client.responses.stream() with the
+    image_generation tool. That endpoint requires a raw OpenAI client constructed
+    with the Codex access token + Cloudflare headers — NOT the CodexAuxiliaryClient
+    wrapper returned by resolve_provider_client(), which only exposes
+    chat.completions and has no .responses attribute.
+
+    Mirrors _build_codex_client() in botji-artifacts/_codex.py.
     """
     try:
-        from agent.auxiliary_client import resolve_provider_client  # type: ignore
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"hermes auxiliary_client unavailable: {exc}") from exc
-    # resolve_provider_client returns (client, model) tuple per hermes docs.
-    # Pass model explicitly so hermes can select the right provider endpoint.
-    result = resolve_provider_client("openai-codex", model="gpt-image-2")
-    client = result[0] if isinstance(result, tuple) else result
-    if client is None:
-        raise RuntimeError(
-            "openai-codex client not available — run `make codex-push-auth` to seed auth"
+        from agent.auxiliary_client import (  # type: ignore
+            _read_codex_access_token,
+            _codex_cloudflare_headers,
         )
-    return client
+    except Exception as exc:
+        raise RuntimeError(f"hermes auxiliary_client unavailable: {exc}") from exc
+    token = _read_codex_access_token()
+    if not token:
+        raise RuntimeError(
+            "openai-codex token not available — run `make codex-push-auth` to seed auth"
+        )
+    from openai import OpenAI
+    return OpenAI(
+        api_key=token,
+        base_url="https://chatgpt.com/backend-api/codex",
+        default_headers=_codex_cloudflare_headers(token),
+    )
 
 
 def register(ctx) -> None:
