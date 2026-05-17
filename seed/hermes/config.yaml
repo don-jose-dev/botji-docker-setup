@@ -27,13 +27,18 @@ tool_loop_guardrails:
     idempotent_no_progress: 5
 compression:
   enabled: true
-  # threshold 0.65 (was 0.5): defer compression until 65% of the model window so
-  # short follow-up turns ("Yes", "make 3d") don't trigger a mid-stream compaction
-  # that loses the image-context the user was iterating on. protect_last_n 30
-  # (was 20) keeps the active image-edit thread intact across the compactor.
-  threshold: 0.65
-  target_ratio: 0.2
-  protect_last_n: 30
+  # threshold 0.50: compress at 50% (136K tokens) rather than 65% (177K).
+  # With image_input_mode:native, images re-attach fresh each turn so there is no
+  # reason to keep a bloated context alive to "preserve image context" — the model
+  # can see the source image directly. Compressing earlier means the compressor LLM
+  # call processes ~136K tokens instead of ~177K, saving ~30s per compression event.
+  # target_ratio 0.35: keep 35% (95K) instead of 20% (54K). Less aggressive summary
+  # = faster compressor = less information lost on active image-edit threads.
+  # protect_last_n 20: trim from 30 so accumulated vision_analyze outputs (162K chars
+  # each) get summarised away before they push context past the threshold again.
+  threshold: 0.50
+  target_ratio: 0.35
+  protect_last_n: 20
   protect_first_n: 3
 prompt_caching:
   cache_ttl: 5m

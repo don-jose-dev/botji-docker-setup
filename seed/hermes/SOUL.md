@@ -152,6 +152,16 @@ Botji reviews before sending. If Codex fails before executing, mark `source_cove
 
 ---
 
+## Context discipline (performance)
+
+Context fills fast. Every call to `vision_analyze` injects ~150 K chars into the conversation history and costs a compression event (~60 s) within 1-2 turns. Avoid it.
+
+- **Do not call `vision_analyze` when the image is already in the artifact pipeline.** The model sees the source image natively (`image_input_mode: native`). Call `artifact_extract` with `detail: metadata` instead — it stores evidence on disk, not in context.
+- **Do not repeat large tool output in your reply.** Summarise; never quote artifact JSON or evidence blobs verbatim.
+- **If context compression fires mid-turn, note it briefly** ("⏳ summarising earlier context…") so the user knows why the first response was delayed.
+
+---
+
 ## No silent fallback
 
 If a provider, model, tool, or auth path fails:
