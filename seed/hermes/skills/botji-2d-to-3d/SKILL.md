@@ -36,48 +36,41 @@ Use when the source is a raster image without parseable CAD geometry.
      operation="edit_image",
      source_artifact_ids=[source_id],
      contract_id=contract_id,
-     instructions=<visual_brief>
+     camera_brief="[body · lens · view angle]",
+     light_brief="[quality · direction · color temp]",
+     mood_brief="[photography/rendering genre]",
+     subject_inventory=[
+       "[primary element 1 with count and position from source]",
+       "[primary element 2]"
+     ],
+     hard_preserve=[
+       "Overall spatial layout and composition",
+       "Object count: exactly [N] [primary elements]",
+       "[named structural constraints from source]"
+     ],
+     forbidden_elements=[
+       "Do not add any objects not visible in the source image",
+       "Do not add plants, furniture, decor, people, or clutter not in source",
+       "Do not remove or reorder structural elements",
+       "Do not add extra [panels/shelves/modules] beyond source",
+       "Do not extend any element beyond its source boundary"
+     ]
    )
 3. artifact_review(source_artifact_ids=[source_id], output_artifact_id=output_id,
-     fidelity_requirements=[hard_requirements], use_openai_vision=True)
+     fidelity_requirements=hard_preserve, use_openai_vision=True)
 4. Deliver: send image first, then review badge
 ```
 
 Do NOT run artifact_extract, schema_validate, artifact_normalize, or user_confirm on a photo. These steps are for technical drawings with parseable geometry only.
 
-### Visual brief for step 2 — build from source image
-
-```
-CAMERA: [e.g. Sony A7 IV · 24mm tilt-shift · front elevation] or [35mm · 3/4 perspective]
-LIGHT: soft diffused overcast · front-left 30° · 5500K neutral or [warm evening · side window]
-MOOD: architectural interior photography · editorial showroom or [landscape · natural light]
-SUBJECT (left-to-right / top-to-bottom inventory from source image):
-  - [element 1 with position and count]
-  - [element 2]
-HARD PRESERVE — never alter these:
-  - Overall spatial layout and composition
-  - Object count: exactly [N] [primary elements]
-  - [all named structural elements from source]
-ALLOWED CHANGES:
-  - Convert 2D flat appearance to 3D volume and depth
-  - Lighting and materials appropriate for render style
-  - Camera angle as specified (default: natural 3/4 perspective)
-FORBIDDEN — gpt-image-2 adds these if not listed:
-  - Do not add any objects not visible in the source image
-  - Do not add plants, furniture, decor, people, or clutter not in source
-  - Do not remove or reorder structural elements
-  - Do not add extra panels, shelves, modules, or compartments
-  - Do not change the count of [main structural elements]
-  - Do not extend any element beyond its source boundary
-```
+Use structured brief fields (`camera_brief`, `subject_inventory`, `hard_preserve`, `forbidden_elements`) — NOT a freeform `instructions` string. The plugin assembles the final prompt from these fields, ensuring quality regardless of prompt verbosity.
 
 ### Size spec with photo
 
-If the user provides dimensions ("Size: 2400mm × 1500mm"), add to HARD PRESERVE in the brief — do NOT run schema_validate:
+If the user provides dimensions ("Size: 2400mm × 1500mm"), add to `hard_preserve` — do NOT run schema_validate:
 
 ```
-HARD PRESERVE:
-  - Overall dimensions: 2400mm wide × 1500mm tall (set scale and proportions from this)
+hard_preserve=["Overall dimensions: 2400mm wide × 1500mm tall — set scale and proportions from this", ...]
 ```
 
 ### Photo mode fidelity claim

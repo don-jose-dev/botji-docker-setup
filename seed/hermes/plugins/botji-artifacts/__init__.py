@@ -193,6 +193,33 @@ ARTIFACT_TRANSFORM_SCHEMA = _tool_schema(
             "quality": {"type": "string", "enum": ["low", "medium", "high", "auto"], "default": "high"},
             "size": {"type": "string", "default": "auto"},
             "output_format": {"type": "string", "enum": ["png", "jpeg", "webp"], "default": "png"},
+            "camera_brief": {
+                "type": "string",
+                "description": "Camera spec for edit_image: body, lens, view angle. e.g. 'Sony A7 IV · 24mm tilt-shift · front elevation'",
+            },
+            "light_brief": {
+                "type": "string",
+                "description": "Lighting spec for edit_image: quality, direction, color temp. e.g. 'soft diffused · front-left 30° · 5500K'",
+            },
+            "mood_brief": {
+                "type": "string",
+                "description": "Photography/rendering genre for edit_image. e.g. 'architectural interior photography · editorial showroom'",
+            },
+            "subject_inventory": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Source element inventory for edit_image, left-to-right/top-to-bottom with counts and positions.",
+            },
+            "hard_preserve": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Layout rules and object constraints that must not change in edit_image output.",
+            },
+            "forbidden_elements": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Elements to explicitly forbid in edit_image output — name what gpt-image-2 is likely to hallucinate for this scene.",
+            },
         },
         "required": ["source_artifact_ids"],
     },
@@ -1582,9 +1609,30 @@ def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
                 render_title=str(args.get("render_title") or "Botji artifact schema preview"),
             )
             return _json({"success": True, **result})
-        prompt = str(args.get("instructions") or "").strip()
+        # Build structured brief from explicit fields if provided, else use freeform instructions
+        camera   = str(args.get("camera_brief") or "").strip()
+        light    = str(args.get("light_brief") or "").strip()
+        mood     = str(args.get("mood_brief") or "").strip()
+        subject  = [str(s).strip() for s in (args.get("subject_inventory") or []) if str(s).strip()]
+        preserve = [str(s).strip() for s in (args.get("hard_preserve") or []) if str(s).strip()]
+        forbidden = [str(s).strip() for s in (args.get("forbidden_elements") or []) if str(s).strip()]
+        raw_instructions = str(args.get("instructions") or "").strip()
+
+        if any([camera, light, mood, subject, preserve, forbidden]):
+            parts: list[str] = []
+            if camera:    parts.append(f"CAMERA: {camera}")
+            if light:     parts.append(f"LIGHT: {light}")
+            if mood:      parts.append(f"MOOD: {mood}")
+            if subject:   parts.append("SUBJECT:\n" + "\n".join(f"  - {s}" for s in subject))
+            if preserve:  parts.append("HARD PRESERVE:\n" + "\n".join(f"  - {s}" for s in preserve))
+            if forbidden: parts.append("FORBIDDEN:\n" + "\n".join(f"  - {s}" for s in forbidden))
+            structured = "\n".join(parts)
+            prompt = (structured + "\n" + raw_instructions).strip() if raw_instructions else structured
+        else:
+            prompt = raw_instructions
+
         if not prompt:
-            raise ValueError("instructions are required for edit_image")
+            raise ValueError("instructions (or structured brief fields) are required for edit_image")
         for artifact in source_artifacts:
             if artifact.get("adapter") != "image":
                 raise ValueError(f"edit_image requires image artifacts, got {artifact.get('artifact_id')} adapter={artifact.get('adapter')}")
@@ -2731,15 +2779,21 @@ def _vision_review_prompt(fidelity_requirements: list[str]) -> str:
     else:
         requirements = "- Preserve visible source layout, object identity, proportions, text/labels, and avoid invented elements."
     return (
-        "Compare the source image(s) and output image for source fidelity using only visible evidence. "
-        "Focus on object preservation, layout relationships, text/labels, geometry drift, and invented elements.\n\n"
+        "Compare the source image(s) and output image for source fidelity using only visible evidence.\n\n"
         "Hard fidelity requirements:\n"
         f"{requirements}\n\n"
+        "Classify ALL differences into two categories:\n"
+        "- hard_conflicts: object/element ADDED that is not in the source, object REMOVED from source, "
+        "count changed, structural element missing or repositioned, layout order changed, label or text wrong.\n"
+        "- soft_conflicts: proportion slightly off, minor position offset, material/color/finish different, "
+        "lighting variation, texture change, style interpretation — only when no hard requirement is violated.\n\n"
         "Return JSON only with this shape: "
-        '{"verdict":"pass|warn|block","matches":[],"partials":[],"conflicts":[],"unknowns":[],"required_corrections":[]}. '
-        "Use verdict=block when the output contradicts, omits, reorders, or invents anything that violates a hard requirement. "
-        "Use verdict=warn for minor visible drift that does not violate a hard requirement. "
-        "If a requirement starts with 'Allowed transform:', do not mark that permitted visual change as a partial or conflict by itself."
+        '{"verdict":"pass|warn|block","matches":[],"partials":[],'
+        '"hard_conflicts":[],"soft_conflicts":[],"unknowns":[],"required_corrections":[]}.\n'
+        "verdict=block when any hard_conflict exists.\n"
+        "verdict=warn when only soft_conflicts or partials, no hard_conflicts.\n"
+        "verdict=pass when no conflicts.\n"
+        "If a requirement starts with 'Allowed transform:', it is NOT a conflict."
     )
 
 
@@ -2779,35 +2833,69 @@ def _coerce_review_items(value: Any) -> list[str]:
     return [text] if text else []
 
 
+_HARD_CONFLICT_KEYWORDS = frozenset({
+    "added", "extra", "invented", "hallucinated", "not in source", "not visible in source",
+    "missing", "removed", "absent", "count changed", "count wrong", "wrong count",
+    "reorder", "reordered", "wrong position", "repositioned", "structural",
+    "not present", "does not exist", "extra element",
+})
+
+
+def _classify_conflict(text: str) -> str:
+    """Return 'hard' or 'soft' based on conflict text keywords."""
+    lower = text.lower()
+    if any(kw in lower for kw in _HARD_CONFLICT_KEYWORDS):
+        return "hard"
+    return "soft"
+
+
 def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
     text = str(vision_payload.get("comparison") or "").strip()
     data = _extract_json_object(text)
     if data is not None:
         raw_verdict = str(data.get("verdict") or "").strip().lower()
-        conflicts = _coerce_review_items(data.get("conflicts") or data.get("blocking_conflicts"))
-        partials = _coerce_review_items(data.get("partials"))
-        unknowns = _coerce_review_items(data.get("unknowns"))
-        matches = _coerce_review_items(data.get("matches"))
-        corrections = _coerce_review_items(data.get("required_corrections") or data.get("corrections"))
 
-        if raw_verdict in {"block", "fail", "failed", "conflict", "conflicted"} or conflicts:
+        # New structured fields (hard/soft split)
+        hard = _coerce_review_items(data.get("hard_conflicts") or [])
+        soft = _coerce_review_items(data.get("soft_conflicts") or [])
+
+        # Legacy field — classify by keyword if hard/soft not provided
+        legacy = _coerce_review_items(data.get("conflicts") or data.get("blocking_conflicts") or [])
+        if legacy and not hard and not soft:
+            for c in legacy:
+                if _classify_conflict(c) == "hard":
+                    hard.append(c)
+                else:
+                    soft.append(c)
+
+        partials = _coerce_review_items(data.get("partials") or [])
+        unknowns = _coerce_review_items(data.get("unknowns") or [])
+        matches = _coerce_review_items(data.get("matches") or [])
+        corrections = _coerce_review_items(data.get("required_corrections") or data.get("corrections") or [])
+
+        # Hard conflicts always block; soft conflicts only warn
+        if hard:
             verdict = "block"
-        elif raw_verdict in {"warn", "warning", "partial", "mixed", "uncertain"} or partials:
+            blockers = hard
+        elif raw_verdict in {"block", "fail", "failed", "conflict", "conflicted"}:
+            # Model said block but no hard_conflicts extracted — treat as hard block
+            verdict = "block"
+            blockers = legacy or [f"Vision review verdict is {raw_verdict}."]
+        elif soft or partials or raw_verdict in {"warn", "warning", "partial", "mixed", "uncertain"}:
             verdict = "warn"
+            blockers = []
         else:
             verdict = "pass"
+            blockers = []
 
-        blockers = conflicts if verdict == "block" else []
-        if verdict == "block" and not blockers:
-            blockers = [f"Vision review verdict is {raw_verdict or 'block'}."]
         if verdict == "block" and not corrections:
-            corrections = ["Regenerate or revise the artifact until all hard fidelity conflicts are resolved."]
+            corrections = ["Regenerate until all hard fidelity conflicts are resolved."]
 
         summary = json.dumps(
             {
                 "verdict": verdict,
                 "matches": matches[:8],
-                "partials": partials[:8],
+                "partials": (soft + partials)[:8],
                 "conflicts": blockers[:8],
                 "unknowns": unknowns[:8],
             },
@@ -2822,27 +2910,17 @@ def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
 
     lowered = text.lower()
     block_signals = (
-        '"verdict": "block"',
-        '"verdict":"block"',
-        '"verdict": "fail"',
-        '"verdict":"fail"',
-        "blocking conflict",
-        "not faithful",
-        "does not preserve",
-        "wrong layout",
-        "violates",
+        '"verdict": "block"', '"verdict":"block"',
+        '"verdict": "fail"', '"verdict":"fail"',
+        "blocking conflict", "not faithful", "does not preserve",
+        "wrong layout", "violates",
     )
-    warn_signals = (
-        '"verdict": "warn"',
-        '"verdict":"warn"',
-        "minor drift",
-        "partial",
-    )
+    warn_signals = ('"verdict": "warn"', '"verdict":"warn"', "minor drift", "partial")
     if any(signal in lowered for signal in block_signals):
         return {
             "verdict": "block",
             "blockers": [f"Vision review reported a fidelity conflict: {text[:400]}"],
-            "corrections": ["Regenerate or revise the artifact until all hard fidelity conflicts are resolved."],
+            "corrections": ["Regenerate until all hard fidelity conflicts are resolved."],
             "summary": text[:1600],
         }
     if any(signal in lowered for signal in warn_signals):
