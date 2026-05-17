@@ -2,8 +2,8 @@
 from __future__ import annotations
 import os
 
-API_MODEL = os.environ.get("BOTJI_IMAGE_MODEL", "gpt-image-2")
-VISION_REVIEW_MODEL = os.environ.get("BOTJI_VISION_REVIEW_MODEL", "gpt-5.4-mini")
+API_MODEL = os.environ.get("BOTJI_IMAGE_MODEL", "chatgpt-image-latest")
+VISION_REVIEW_MODEL = os.environ.get("BOTJI_VISION_REVIEW_MODEL", "gpt-4.1")
 CODEX_CHAT_MODEL = os.environ.get("BOTJI_CODEX_IMAGE_CHAT_MODEL", "gpt-5.4-mini")
 CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 MAX_SOURCE_ARTIFACTS = 16

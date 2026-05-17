@@ -11,29 +11,30 @@ RUN --mount=type=cache,target=/root/.npm \
     npm install -g "@openai/codex@${CODEX_NPM_VERSION}" \
     && codex --version
 
-# System libraries + all Python deps installed into the hermes venv only.
+# Install uv — the 2026 standard Python package manager (10-100x faster than pip,
+# single Rust binary, no get-pip.py bootstrap needed).
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# System libraries + all Python deps installed into the hermes venv via uv.
 # The hermes gateway imports plugins through /opt/hermes/.venv/bin/python,
 # so that is the only interpreter that needs these packages.
-RUN --mount=type=cache,target=/root/.cache/pip \
-    if command -v apt-get >/dev/null 2>&1; then \
+RUN if command -v apt-get >/dev/null 2>&1; then \
       apt-get update \
       && apt-get install -y --no-install-recommends \
-           libmagic1 python3 python3-pip python3-venv \
+           libmagic1 python3 python3-venv \
            chromium chromium-driver \
       && rm -rf /var/lib/apt/lists/*; \
     fi \
     && ([ -f /opt/hermes/.venv/bin/python ] || python3 -m venv /opt/hermes/.venv) \
-    && /opt/hermes/.venv/bin/python -c \
-         "import urllib.request; urllib.request.urlretrieve('https://bootstrap.pypa.io/get-pip.py','/tmp/gp.py')" \
-    && /opt/hermes/.venv/bin/python /tmp/gp.py -q && rm /tmp/gp.py \
-    && /opt/hermes/.venv/bin/pip install \
+    && uv pip install --python /opt/hermes/.venv/bin/python \
          openai \
          pillow \
          pymupdf \
          pypdf \
          ezdxf \
          python-magic \
-         jsonschema
+         jsonschema \
+         pydantic
 
 COPY runtime/bin/botji-codex /usr/local/bin/botji-codex
 COPY runtime/bin/botji-codex-review /usr/local/bin/botji-codex-review

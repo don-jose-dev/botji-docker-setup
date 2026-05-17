@@ -302,11 +302,69 @@ def _collect_codex_image_b64(
     return image_b64
 
 
+_MANIFEST_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "scene_type": {
+            "type": "string",
+            "enum": [
+                "kitchen_interior", "wardrobe_interior", "living_room", "bathroom",
+                "bedroom", "office", "retail", "exterior", "product",
+                "generic_interior", "unknown",
+            ],
+        },
+        "source_modality": {
+            "type": "string",
+            "enum": ["sketch", "floor_plan", "photo", "render", "schematic"],
+        },
+        "elements": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "label": {"type": "string"},
+                    "wall_or_zone": {"type": "string"},
+                    "position_index": {"type": "integer"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["id", "label", "wall_or_zone", "position_index", "notes"],
+                "additionalProperties": False,
+            },
+        },
+        "element_count": {"type": "integer"},
+        "adjacency_constraints": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "elem_a": {"type": "string"},
+                    "elem_b": {"type": "string"},
+                    "relation": {"type": "string"},
+                    "wall_or_zone": {"type": "string"},
+                },
+                "required": ["elem_a", "elem_b", "relation", "wall_or_zone"],
+                "additionalProperties": False,
+            },
+        },
+        "layout_hints": {"type": "array", "items": {"type": "string"}},
+        "fidelity_requirements": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": [
+        "scene_type", "source_modality", "elements", "element_count",
+        "adjacency_constraints", "layout_hints", "fidelity_requirements",
+    ],
+    "additionalProperties": False,
+}
+
+
 def _codex_extract_manifest(artifact: dict[str, Any]) -> dict[str, Any]:
     """Extract a structured spatial manifest from an image using vision.
 
-    Calls the Codex Responses API with the manifest_extract prompt and returns
-    a parsed dict. Raises RuntimeError if Codex is unavailable or returns no text.
+    Uses OpenAI structured outputs (strict JSON schema) so the response is
+    always valid JSON matching the manifest shape — no regex fallback needed.
+    Falls back to prompt-only parsing if the model doesn't support structured
+    output (older Codex builds).
     """
     client = _build_codex_client()
     if client is None:
@@ -314,54 +372,83 @@ def _codex_extract_manifest(artifact: dict[str, Any]) -> dict[str, Any]:
 
     content: list[dict[str, Any]] = [
         {"type": "input_text", "text": load_prompt("manifest_extract")},
-        {"type": "input_image", "image_url": _data_url(Path(artifact["path"]), artifact.get("detected_type") or "image/png")},
+        {
+            "type": "input_image",
+            "image_url": _data_url(
+                Path(artifact["path"]),
+                artifact.get("detected_type") or "image/png",
+            ),
+        },
     ]
-    text_parts: list[str] = []
-    with client.responses.stream(
-        model=CODEX_CHAT_MODEL,
-        store=False,
-        instructions="You are a spatial-analysis assistant. Extract structured manifests from images. Return only valid JSON.",
-        input=[{"type": "message", "role": "user", "content": content}],
-    ) as stream:
-        for event in stream:
-            delta = getattr(event, "delta", None)
-            if isinstance(delta, str):
-                text_parts.append(delta)
-        response = stream.get_final_response()
+    instructions = (
+        "You are a spatial-analysis assistant. Extract structured manifests from images. "
+        "Return only valid JSON matching the provided schema exactly."
+    )
 
-    text = getattr(response, "output_text", None) or "".join(text_parts)
-    if not text:
-        raise RuntimeError("manifest extraction returned no text")
-
-    # Parse JSON — strip markdown fences if present
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        lines = stripped.splitlines()
-        lines = lines[1:] if lines and lines[0].startswith("```") else lines
-        lines = lines[:-1] if lines and lines[-1].strip().startswith("```") else lines
-        stripped = "\n".join(lines).strip()
-
+    # Attempt structured output first (strict JSON schema — no parsing needed).
+    manifest: dict[str, Any] | None = None
     try:
-        manifest = json.loads(stripped)
-    except Exception:
-        start, end = stripped.find("{"), stripped.rfind("}")
-        if start != -1 and end > start:
-            try:
-                manifest = json.loads(stripped[start:end + 1])
-            except Exception:
-                manifest = {}
-        else:
-            manifest = {}
-
-    if not manifest:
-        raise RuntimeError(
-            f"manifest extraction returned unparseable output: {text[:200]!r}"
+        response = client.responses.create(
+            model=CODEX_CHAT_MODEL,
+            store=False,
+            instructions=instructions,
+            input=[{"type": "message", "role": "user", "content": content}],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "spatial_manifest",
+                    "schema": _MANIFEST_JSON_SCHEMA,
+                    "strict": True,
+                }
+            },
         )
+        text = getattr(response, "output_text", None) or ""
+        if text:
+            manifest = json.loads(text)
+    except Exception:
+        # Structured output not supported by this model/endpoint — fall through
+        # to the streaming text path below.
+        pass
+
+    if manifest is None:
+        # Fallback: streaming with prompt-based JSON extraction.
+        text_parts: list[str] = []
+        with client.responses.stream(
+            model=CODEX_CHAT_MODEL,
+            store=False,
+            instructions=instructions,
+            input=[{"type": "message", "role": "user", "content": content}],
+        ) as stream:
+            for event in stream:
+                delta = getattr(event, "delta", None)
+                if isinstance(delta, str):
+                    text_parts.append(delta)
+            response = stream.get_final_response()
+        text = getattr(response, "output_text", None) or "".join(text_parts)
+        if not text:
+            raise RuntimeError("manifest extraction returned no text")
+        stripped = text.strip()
+        if stripped.startswith("```"):
+            lines = stripped.splitlines()[1:]
+            if lines and lines[-1].strip().startswith("```"):
+                lines = lines[:-1]
+            stripped = "\n".join(lines).strip()
+        try:
+            manifest = json.loads(stripped)
+        except Exception:
+            s, e = stripped.find("{"), stripped.rfind("}")
+            if s != -1 and e > s:
+                try:
+                    manifest = json.loads(stripped[s:e + 1])
+                except Exception:
+                    pass
+        if not manifest:
+            raise RuntimeError(f"manifest extraction returned unparseable output: {text[:200]!r}")
+
     return {
         "provider": "openai-codex",
         "model": CODEX_CHAT_MODEL,
         "manifest": manifest,
-        "raw_text": text,
     }
 
 
