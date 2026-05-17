@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches-ignore: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  plugin-smoke:
+    name: Plugin smoke + lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install plugin runtime dependencies
+        # Mirror the Dockerfile install set so import-time deps resolve correctly.
+        # Heavy optionals (pymupdf/ezdxf) only need to be importable, not exercised.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            pillow \
+            pymupdf \
+            pypdf \
+            ezdxf \
+            python-magic \
+            jsonschema \
+            openai
+
+      - name: Compile-check every plugin module
+        # py_compile catches syntax errors before runtime; cheap and deterministic.
+        run: |
+          python -m compileall -q seed/hermes/plugins/botji-artifacts/
+
+      - name: Run plugin smoke test
+        # Imports every submodule, exercises plugin entry point, verifies public symbols.
+        # The same script runs as the pre-flight gate in vps-deploy.sh.
+        run: |
+          chmod +x scripts/smoke-plugin.sh
+          PLUGIN_DIR="$(pwd)/seed/hermes/plugins/botji-artifacts" \
+            bash scripts/smoke-plugin.sh
+
+      - name: Compile-check every runtime script
+        run: |
+          for f in runtime/bin/botji-*; do
+            python -m py_compile "$f" 2>/dev/null || echo "  skip $f (non-Python)"
+          done
+
+  shell-lint:
+    name: Shell scripts shellcheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run shellcheck on deploy + smoke scripts
+        # Fail on real bugs (error+warning); style (info/style) is informational.
+        # The deploy script is single point of failure for production — keep it clean.
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck -S warning scripts/vps-deploy.sh scripts/smoke-plugin.sh scripts/server-setup.sh

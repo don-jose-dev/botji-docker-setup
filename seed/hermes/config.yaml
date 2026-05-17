@@ -27,9 +27,13 @@ tool_loop_guardrails:
     idempotent_no_progress: 5
 compression:
   enabled: true
-  threshold: 0.5
+  # threshold 0.65 (was 0.5): defer compression until 65% of the model window so
+  # short follow-up turns ("Yes", "make 3d") don't trigger a mid-stream compaction
+  # that loses the image-context the user was iterating on. protect_last_n 30
+  # (was 20) keeps the active image-edit thread intact across the compactor.
+  threshold: 0.65
   target_ratio: 0.2
-  protect_last_n: 20
+  protect_last_n: 30
   protect_first_n: 3
 prompt_caching:
   cache_ttl: 5m

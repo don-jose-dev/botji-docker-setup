@@ -112,6 +112,21 @@ chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" \
   "$DATA_DIR/plugins" "$DATA_DIR/skills" "$DATA_DIR/prompts" "$DATA_DIR/schemas" 2>/dev/null || true
 echo "    Plugin, skills, schemas, prompts updated from seed."
 
+echo "==> Pre-flight plugin smoke test"
+# Imports every botji-artifacts submodule and asserts public symbols exist.
+# Aborts the deploy before container start if the plugin is broken — prevents the
+# silent ~60 min outages we saw on 2026-05-17 between 11:24 and 12:20 where bad
+# imports shipped to prod and the agent silently bypassed the fidelity harness.
+if [ -x scripts/smoke-plugin.sh ]; then
+  if ! PLUGIN_DIR="$DATA_DIR/plugins/botji-artifacts" bash scripts/smoke-plugin.sh; then
+    echo "ERROR: Plugin smoke test FAILED — aborting deploy before container start." >&2
+    echo "       Run locally to debug: PLUGIN_DIR=seed/hermes/plugins/botji-artifacts bash scripts/smoke-plugin.sh" >&2
+    exit 2
+  fi
+else
+  echo "    WARNING: scripts/smoke-plugin.sh missing — skipping pre-flight smoke."
+fi
+
 echo "==> Write Codex / Hermes auth"
 if [ -s /tmp/codex-auth.b64 ]; then
   mkdir -p "$DATA_DIR/.codex"

@@ -211,7 +211,38 @@ def _handle_artifact_review(args: dict[str, Any], **_: Any) -> str:
         _write_json(review_path, review)
         artifact_review_path = _artifact_root() / "reviews" / f"{review['review_id']}.json"
         _write_json(artifact_review_path, review)
-        return _json({"success": True, "review": review, "review_path": str(review_path), "artifact_review_path": str(artifact_review_path)})
+
+        # Promote the delivery gate to a prominent top-level field on the tool
+        # response so the agent sees it first. The bare review object nests this
+        # information deep, which made earlier turns ship blocked outputs anyway.
+        verdict = review.get("verdict", "unknown")
+        delivery_gate = review.get("delivery_gate", "unknown")
+        recommended_action = review.get("recommended_action", "unknown")
+        primary_blocker = review.get("primary_blocker")
+        retry_guidance = review.get("retry_guidance")
+
+        if delivery_gate == "blocked":
+            notice = (
+                "[DELIVERY GATE: BLOCKED] Do not deliver this artifact. "
+                "Retry with corrections or surface the blocker text to the user."
+            )
+        elif delivery_gate == "warned":
+            notice = "[DELIVERY GATE: WARNED] Deliverable, but mention review caveats to the user."
+        else:
+            notice = "[DELIVERY GATE: CLEAR] Artifact passed source-fidelity review."
+
+        return _json({
+            "success": True,
+            "delivery_gate_notice": notice,
+            "verdict": verdict,
+            "delivery_gate": delivery_gate,
+            "recommended_action": recommended_action,
+            "primary_blocker": primary_blocker,
+            "retry_guidance": retry_guidance,
+            "review": review,
+            "review_path": str(review_path),
+            "artifact_review_path": str(artifact_review_path),
+        })
     except Exception as exc:
         return _json({"success": False, "error": str(exc), "error_type": type(exc).__name__})
 
