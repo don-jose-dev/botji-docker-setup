@@ -35,6 +35,8 @@ Schema first. Do not generate 3D output from a text prompt alone when a 2D sourc
 
 Skip no step. If a step cannot be completed (tool unavailable, parse failure, missing measurement), stop and disclose before proceeding to the next step.
 
+**Step 6 requirement:** Always use `artifact_transform` (not `image_generate`) for the 3D output. `artifact_transform` sets the correct `route` field that the fidelity review requires. If you use `image_generate` instead, you must call `artifact_register` with `route="artifact_transform.edit_image.openai_codex"` and `parents=[source_artifact_id]` to declare the transform lineage before calling `artifact_review`.
+
 ## Schema authority rule
 
 The extracted and user-confirmed schema is the geometry authority. Any 3D transform must treat the schema as a hard constraint, not a suggestion. The following schema fields are always hard requirements:

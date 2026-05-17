@@ -108,6 +108,10 @@ ARTIFACT_REGISTER_SCHEMA = _tool_schema(
             "copy_into_registry": {"type": "boolean", "default": True},
             "parents": {"type": "array", "items": {"type": "string"}},
             "user_intent": {"type": "string"},
+            "route": {
+                "type": "string",
+                "description": "Declared transform route for provider-generated outputs (e.g. artifact_transform.edit_image.openai_codex). Required when role=output and the artifact was produced by a provider tool rather than artifact_transform.",
+            },
         },
         "required": ["path"],
     },
@@ -621,6 +625,8 @@ def _register_path(
 def _handle_artifact_register(args: dict[str, Any], **_: Any) -> str:
     try:
         source = _resolve_allowed_path(args.get("path"), field="path")
+        route = str(args.get("route") or "").strip()
+        extra: dict[str, Any] | None = {"route": route} if route else None
         record = _register_path(
             source,
             role=str(args.get("role") or "source"),
@@ -629,6 +635,7 @@ def _handle_artifact_register(args: dict[str, Any], **_: Any) -> str:
             copy_into_registry=bool(args.get("copy_into_registry", True)),
             parents=[str(item) for item in args.get("parents") or []],
             user_intent=str(args.get("user_intent") or ""),
+            extra=extra,
         )
         return _json({"success": True, "artifact": record})
     except Exception as exc:
@@ -2025,10 +2032,14 @@ def _openai_codex_image_generate(
     content: list[dict[str, Any]] = [{
         "type": "input_text",
         "text": (
-            "Use the attached source image(s) as visual references for this "
-            "source-bound artifact transformation. Preserve source layout, "
-            "visible object identity, proportions, and user-specified hard "
-            f"constraints. Fidelity mode: {fidelity_mode}. Instructions: {prompt}"
+            "STRICT SOURCE FIDELITY REQUIRED. You are performing a source-bound artifact transformation. "
+            "MANDATORY RULES — violating any rule makes the output unusable:\n"
+            "1. DO NOT add any object, furniture, appliance, plant, decoration, or clutter not visible in the source image.\n"
+            "2. DO NOT remove any element present in the source.\n"
+            "3. Preserve the exact spatial layout, left-to-right module order, and object positions.\n"
+            "4. Preserve object counts exactly — no extra chairs, no extra appliances, no extra anything.\n"
+            "5. The source image is the authoritative reference. Every element in your output must be traceable to the source.\n"
+            f"Fidelity mode: {fidelity_mode}. Transform instructions: {prompt}"
         ),
     }]
     for index, artifact in enumerate(source_artifacts, start=1):
