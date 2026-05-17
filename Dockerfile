@@ -23,7 +23,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       && rm -rf /var/lib/apt/lists/*; \
     fi \
     && ([ -f /opt/hermes/.venv/bin/python ] || python3 -m venv /opt/hermes/.venv) \
-    && /opt/hermes/.venv/bin/python -m ensurepip --upgrade \
+    && /opt/hermes/.venv/bin/python -c \
+         "import urllib.request; urllib.request.urlretrieve('https://bootstrap.pypa.io/get-pip.py','/tmp/gp.py')" \
+    && /opt/hermes/.venv/bin/python /tmp/gp.py -q && rm /tmp/gp.py \
     && /opt/hermes/.venv/bin/pip install \
          openai \
          pillow \
