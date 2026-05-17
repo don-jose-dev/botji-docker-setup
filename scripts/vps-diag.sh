@@ -21,16 +21,22 @@ $EXEC 'tail -30 /opt/data/logs/errors.log 2>/dev/null || echo ERRORS_LOG_MISSING
 echo ""
 
 echo "=== ARTIFACT INDEX — model/route/timing per artifact ==="
-$EXEC 'python3 - < /opt/data/artifacts/index/artifacts.jsonl' << 'PY'
-import sys, json
+docker exec -i botji-hermes python3 - << 'PY'
+import json, os
 keys = ["artifact_id","role","adapter","created_at","model","chat_model","provider","route","contract_id","quality","size_bytes","parents"]
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    r = json.loads(line)
-    out = {k: r.get(k) for k in keys if r.get(k) is not None}
-    print(json.dumps(out, default=str))
+f = "/opt/data/artifacts/index/artifacts.jsonl"
+if os.path.exists(f):
+    for line in open(f):
+        line = line.strip()
+        if not line: continue
+        try:
+            r = json.loads(line)
+            out = {k: r.get(k) for k in keys if r.get(k) is not None}
+            print(json.dumps(out, default=str))
+        except Exception:
+            pass
+else:
+    print("INDEX_MISSING")
 PY
 echo ""
 

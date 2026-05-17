@@ -28,6 +28,7 @@ from _vision import (
 from _codex import (
     _codex_vision_compare, _resolve_review_provider_route,
 )
+from _rendering import _resolve_schema_payload
 
 
 def _reviews_dir() -> Path:
