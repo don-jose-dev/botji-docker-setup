@@ -62,7 +62,7 @@ ARTIFACT_NORMALIZE_SCHEMA = _tool_schema(
             "schema_profile": {
                 "type": "string",
                 "default": "auto",
-                "description": "Optional domain profile, such as cabinetry_layout, pdf_document, dxf_cad, text_document, or auto.",
+                "description": "Optional domain profile, such as interior_layout, pdf_document, dxf_cad, text_document, or auto.",
             },
             "intent": {"type": "string", "default": "fidelity"},
             "semantic_schema": {

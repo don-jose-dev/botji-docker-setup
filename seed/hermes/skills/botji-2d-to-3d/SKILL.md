@@ -1,13 +1,15 @@
 ---
 name: botji-2d-to-3d
-version: 3.0.0
+version: 3.1.0
 description: Convert 2D sketches, floor plans, or hand-drawn layouts to 3D renders using a spatial-manifest pipeline. Required when the source is a sketch, not a photo.
-tags: [botji, 2d-to-3d, sketch-to-render, kitchen, interior, fidelity, spatial-manifest]
+tags: [botji, 2d-to-3d, sketch-to-render, interior, design, fidelity, spatial-manifest]
 ---
 
 # 2D → 3D Render (Spatial-Manifest Pipeline)
 
-Use this skill when the source is a **sketch, floor plan, hand-drawn layout, or printed schematic** and the user wants a 3D render. Fidelity standard: **spatial manifest** (module count + order + adjacency), not pixel geometry.
+Use this skill when the source is a **sketch, floor plan, hand-drawn layout, or printed schematic** and the user wants a 3D render. Fidelity standard: **spatial manifest** (element count + order + adjacency), not pixel geometry.
+
+Works for any domain: kitchens, wardrobes, living rooms, retail displays, garden layouts, product arrangements, etc.
 
 ---
 
@@ -29,7 +31,7 @@ Use this skill when the source is a **sketch, floor plan, hand-drawn layout, or 
 Inspect the source sketch visually. Write a spatial manifest before calling any tool.
 
 ```
-SPATIAL MANIFEST — [scene type]
+SPATIAL MANIFEST — [scene type, e.g. kitchen / wardrobe / living room]
 
 LEFT WALL (left → right as drawn):
   Pos 1: [type/label]
@@ -46,13 +48,13 @@ BACK WALL (if visible):
   Pos 1: [type/label]
   ...
 
-ISLAND / PENINSULA (if present):
-  [type, seating side, approx. dimensions]
+CENTRAL ELEMENT / ISLAND (if present):
+  [type, orientation, approx. dimensions]
 
-TOTAL MODULE COUNT: [N]
+TOTAL ELEMENT COUNT: [N]
 
 CRITICAL ADJACENCY CONSTRAINTS:
-  — [Pos X Wall Y] is DIRECTLY adjacent to [Pos Z Wall Y] — NO cabinet, panel, filler, or gap between them
+  — [Pos X Wall Y] is DIRECTLY adjacent to [Pos Z Wall Y] — NO filler, panel, or gap between them
   — [Element] terminates at [point] — does NOT continue further
 ```
 
@@ -70,7 +72,7 @@ artifact_register(path=..., role="source", declared_type="image")
 
 ## Step 2 — Build the manifest-driven prompt
 
-Translate the spatial manifest into the `artifact_transform` call. Every constraint is derived from the manifest. The FORBIDDEN list must name modules **explicitly** — generic "don't reorder" is not enough.
+Translate the spatial manifest into the `artifact_transform` call. Every constraint is derived from the manifest. The FORBIDDEN list must name elements **explicitly** — generic "don't reorder" is not enough.
 
 ```python
 artifact_transform(
@@ -83,31 +85,31 @@ artifact_transform(
     mood_brief="architectural interior photography · editorial showroom · clean",
 
     subject_inventory=[
-        # List modules in strict LEFT-TO-RIGHT order, one entry per wall/zone
+        # List elements in strict LEFT-TO-RIGHT order, one entry per wall/zone
         "LEFT WALL (L→R): [Pos1 label] — [Pos2 label] — [Pos3 label]",
         "RIGHT WALL (L→R from room center): [Pos1 label] — [Pos2 label] — [Pos3 label]",
         # repeat for other walls/zones
     ],
 
     hard_preserve=[
-        "Exact left-to-right module order per wall: must match subject_inventory sequence",
-        "Total module count: exactly [N] floor units",
+        "Exact left-to-right element order per wall: must match subject_inventory sequence",
+        "Total element count: exactly [N] units",
         # One entry per adjacency constraint from manifest:
         "[Wall, Pos X] [label] is DIRECTLY adjacent to [Wall, Pos Y] [label] — ZERO space between them",
         # repeat per constraint
     ],
 
     forbidden_elements=[
-        # SPECIFIC adjacency violations first (name the exact modules):
-        "DO NOT place any cabinet, panel, filler strip, or empty space between [label A] and [label B] on the [wall name]",
+        # SPECIFIC adjacency violations first (name the exact elements):
+        "DO NOT place any filler, panel, or empty space between [label A] and [label B] on the [wall/zone name]",
         # repeat per adjacency constraint
-        # Generic kitchen hallucinations (always include for kitchen scenes):
-        "Do NOT reorder or swap any module from its drawn position",
-        "Do NOT add any module or appliance not in the source sketch",
-        "Do NOT add countertop objects (bowls, fruit, vases, utensils, small appliances)",
+        # Generic scene hallucinations (always include):
+        "Do NOT reorder or swap any element from its drawn position",
+        "Do NOT add any element or object not in the source sketch",
+        "Do NOT add decorative countertop/surface objects not shown in source",
         "Do NOT add plants, decor, artwork, or people",
-        "Do NOT expand island or peninsula beyond its sketched footprint",
-        "Do NOT add pendant lights, under-cabinet strips, or handles not in source",
+        "Do NOT expand any central element beyond its sketched footprint",
+        "Do NOT add lighting fixtures not shown in source",
         "Do NOT extend any run or wall beyond its drawn endpoint",
     ]
 )
@@ -119,8 +121,8 @@ For each adjacency constraint in the manifest, write a named FORBIDDEN entry:
 
 | Manifest constraint | FORBIDDEN entry |
 |---|---|
-| Oven stack (pos 2) adj. to REF tower (pos 3), right wall | `"DO NOT place any cabinet, panel, or filler between the oven stack and the REF tower on the right wall. They are directly adjacent — zero gap."` |
-| Pantry base block immediately inside far-left REF tower | `"DO NOT add any module between the far-left REF tower and the pantry base block. They share a wall face."` |
+| Element A (pos 2) adj. to Element B (pos 3), right wall | `"DO NOT place any filler or panel between [Element A] and [Element B] on the right wall. They are directly adjacent — zero gap."` |
+| Left tower immediately adjacent to centre unit | `"DO NOT add any element between the left tower and the centre unit. They share a wall face."` |
 | Island terminates before right base run | `"DO NOT extend the island to touch or overlap the right base run."` |
 
 ---
@@ -132,7 +134,7 @@ artifact_review(
     source_artifact_ids=[source_id],
     output_artifact_id=output_id,
     fidelity_requirements=[
-        "Total module count: exactly [N] floor units",
+        "Total element count: exactly [N] units",
         # One entry per adjacency constraint from manifest:
         "[Adjacency constraint verbatim from manifest]",
     ],
@@ -148,16 +150,16 @@ For sketch-to-render, the review authority is the **spatial manifest**. Apply th
 
 | What the output changed | Verdict |
 |---|---|
-| Module count changed | **BLOCK** |
-| Module left-to-right order changed | **BLOCK** |
+| Element count changed | **BLOCK** |
+| Element left-to-right order changed | **BLOCK** |
 | Adjacency constraint violated (gap or filler inserted) | **BLOCK** |
-| Appliance added or removed | **BLOCK** |
+| Object added or removed | **BLOCK** |
 | Proportion or depth differs from sketch | **WARN only** |
 | Lighting, material, finish drift | **PASS** |
 | Sketch line details not replicated | **PASS** |
 
 If `delivery_gate == "blocked"` AND the ONLY conflicts are proportion/geometry drift (not count/order/adjacency), override and deliver with a caveat:
-> "The module order is preserved. Proportions differ from the sketch — expected when converting a hand drawing to a 3D render. [specific drift] Accept this result?"
+> "The element order is preserved. Proportions differ from the sketch — expected when converting a hand drawing to a 3D render. [specific drift] Accept this result?"
 
 ---
 
@@ -189,24 +191,38 @@ subject_inventory=[
 Image first, then badge:
 ```
 ✅ 3D render · route: edit_image · claim: reviewed
-Spatial manifest: [N] modules · left: [summary] · right: [summary]
+Spatial manifest: [N] elements · left: [summary] · right: [summary]
 ```
 
-If warn: `⚠️ 3D render · claim: reviewed · proportion drift: [description] · module order: preserved`
+If warn: `⚠️ 3D render · claim: reviewed · proportion drift: [description] · element order: preserved`
 If blocked: `❌ Blocked · conflict: [primary_blocker] · [retry guidance or options]`
 
 ---
 
-## Kitchen hallucination cheat sheet
+## Common hallucination patterns by domain
 
-Always include relevant FORBIDDEN entries for kitchen scenes:
+Always include relevant FORBIDDEN entries for the scene type:
 
+### Kitchens
 | gpt-image-2 pattern | FORBIDDEN entry |
 |---|---|
 | Extra cabinet between appliance towers | `"DO NOT place any cabinet between [tower A] and [tower B]"` |
-| Oven/REF position swapped | `"DO NOT swap [oven stack] and [REF tower] positions"` |
+| Appliance positions swapped | `"DO NOT swap [element A] and [element B] positions"` |
 | Island expanded | `"DO NOT expand island footprint beyond the sketch"` |
 | Countertop objects | `"Do NOT add bowls, fruit, vases, utensils, or countertop appliances"` |
-| Under-cabinet lighting | `"Do NOT add under-cabinet LED strips not shown in source"` |
 | Bar stools added | `"Do NOT add stools unless explicitly shown in source"` |
 | Pendant lights added | `"Do NOT add pendant lights not shown in source"` |
+
+### Wardrobes / fitted furniture
+| Pattern | FORBIDDEN entry |
+|---|---|
+| Extra shelf or hanging rail added | `"Do NOT add shelves or hanging rails not in source"` |
+| Drawer units swapped with door units | `"Do NOT swap drawer modules with door modules"` |
+| Filler panel inserted between units | `"Do NOT insert filler between [unit A] and [unit B]"` |
+
+### Living rooms / product arrangements
+| Pattern | FORBIDDEN entry |
+|---|---|
+| Extra decorative objects | `"Do NOT add cushions, books, plants, or decor not in source"` |
+| Furniture repositioned | `"Do NOT move [sofa/table/unit] from its drawn position"` |
+| Additional lighting | `"Do NOT add floor lamps or ceiling fixtures not shown"` |

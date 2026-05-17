@@ -133,7 +133,7 @@ Do NOT run `artifact_extract`, `artifact_normalize`, `schema_validate`, or `user
        "Do not add any objects not visible in the source image",
        "Do not add plants, furniture, decor, people, or clutter not in source",
        "Do not remove or reorder structural elements",
-       "Do not add extra [panels/shelves/modules] beyond source",
+       "Do not add extra [panels/shelves/elements] beyond source",
        "Do not extend any element beyond its source boundary"
      ]
    )
@@ -168,7 +168,7 @@ Use when source has machine-readable geometry (DXF, PDF, IFC, SVG):
 
 Schema is the geometry authority. The render must match the schema, not just look similar.
 
-**Zone alignment rule:** For multi-zone layouts (upper/lower cabinets, floor plan + elevation), vertical module boundaries must align or the user must confirm: "The zone boundaries don't align. Top: [dims]. Bottom: [dims]. Intentional?"
+**Zone alignment rule:** For multi-zone layouts (upper/lower zones, floor plan + elevation), vertical element boundaries must align or the user must confirm: "The zone boundaries don't align. Top: [dims]. Bottom: [dims]. Intentional?"
 
 ### Spec mode (dimensions only, no drawing)
 
@@ -203,14 +203,14 @@ Photo mode claim level is always `reviewed`. Never `verified` for an image edit.
 
 When the source is a sketch, floor plan, or schematic (use `botji-2d-to-3d` skill for the full pipeline):
 
-The review authority is the **spatial manifest** (module count, order, adjacency), NOT pixel geometry. A hand-drawn sketch will NEVER geometrically match a 3D photorealistic render — dimensional and proportion differences are expected.
+The review authority is the **spatial manifest** (element count, order, adjacency), NOT pixel geometry. A hand-drawn sketch will NEVER geometrically match a 3D photorealistic render — dimensional and proportion differences are expected.
 
 | What changed | Action |
 |---|---|
-| Module count changed | Block |
-| Module left-to-right order changed | Block |
-| Adjacency violated (gap or filler inserted between adjacent modules) | Block |
-| Appliance added or removed | Block |
+| Element count changed | Block |
+| Element left-to-right order changed | Block |
+| Adjacency violated (gap or filler inserted between adjacent elements) | Block |
+| Object added or removed | Block |
 | Proportions/depth/perspective differ from sketch | **Warn only — do not block** |
 | Lighting, material, or finish drift | Pass |
 | Sketch line details not replicated | Pass |

@@ -59,9 +59,9 @@ def _coerce_review_items(value: Any) -> list[str]:
 # PHRASES that indicate a true hard conflict — element added/removed/relocated.
 # Phrase-based (not single-word) so that "extra open floor gap" (proportional drift)
 # does not match "extra cabinet" (real addition). The previous single-word match on
-# "extra" / "repositioned" / "structural" was firing on every U-shape kitchen review
-# because floor space between island and perimeter walls reads as "extra spacing" to
-# the vision model — a sketch-to-render proportional drift, not an addition.
+# "extra" / "repositioned" / "structural" was firing on interior layout reviews
+# because open floor space reads as "extra spacing" to the vision model — a
+# sketch-to-render proportional drift, not an element addition.
 _HARD_CONFLICT_PHRASES = (
     # Element additions (something that wasn't in the source)
     "added cabinet", "added module", "added appliance", "added tower", "added island",
@@ -116,7 +116,7 @@ _CHANGE_VERBS = (
     "missing", "removed", "absent", "deleted", "lost", "gone",
 )
 
-# Module/element nouns — when paired with a change verb in the same sentence,
+# Element nouns — when paired with a change verb in the same sentence,
 # this is a real structural change (hard). Floor / spacing / adjacency are
 # deliberately excluded — those describe relationships, not added objects.
 _ELEMENT_NOUNS = (
