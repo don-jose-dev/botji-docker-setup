@@ -13,7 +13,6 @@ each layer independently.
 """
 from __future__ import annotations
 
-import asyncio
 import base64
 import logging
 import os
@@ -78,7 +77,7 @@ _TOOL_SCHEMA = {
             },
             "input_fidelity": {
                 "type": "string",
-                "enum": ["low", "medium", "high"],
+                "enum": ["low", "high"],
                 "default": "high",
             },
             "output_format": {
@@ -92,13 +91,12 @@ _TOOL_SCHEMA = {
 }
 
 
-def _handle_botji_render(args: dict[str, Any], **_: Any) -> str:
-    """Synchronous adapter for the hermes tool registry.
+async def _handle_botji_render(args: dict[str, Any], **_: Any) -> str:
+    """Async handler registered with is_async=True — hermes bridges via _run_async().
 
-    The render coroutine runs on a fresh event loop because hermes tool
-    handlers are invoked synchronously from a worker thread. Returns the
-    rendered image as a base64 data string plus structured metadata so
-    the agent can decide whether to ship the result or retry.
+    Do NOT wrap in asyncio.run() — hermes gateway already has a running event loop
+    and calling asyncio.run() from within it raises RuntimeError. The is_async=True
+    flag on register_tool tells the framework to await this coroutine instead.
     """
     try:
         source_paths = [Path(p) for p in args.get("source_image_paths") or []]
@@ -120,7 +118,7 @@ def _handle_botji_render(args: dict[str, Any], **_: Any) -> str:
 
         client = _resolve_codex_client()
 
-        result = asyncio.run(render(
+        result = await render(
             client=client,
             user_id=user_id,
             source_image_paths=source_paths,
@@ -129,7 +127,7 @@ def _handle_botji_render(args: dict[str, Any], **_: Any) -> str:
             quality=str(args.get("quality") or "high"),
             input_fidelity=str(args.get("input_fidelity") or "high"),
             output_format=str(args.get("output_format") or "png"),
-        ))
+        )
         # Trim image_b64 from the returned-to-agent payload — the agent
         # doesn't need 2 MB of base64 in its context. Persist it to disk
         # and return a path the artifact_register tool can pick up.
@@ -180,7 +178,9 @@ def _resolve_codex_client() -> Any:
         from agent.auxiliary_client import resolve_provider_client  # type: ignore
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"hermes auxiliary_client unavailable: {exc}") from exc
-    client = resolve_provider_client("openai-codex")
+    # resolve_provider_client returns (client, model) tuple per hermes docs.
+    result = resolve_provider_client("openai-codex")
+    client = result[0] if isinstance(result, tuple) else result
     if client is None:
         raise RuntimeError(
             "openai-codex client not available — run `make codex-push-auth` to seed auth"
@@ -196,5 +196,6 @@ def register(ctx) -> None:
         schema=_TOOL_SCHEMA,
         handler=_handle_botji_render,
         description=_TOOL_SCHEMA["description"],
+        is_async=True,
     )
     logger.info("botji-render: registered tool 'botji_render'")

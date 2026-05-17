@@ -4,3 +4,5 @@ description: "File-backed Telegram allowlist with hot-reload. No container recre
 author: Botji
 kind: standalone
 requires_env: []
+provides_hooks:
+  - pre_gateway_dispatch

@@ -4,3 +4,5 @@ description: "Default-FAIL delivery gate via transform_llm_output hook. Architec
 author: Botji
 kind: standalone
 requires_env: []
+provides_hooks:
+  - transform_llm_output
