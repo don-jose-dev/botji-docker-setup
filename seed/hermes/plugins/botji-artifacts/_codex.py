@@ -23,7 +23,7 @@ from _constants import (
     API_MODEL, CODEX_CHAT_MODEL, CODEX_BASE_URL, VISION_REVIEW_MODEL, MAX_SOURCE_ARTIFACTS,
 )
 from _utils import _artifact_root, _now, _new_id, _sha256
-from _registry import _append_record, _store_evidence
+from _registry import _append_record, _store_evidence, _load_artifact
 from _detect import _detect_type
 from _prompts import load_prompt
 from _vision import (

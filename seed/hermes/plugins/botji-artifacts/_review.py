@@ -29,6 +29,7 @@ from _codex import (
     _codex_vision_compare, _resolve_review_provider_route,
 )
 from _rendering import _resolve_schema_payload
+from _extraction import _deterministic_schema_for_artifact
 
 
 def _reviews_dir() -> Path:

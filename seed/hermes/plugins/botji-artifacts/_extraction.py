@@ -20,7 +20,7 @@ from xml.etree import ElementTree as ET
 import wave
 import zipfile
 from _constants import (
-    ARTIFACT_SCHEMA_VERSION, STRUCTURED_ADAPTERS,
+    ARTIFACT_SCHEMA_VERSION, STRUCTURED_ADAPTERS, MAX_SOURCE_ARTIFACTS,
     IMAGE_SUFFIXES, TEXT_SUFFIXES, PDF_SUFFIXES, DXF_SUFFIXES,
 )
 from _utils import (
@@ -887,73 +887,4 @@ def _coerce_source_ids(value: Any) -> list[str]:
     if len(ids) > MAX_SOURCE_ARTIFACTS:
         raise ValueError(f"source_artifact_ids supports at most {MAX_SOURCE_ARTIFACTS} source artifacts")
     return ids
-
-
-def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
-    try:
-        operation = str(args.get("operation") or "exact_copy")
-        if operation not in {"edit_image", "render_schema", "exact_copy"}:
-            raise ValueError(f"unsupported artifact_transform operation: {operation}")
-        source_ids = _coerce_source_ids(args.get("source_artifact_ids"))
-        source_artifacts = [_load_artifact(artifact_id) for artifact_id in source_ids]
-        if operation == "exact_copy":
-            result = _exact_copy_transform(
-                source_artifacts=source_artifacts,
-                contract_id=str(args.get("contract_id") or "manual"),
-                instructions=str(args.get("instructions") or ""),
-            )
-            return _json({"success": True, **result})
-        if operation == "render_schema":
-            result = _render_schema_transform(
-                source_artifacts=source_artifacts,
-                contract_id=str(args.get("contract_id") or "manual"),
-                instructions=str(args.get("instructions") or ""),
-                output_type=str(args.get("output_type") or "image"),
-                schema_evidence_id=str(args.get("schema_evidence_id") or ""),
-                schema=args.get("schema") if isinstance(args.get("schema"), dict) else {},
-                render_title=str(args.get("render_title") or "Botji artifact schema preview"),
-            )
-            return _json({"success": True, **result})
-        # Build structured brief from explicit fields if provided, else use freeform instructions
-        camera   = str(args.get("camera_brief") or "").strip()
-        light    = str(args.get("light_brief") or "").strip()
-        mood     = str(args.get("mood_brief") or "").strip()
-        subject  = [str(s).strip() for s in (args.get("subject_inventory") or []) if str(s).strip()]
-        preserve = [str(s).strip() for s in (args.get("hard_preserve") or []) if str(s).strip()]
-        forbidden = [str(s).strip() for s in (args.get("forbidden_elements") or []) if str(s).strip()]
-        raw_instructions = str(args.get("instructions") or "").strip()
-
-        if any([camera, light, mood, subject, preserve, forbidden]):
-            parts: list[str] = []
-            if camera:    parts.append(f"CAMERA: {camera}")
-            if light:     parts.append(f"LIGHT: {light}")
-            if mood:      parts.append(f"MOOD: {mood}")
-            if subject:   parts.append("SUBJECT:\n" + "\n".join(f"  - {s}" for s in subject))
-            if preserve:  parts.append("HARD PRESERVE:\n" + "\n".join(f"  - {s}" for s in preserve))
-            if forbidden: parts.append("FORBIDDEN:\n" + "\n".join(f"  - {s}" for s in forbidden))
-            structured = "\n".join(parts)
-            prompt = (structured + "\n" + raw_instructions).strip() if raw_instructions else structured
-        else:
-            prompt = raw_instructions
-
-        if not prompt:
-            raise ValueError("instructions (or structured brief fields) are required for edit_image")
-        for artifact in source_artifacts:
-            if artifact.get("adapter") != "image":
-                raise ValueError(f"edit_image requires image artifacts, got {artifact.get('artifact_id')} adapter={artifact.get('adapter')}")
-        provider_route = _resolve_provider_route(str(args.get("provider_route") or "auto"))
-        common = {
-            "source_artifacts": source_artifacts,
-            "prompt": prompt,
-            "contract_id": str(args.get("contract_id") or "manual"),
-            "quality": str(args.get("quality") or "high"),
-            "size": str(args.get("size") or "auto"),
-            "output_format": str(args.get("output_format") or "png"),
-            "fidelity_mode": str(args.get("fidelity_mode") or "strict"),
-        }
-        result = _openai_codex_image_generate(**common)
-        return _json({"success": True, **result})
-    except Exception as exc:
-        return _json({"success": False, "error": str(exc), "error_type": type(exc).__name__})
-
 

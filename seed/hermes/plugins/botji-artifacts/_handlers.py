@@ -20,9 +20,9 @@ from xml.etree import ElementTree as ET
 import wave
 import zipfile
 from _constants import ARTIFACT_SCHEMA_VERSION
-from _utils import _json, _resolve_allowed_path
+from _utils import _json, _resolve_allowed_path, _artifact_root
 from _registry import (
-    _load_records, _load_artifact, _register_path, _store_evidence,
+    _load_records, _load_artifact, _register_path, _store_evidence, _write_json,
 )
 from _extraction import (
     _extract_artifact, _build_normalized_schema, _coerce_source_ids,

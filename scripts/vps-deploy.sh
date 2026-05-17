@@ -56,6 +56,11 @@ if grep -Eq '^BOTJI_DATA_DIR=/opt/data(/.*)?$' .env; then
   set_env_var BOTJI_DATA_DIR "./data/botji"
   echo "    BOTJI_DATA_DIR normalized to host tenant data path"
 fi
+
+# Force model overrides — ensure no stale VPS env overrides config.yaml
+set_env_var BOTJI_CODEX_IMAGE_CHAT_MODEL "gpt-5.4-mini"
+set_env_var BOTJI_VISION_REVIEW_MODEL "gpt-5.4-mini"
+echo "    Model env vars pinned to gpt-5.4-mini"
 if grep -Eq '^BOTJI_WORKSPACE_DIR=/workspace(/.*)?$' .env; then
   set_env_var BOTJI_WORKSPACE_DIR "./workspace"
   echo "    BOTJI_WORKSPACE_DIR normalized to host workspace path"
