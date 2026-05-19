@@ -168,7 +168,7 @@ rollback_to_previous() {
     export BOTJI_PROD_IMAGE="$PREVIOUS_IMAGE"
     docker compose -f docker-compose.yml -f docker-compose.prod.yml \
       up -d --force-recreate --no-build --remove-orphans || true
-    for i in $(seq 1 15); do
+    for _ in $(seq 1 15); do
       ROLLBACK_STATUS=$(docker inspect botji-hermes \
         --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")
       [ "$ROLLBACK_STATUS" = "healthy" ] && break
@@ -273,7 +273,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   up -d --force-recreate --no-build --remove-orphans
 
 echo "==> Waiting for healthy..."
-for i in $(seq 1 15); do
+for _ in $(seq 1 15); do
   STATUS=$(docker inspect botji-hermes \
     --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")
   [ "$STATUS" = "healthy" ] && break
