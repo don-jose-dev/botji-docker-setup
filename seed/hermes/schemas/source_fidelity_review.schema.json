@@ -83,7 +83,8 @@
               "modality_comparator",
               "lineage_integrity",
               "adapter_route",
-              "unknowns_handling"
+              "unknowns_handling",
+              "brief_specificity"
             ]
           },
           "compare_status": {
@@ -147,6 +148,24 @@
     },
     "reviewer_notes": {
       "type": "string"
+    },
+    "delivery_gate": {
+      "type": "string",
+      "enum": ["clear", "warned", "blocked"]
+    },
+    "recommended_action": {
+      "type": "string",
+      "enum": [
+        "deliver",
+        "deliver_with_warning",
+        "do_not_deliver__retry_with_corrections"
+      ]
+    },
+    "primary_blocker": {
+      "type": ["string", "null"]
+    },
+    "retry_guidance": {
+      "type": ["string", "null"]
     },
     "artifact_context": {
       "type": "object",
