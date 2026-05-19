@@ -1,9 +1,0 @@
-name: botji-render
-version: 1.0.0
-description: "gpt-image-2 rendering with per-user lease, fair-share queue, bounded retries."
-author: Botji
-kind: standalone
-requires_env: []
-provides_tools:
-  - botji_render
-provides_image_gen_provider: botji-codex

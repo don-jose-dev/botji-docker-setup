@@ -225,3 +225,11 @@ Skip premium discipline only for:
 - The user explicitly waives premium ("just a quick draft", "concept only")
 
 Everything else needs the full brief.
+
+---
+
+## Folded from botji-image-brief (consolidated 2026-05-19)
+
+The former `botji-image-brief` skill was an alias-only stub pointing here. It has been removed; this skill (`botji-premium-brief`) is the single source for image-brief construction. If an older caller still references `botji-image-brief` by name, treat it as a synonym for `botji-premium-brief` and load this skill instead.
+
+No unique rules or examples lived in the stub — the full brief format (CAMERA · LIGHT · MATERIALS · MOOD · REFERENCE · SIGNATURE), banned-noise vocabulary, and worked examples are all defined in the sections above.

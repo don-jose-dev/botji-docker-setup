@@ -152,6 +152,15 @@ def _build_review(
     if modality_result["blockers"] and not _image_to_image:
         blockers.extend(modality_result["blockers"])
         corrections.append("Regenerate from current normalized schema evidence or rerun artifact_normalize before review.")
+    # modality_comparator: conflict must hard-block regardless of route (VPS audit 2026-05:
+    # 9/329 reviews were rubber-stamped to delivery_gate=clear despite comparator conflict).
+    # The image-to-image suppression above prevents cascade into unrelated axes, but the
+    # comparator's own conflict verdict — schema/content drift between source and output —
+    # must still gate delivery. Without this, a broken transform that mangles the source
+    # ships silently.
+    elif modality_result["status"] == "conflict":
+        blockers.append("modality comparator detected schema/content drift between source and output")
+        corrections.append("Regenerate from current normalized schema evidence or rerun artifact_normalize before review.")
 
     exact_result = _run_exact_output_compare(sources, output)
     exact_note = ""
@@ -256,10 +265,11 @@ def _build_review(
     layout_status = "conflict" if layout_blocked else ("partial" if review_warning else "match")
     layout_severity = "blocking" if layout_blocked else ("low" if review_warning else "none")
 
-    # modality_comparator axis severity: for image-to-image treat as informational, not blocking
+    # modality_comparator axis severity: a comparator conflict is always blocking (VPS audit
+    # 2026-05 found this axis was silently downgraded to severity=none for image-to-image,
+    # producing delivery_gate=clear despite the comparator reporting drift).
     modality_axis_severity = (
-        "none" if _image_to_image and modality_result["status"] == "conflict"
-        else "blocking" if modality_result["status"] == "conflict"
+        "blocking" if modality_result["status"] == "conflict"
         else "low" if modality_warning
         else "none"
     )

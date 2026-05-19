@@ -10,10 +10,15 @@ ARG CODEX_NPM_VERSION=latest
 # hadolint ignore=DL3002
 USER root
 
-# Install Codex CLI — separate layer so npm cache survives pip changes.
+# Install Codex CLI + bundled MCP servers — separate layer so npm cache survives pip changes.
+# MCP_FILESYSTEM_VERSION is pinned; bump explicitly when upgrading.
+ARG MCP_FILESYSTEM_VERSION=2026.1.14
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g "@openai/codex@${CODEX_NPM_VERSION}" \
-    && codex --version
+    npm install -g \
+        "@openai/codex@${CODEX_NPM_VERSION}" \
+        "@modelcontextprotocol/server-filesystem@${MCP_FILESYSTEM_VERSION}" \
+    && codex --version \
+    && mcp-server-filesystem --version 2>/dev/null || true
 
 # Install uv — the 2026 standard Python package manager (10-100x faster than pip,
 # single Rust binary, no get-pip.py bootstrap needed).
@@ -38,7 +43,10 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
          ezdxf \
          python-magic \
          jsonschema \
-         pydantic
+         pydantic \
+    && uv pip install --system --break-system-packages \
+         ezdxf \
+         pillow
 
 COPY runtime/bin/botji-codex /usr/local/bin/botji-codex
 COPY runtime/bin/botji-codex-review /usr/local/bin/botji-codex-review

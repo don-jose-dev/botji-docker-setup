@@ -46,6 +46,16 @@ def _handle_artifact_register(args: dict[str, Any], **_: Any) -> str:
             user_intent=params.user_intent,
             extra=extra,
         )
+        # Lift dedup metadata from the record dict to the top level of the response
+        # so callers can branch on `deduplicated` without unpacking the artifact.
+        if record.pop("deduplicated", False):
+            dedup_match_id = record.pop("dedup_match_id", None)
+            return _json({
+                "success": True,
+                "artifact": record,
+                "deduplicated": True,
+                "dedup_match_id": dedup_match_id,
+            })
         return _json({"success": True, "artifact": record})
     except (ValidationError, Exception) as exc:
         return _json({"success": False, "error": str(exc), "error_type": type(exc).__name__})
