@@ -4,6 +4,10 @@ FROM ${HERMES_IMAGE}
 
 ARG CODEX_NPM_VERSION=latest
 
+# hadolint ignore=DL3002
+# Final USER is intentionally root: the upstream Hermes entrypoint runs as root,
+# fixes runtime UID/GID, then drops to the `hermes` user before starting the
+# gateway. Setting USER hermes here would break that handoff.
 USER root
 
 # Install Codex CLI — separate layer so npm cache survives pip changes.
