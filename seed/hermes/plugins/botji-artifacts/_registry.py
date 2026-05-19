@@ -26,6 +26,48 @@ def _load_records() -> list[dict[str, Any]]:
     return records
 
 
+def _find_dedup_match(sha256: str, role: str) -> dict[str, Any] | None:
+    """Scan the artifacts index line-by-line for a record matching (sha256, role).
+
+    Short-circuits on first match (newest entries near the bottom are scanned last;
+    we accept any match since sha256 equality is what we care about). Skips
+    malformed lines (corrupted manifests) and entries whose stored file is missing
+    on disk (orphan index entries). Returns the matched record or None.
+    """
+    path = _index_path()
+    if not path.is_file():
+        return None
+    try:
+        handle = path.open("r", encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("sha256") != sha256:
+                continue
+            if record.get("role") != role:
+                continue
+            stored = record.get("path")
+            if not stored:
+                continue
+            try:
+                if not Path(stored).is_file():
+                    continue
+            except (OSError, ValueError):
+                continue
+            return record
+    finally:
+        handle.close()
+    return None
+
+
 def _append_record(record: dict[str, Any]) -> None:
     path = _index_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -109,6 +151,18 @@ def _register_path(
     if size_bytes > max_bytes:
         raise ValueError(f"artifact exceeds BOTJI_ARTIFACT_MAX_BYTES ({size_bytes} > {max_bytes})")
 
+    # Hash the source up front so we can content-address dedup before allocating
+    # an artifact_id or copying bytes into the registry. The hash of the source
+    # equals the hash of the copy (shutil.copy2 preserves content), so checking
+    # here is equivalent to checking after the copy — and saves the copy on hit.
+    sha256 = _sha256(path)
+
+    # Dedup: if an existing artifact has the same (sha256, role) and its stored
+    # file is still on disk, return it verbatim instead of registering a duplicate.
+    existing = _find_dedup_match(sha256, role)
+    if existing is not None:
+        return {**existing, "deduplicated": True, "dedup_match_id": existing.get("artifact_id")}
+
     artifact_id = _new_id("art")
     detected_type, adapter = _detect_type(path, declared_type)
     stored_path = path
@@ -129,7 +183,7 @@ def _register_path(
         "detected_type": detected_type,
         "declared_type": declared_type,
         "adapter": adapter,
-        "sha256": _sha256(stored_path),
+        "sha256": sha256,
         "size_bytes": stored_path.stat().st_size,
         "created_at": _now(),
         "authority": authority,
