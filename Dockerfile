@@ -11,10 +11,12 @@ ARG CODEX_NPM_VERSION=latest
 USER root
 
 # Install Codex CLI + bundled MCP servers — separate layer so npm cache survives pip changes.
+# MCP_FILESYSTEM_VERSION is pinned; bump explicitly when upgrading.
+ARG MCP_FILESYSTEM_VERSION=2026.1.14
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g \
         "@openai/codex@${CODEX_NPM_VERSION}" \
-        "@modelcontextprotocol/server-filesystem" \
+        "@modelcontextprotocol/server-filesystem@${MCP_FILESYSTEM_VERSION}" \
     && codex --version \
     && mcp-server-filesystem --version 2>/dev/null || true
 
