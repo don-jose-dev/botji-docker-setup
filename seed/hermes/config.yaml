@@ -73,8 +73,12 @@ auxiliary:
 memory:
   memory_enabled: true
   user_profile_enabled: true
-  memory_char_limit: 2200
-  user_char_limit: 1375
+  # Caps bumped after 48h VPS audit showed user_char_limit:1375 hitting
+  # "Memory at N/1375 — would exceed the limit" 3× in 2 days for active users
+  # (don_jose hit 1370/1375). 2750/3300 gives ~2× headroom while staying well
+  # under any reasonable token budget when injected into the system prompt.
+  memory_char_limit: 3300
+  user_char_limit: 2750
   nudge_interval: 10
   flush_min_turns: 6
 session_reset:

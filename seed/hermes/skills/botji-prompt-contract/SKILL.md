@@ -117,6 +117,28 @@ For source-bound files, images, renders, diagrams, CAD, screenshots, slides, doc
 If the user provides a source file, default the route to `exact_copy` until the user explicitly authorizes a transform route and change list. If the user says “make 3D” after an image upload, default to `fidelity`: preserve layout and dimensions as far as visible; treat materials/color/camera as assumptions unless specified.
 For source-image fidelity work, `image_generate` is prompt-only and must not be selected unless the contract explicitly marks `visual_mode: concept_generation`.
 
+## Premium-brief discipline (route=edit_image only)
+
+When the contract selects route `edit_image` (and `fidelity_mode != "exact_copy"`), the brief passed as `instructions=` MUST follow `botji-premium-brief`. The contract is invalid until the brief passes the **noise-vocabulary check** and contains all four required specifications.
+
+**Banned noise vocabulary in the brief** (reject the contract if any appears):
+
+- `realistic`, `photorealistic`, `hyperrealistic`
+- `high quality`, `8K`, `4K`, `ultra HD`, `HDR`
+- `beautiful`, `nice`, `gorgeous`, `stunning`, `amazing`
+- `modern style`, `luxury`, `elegant`, `polished`, `refined`, `sleek`, `sophisticated`
+- `good lighting`, `warm tones`, `well-lit`
+- `cosy`, `inviting`, `dreamy`, `magical`
+
+**Required specifications** (reject the contract if any is missing):
+
+1. **LIGHT** — at least one explicit Kelvin temperature (e.g. `2700K`, `3000K`, `4200K`)
+2. **MATERIALS** — at least three named materials with finish (e.g. `rift-sawn white oak with hand-rubbed oil`, `honed Carrara marble with grey veining`)
+3. **REFERENCE** — at least one specific genre or publication anchor (e.g. `Dezeen editorial`, `AD residential`, `Norm Architects residential`, `Apple Studio product`)
+4. **SIGNATURE** — exactly one signature detail described as a quality of light or surface (not an object)
+
+If any required specification is missing, fix the brief before persisting the contract. If any banned noise word is present, rewrite that section with specifics from the `botji-premium-brief` vocabulary tables.
+
 ## Contract skeleton
 
 ```json

@@ -98,20 +98,26 @@ def _build_request_content(
 ) -> list[dict[str, Any]]:
     """Build Responses API content list, mutating prompt between attempts.
 
-    Attempt 1: original prompt, optionally prefixed with premium baseline.
+    Attempt 1: original prompt, wrapped in fidelity_baseline + image_generation
+               template (which carries premium guidance at the tail).
     Attempt 2: append a determinism hint — produces a different seed.
     Attempt 3: prepend minimal-change instruction — fast fallback.
+
+    Prompt layering (top → bottom is the order the model reads):
+      1. fidelity_baseline.md  — fidelity rules and source-authority rules
+      2. image_generation.md   — wraps the brief; ends with premium style guidance
+         and an anti-pattern list (so premium content is the LAST thing read).
     """
-    baseline = _load_prompt_safe("premium_baseline")
+    fidelity = _load_prompt_safe("fidelity_baseline")
     gen_template = _load_prompt_safe("image_generation")
 
     if gen_template:
         text = (
-            ((baseline + "\n\n") if baseline else "")
+            ((fidelity + "\n\n") if fidelity else "")
             + gen_template.replace("{{INSTRUCTIONS}}", prompt)
         )
     else:
-        text = ((baseline + "\n\n") if baseline else "") + prompt
+        text = ((fidelity + "\n\n") if fidelity else "") + prompt
 
     if attempt == 2:
         text += (

@@ -33,10 +33,14 @@ def _openai_codex_image_generate(
         raise RuntimeError("No Codex/ChatGPT OAuth token available. Run Hermes/Codex auth before using provider_route=openai_codex.")
 
     resolved_size = _codex_size_for_sources(size, source_artifacts)
+    # Prompt layering — order the model reads:
+    #   1. fidelity_baseline (fidelity rules) prepended
+    #   2. image_generation template wraps the user brief and ends with
+    #      premium style guidance, so premium content is the LAST thing read.
     content: list[dict[str, Any]] = [{
         "type": "input_text",
         "text": (
-            load_prompt("premium_baseline")
+            load_prompt("fidelity_baseline")
             + "\n\n"
             + load_prompt("image_generation")
                 .replace("{{FIDELITY_MODE}}", fidelity_mode)

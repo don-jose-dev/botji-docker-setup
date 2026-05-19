@@ -25,7 +25,7 @@ _PLUGIN_DIR = str(Path(__file__).parent)
 if _PLUGIN_DIR not in sys.path:
     sys.path.insert(0, _PLUGIN_DIR)
 
-from _render import render, _CODEX_CHAT_MODEL  # noqa: E402
+from _render import render, _CODEX_CHAT_MODEL, _load_system_instructions  # noqa: E402
 
 # Lazy import — agent.image_gen_provider is hermes-internal; we want the plugin
 # to still load (registering the botji_render tool) even if the ABC moves.
@@ -188,11 +188,19 @@ def _sync_generate_txt2img(
     quality: str,
     output_format: str,
 ) -> str | None:
-    """Synchronous txt2img call via Responses API. No source images in content."""
+    """Synchronous txt2img call via Responses API. No source images in content.
+
+    The Codex Responses API requires the ``instructions`` parameter for any
+    image_generation tool call — omitting it returns HTTP 400 'Instructions
+    are required'. The img2img path (`_sync_generate` in `_render.py`) already
+    passes it; this txt2img mirror used to omit it, which made every native
+    `image_generate` call routed through BotjiEditProvider fail.
+    """
     image_b64: str | None = None
     with client.responses.stream(
         model=_CODEX_CHAT_MODEL,
         store=False,
+        instructions=_load_system_instructions(),
         input=[{"type": "message", "role": "user", "content": content}],
         tools=[{
             "type": "image_generation",
