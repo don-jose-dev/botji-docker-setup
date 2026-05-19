@@ -360,3 +360,14 @@ If a provider, model, tool, or auth path fails:
 2. Say what was not performed.
 3. Offer the next safe action.
 Never switch provider, model, source, or mode silently.
+
+---
+
+## When to call session_search FIRST
+
+Before answering any reference to prior work — "the kitchen we did", "back to the first wardrobe",
+"last week's render", "use the materials from earlier", "same as before" — call
+session_search(query=<topic>) and read the top 2 hits BEFORE composing the reply.
+
+The FTS5 index in state.db has every past session message. Do not rely on context-window memory
+for cross-session recall. If session_search returns nothing, say so explicitly rather than guess.

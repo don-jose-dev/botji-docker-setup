@@ -88,13 +88,13 @@ echo "--- env overrides ---"
 $EXEC 'env | grep -E "BOTJI_IMAGE|BOTJI_VISION|BOTJI_CODEX" 2>/dev/null || echo none'
 echo ""
 
-echo "=== ENV: Telegram users + gateway mode ==="
-$EXEC 'echo TELEGRAM_ALLOWED_USERS=$TELEGRAM_ALLOWED_USERS; echo GATEWAY_ALLOW_ALL_USERS=$GATEWAY_ALLOW_ALL_USERS; echo TELEGRAM_BOT_USERNAME=$TELEGRAM_BOT_USERNAME'
+echo "=== ENV: Telegram users + gateway mode (redacted) ==="
+$EXEC 'echo TELEGRAM_ALLOWED_USERS_COUNT=$(echo "$TELEGRAM_ALLOWED_USERS" | tr "," "\n" | grep -c .); echo GATEWAY_ALLOW_ALL_USERS=$GATEWAY_ALLOW_ALL_USERS; echo TELEGRAM_BOT_USERNAME=$TELEGRAM_BOT_USERNAME'
 echo ""
 
 echo "=== CONTAINER STATUS ==="
 docker inspect botji-hermes --format='Started: {{.State.StartedAt}}  Health: {{.State.Health.Status}}' 2>/dev/null
 echo ""
 
-echo "=== CODEX VERSION + AUTH HEADER ==="
-$EXEC 'codex --version 2>&1; echo ---; head -c 150 /opt/data/auth.json 2>/dev/null; echo'
+echo "=== CODEX VERSION + AUTH STATE (redacted) ==="
+$EXEC 'codex --version 2>&1; echo ---; if [ -f /opt/data/auth.json ]; then echo "auth.json present, size=$(stat -c%s /opt/data/auth.json) bytes, mtime=$(stat -c%y /opt/data/auth.json); contents redacted"; else echo "auth.json missing"; fi'

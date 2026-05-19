@@ -38,7 +38,10 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
          ezdxf \
          python-magic \
          jsonschema \
-         pydantic
+         pydantic \
+    && uv pip install --system --break-system-packages \
+         ezdxf \
+         pillow
 
 COPY runtime/bin/botji-codex /usr/local/bin/botji-codex
 COPY runtime/bin/botji-codex-review /usr/local/bin/botji-codex-review
