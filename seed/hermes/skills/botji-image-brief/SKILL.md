@@ -1,11 +1,12 @@
 ---
 name: botji-image-brief
-description: DEPRECATED — use botji-fidelity-rules § Image generation rules and the visual_artifact_fidelity_prompt template.
-tags: [botji, deprecated]
+description: Alias for botji-premium-brief. The brief format and premium vocabulary discipline live there.
+tags: [botji, premium, image, brief, render, alias]
+version: 2.0.0
 ---
 
-# Deprecated
+# See botji-premium-brief
 
-The structured image brief format moved to **botji-fidelity-rules** (image generation rules section) plus the prompt template at `seed/hermes/plugins/botji-artifacts/prompts/image_generation.md`.
+This skill is an alias kept so existing skill-view calls resolve. The full image-brief construction skill — CAMERA · LIGHT · MATERIALS · MOOD · REFERENCE · SIGNATURE structure, banned noise vocabulary, worked examples — lives at **botji-premium-brief**.
 
-**Stop reading this skill.** When building an `artifact_transform(operation="edit_image")` brief, the format is documented in `botji-2d-to-3d` (for sketches) or `botji-artifact-fidelity` (Photo mode for photos).
+Load `botji-premium-brief` instead.

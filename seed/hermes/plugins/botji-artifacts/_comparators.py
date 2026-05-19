@@ -366,6 +366,102 @@ def _run_high_fidelity_provider_transform(
     }
 
 
+# --- Brief-specificity check (premium-vocabulary discipline) ---
+# Deterministic scan of the agent's brief (artifact_transform `instructions` field)
+# for the four required premium signals and the banned noise vocabulary.
+# Returns a `brief_specificity` axis dict that the reviewer can append at
+# informational severity. Never blocks delivery — its purpose is to give the
+# agent a feedback signal for prompt-construction quality.
+
+import re as _re
+
+_BANNED_NOISE_TERMS = (
+    "realistic", "photorealistic", "hyperrealistic",
+    "high quality", "8k", "4k", "ultra hd", "hdr",
+    "beautiful", "nice", "gorgeous", "stunning", "amazing",
+    "modern style", "luxury", "elegant", "polished", "refined",
+    "sleek", "sophisticated",
+    "good lighting", "warm tones", "well-lit",
+    "cosy", "cozy", "inviting", "dreamy", "magical",
+)
+
+_KELVIN_RE = _re.compile(r"\b\d{3,5}\s*K\b")
+_MATERIAL_FINISH_HINTS = (
+    "rift-sawn", "hand-rubbed", "honed", "brushed", "patina",
+    "matte oil", "lime-wash", "herringbone", "wide-plank",
+    "hand-formed", "full-grain", "hand-polished", "blackened",
+    "low-iron", "cast concrete", "veneer", "travertine",
+    "carrara", "ash", "walnut", "european oak", "white oak",
+    "linen with visible weave", "saddle leather",
+)
+_REFERENCE_HINTS = (
+    "dezeen", "wallpaper*", "wallpaper magazine",
+    "architectural digest", "ad magazine", "ad residential",
+    "apple studio", "norm architects", "kinfolk",
+    "riba", "editorial residential", "editorial interior",
+    "magazine architecture", "stripe documentation",
+)
+_SIGNATURE_HINTS = (
+    "caustic", "specular", "soft falloff", "soft falloff",
+    "gentle bounce", "bounce light", "rake light",
+    "micro-reflection", "soft dust", "shadow falloff",
+    "rim light", "worn edge",
+)
+
+
+def brief_specificity(prompt: str | None) -> dict:
+    """Score a brief against premium-vocabulary discipline.
+
+    Returns dict with keys: status (`match`/`partial`/`missing`), severity
+    (always `none` — informational), notes, banned_terms_found,
+    has_kelvin, material_count, has_reference, has_signature.
+
+    A `match` brief: zero banned terms, ≥1 Kelvin number, ≥3 material
+    hints, ≥1 reference hint, ≥1 signature hint.
+    """
+    text = (prompt or "").lower()
+    banned = sorted({term for term in _BANNED_NOISE_TERMS if term in text})
+    has_kelvin = bool(_KELVIN_RE.search(prompt or ""))
+    material_count = sum(1 for h in _MATERIAL_FINISH_HINTS if h in text)
+    has_reference = any(h in text for h in _REFERENCE_HINTS)
+    has_signature = any(h in text for h in _SIGNATURE_HINTS)
+
+    required_ok = has_kelvin and material_count >= 3 and has_reference and has_signature
+    if required_ok and not banned:
+        status = "match"
+        notes = "Brief satisfies premium-vocabulary discipline (Kelvin · materials · reference · signature) and has no banned noise terms."
+    elif required_ok and banned:
+        status = "partial"
+        notes = f"Brief has all four required specifications but contains banned noise vocabulary: {', '.join(banned)}. Rewrite per botji-premium-brief."
+    elif banned and not required_ok:
+        status = "missing"
+        missing = []
+        if not has_kelvin: missing.append("Kelvin light spec")
+        if material_count < 3: missing.append(f"named materials (have {material_count}/3+)")
+        if not has_reference: missing.append("reference genre")
+        if not has_signature: missing.append("signature detail")
+        notes = f"Brief is missing: {', '.join(missing)}. Also contains banned noise vocabulary: {', '.join(banned)}."
+    else:
+        status = "partial"
+        missing = []
+        if not has_kelvin: missing.append("Kelvin light spec")
+        if material_count < 3: missing.append(f"named materials (have {material_count}/3+)")
+        if not has_reference: missing.append("reference genre")
+        if not has_signature: missing.append("signature detail")
+        notes = f"Brief is missing: {', '.join(missing)}. See botji-premium-brief for vocabulary."
+
+    return {
+        "status": status,
+        "severity": "none",
+        "notes": notes,
+        "banned_terms_found": banned,
+        "has_kelvin": has_kelvin,
+        "material_count": material_count,
+        "has_reference": has_reference,
+        "has_signature": has_signature,
+    }
+
+
 __all__ = [
     "COMPARATOR_KEYS",
     "_canonical",
@@ -376,4 +472,5 @@ __all__ = [
     "_run_modality_comparators",
     "_run_exact_output_compare",
     "_run_high_fidelity_provider_transform",
+    "brief_specificity",
 ]

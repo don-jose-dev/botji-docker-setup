@@ -24,6 +24,7 @@ from _comparators import (
     _run_modality_comparators,
     _run_exact_output_compare,
     _run_high_fidelity_provider_transform,
+    brief_specificity,
 )
 
 
@@ -284,6 +285,21 @@ def _build_review(
         _axis("geometry_fidelity", geometry_status, geometry_severity, _geometry_fidelity_note(output), evidence_ids=all_evidence),
         _axis("unknowns_handling", "match", "none", "Exact physical dimensions are not claimed unless supplied by deterministic source evidence.", evidence_ids=all_evidence),
     ])
+
+    # Informational axis: scan the agent's brief (output.user_intent) for premium-
+    # vocabulary discipline. Never blocks delivery — severity is always `none` —
+    # but surfaces missing Kelvin / materials / reference / signature so the
+    # agent gets a feedback signal on prompt-construction quality.
+    if _image_to_image:
+        _brief_score = brief_specificity(output.get("user_intent") or "")
+        axes.append(_axis(
+            "brief_specificity",
+            _brief_score["status"],
+            "none",
+            _brief_score["notes"],
+            claim_level="reviewed",
+            evidence_ids=all_evidence,
+        ))
     verdict = "block" if blockers else ("warn" if review_warning else "pass")
     final_claim_level = "verified" if exact_match and not blockers else "reviewed"
 

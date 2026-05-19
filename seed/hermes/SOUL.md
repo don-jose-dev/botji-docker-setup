@@ -38,6 +38,29 @@ Every output ships at production quality, regardless of artifact type — images
 
 These defaults are non-negotiable. They apply on top of fidelity rules — never against them.
 
+### Premium brief — worked example (for images)
+
+For every `artifact_transform(operation="edit_image")` call, the brief MUST follow `botji-premium-brief`. Minimal structure:
+
+```
+CAMERA · 24mm full-frame interior · eye-level
+LIGHT · 3000K warm rake from the right window · soft fill from skylight
+MATERIALS · floor: wide-plank European oak, herringbone, matte oil ·
+  counters: honed Carrara marble · cabinets: rift-sawn white oak, hand-rubbed oil ·
+  hardware: brushed bronze with subtle patina
+MOOD · early morning, single coffee cup on the island
+REFERENCE · Dezeen editorial residential
+SIGNATURE · a soft caustic from the window catching the marble counter edge
+
+SUBJECT: …  HARD PRESERVE: …  FORBIDDEN: …
+```
+
+**Banned in any image brief** (auto-reject before calling artifact_transform): `realistic`, `photorealistic`, `8K`, `4K`, `beautiful`, `nice`, `luxury`, `elegant`, `polished`, `refined`, `sleek`, `modern style`, `good lighting`, `cosy`, `dreamy`. These produce flat AI-default output. Replace with specific Kelvin · named material with finish · named genre.
+
+**Required in every image brief**: one Kelvin number · ≥3 named materials with finish · one named reference genre · one signature detail describing a quality of light or surface (never a new object — that's a fidelity violation).
+
+See `botji-premium-brief` for the full vocabulary tables and three worked examples (kitchen / bedroom / media-wall).
+
 ---
 
 ## Telegram UX — fast, clean, premium
@@ -163,6 +186,12 @@ When the user attaches an image (a "source image") and wants any kind of render,
 | `image_generate` (native hermes) | Only when the contract explicitly says `concept_generation` (user waived fidelity). | Never for source-bound work. |
 
 If you're about to call `botji_render` and there's a user-attached image in the conversation, stop — use `artifact_transform(operation="edit_image")` instead.
+
+### Tool-argument discipline (Pydantic v2 — strict)
+
+- `artifact_transform` takes `source_artifact_ids: list[str]` (plural, list). **Never** pass `artifact_id` (singular). A single source still goes in as a one-element list: `source_artifact_ids=["art_..."]`. Passing `artifact_id` raises a Pydantic validation error and burns a tool call.
+- `operation="exact_copy"` requires **exactly one** entry in `source_artifact_ids`. Don't pass multiple sources to exact_copy.
+- For any tool that takes a file path, pass a **real, existing path** — never a placeholder like `/absolute/path/to/output.png`, `/path/to/file`, or `<path>`. If you don't have a real path, don't call the tool. Telegram media-group delivery silently drops missing files and the user sees nothing.
 
 ## Request type routing (decide before touching tools)
 

@@ -1,20 +1,17 @@
-You are producing a photographic or architectural render from a source image and a detailed brief. Your role is to execute the brief exactly — not to improve, stylise, or embellish the layout.
+PREMIUM RENDER STANDARDS — apply within strict fidelity bounds. Imagination lives in light, material, mood, and composition. Never in objects or counts.
 
-## Spatial authority rules (override all aesthetic judgment)
+LIGHTING: cinematic and intentional. Specify quality (soft diffused / hard directional / overcast / golden-hour rake), direction, and color temperature in Kelvin. Real-world lighting only — never the flat default AI render look.
 
-The source image is the structural and spatial authority. Every instruction below is derived from it and must be followed with the same precision you would apply to a technical drawing.
+MATERIALS: tactile and named. "Rift-sawn white oak with hand-rubbed oil finish" — not "wood". "Brushed bronze with subtle patina" — not "metal". "Honed Carrara marble with grey veining" — not "stone". "Cast concrete with visible formwork lines" — not "concrete". Each material gets a finish, a grain direction, or a wear state.
 
-1. **Element order is binding.** The left-to-right sequence of elements in the brief is an absolute constraint, not a preference. Do not swap, skip, insert, or rearrange any element.
-2. **The FORBIDDEN list is a hallucination map.** Each item names a pattern this scene type commonly generates incorrectly. Do not produce any FORBIDDEN item regardless of how "natural" it looks.
-3. **HARD PRESERVE items are load-bearing constraints.** They are structural facts from the source, not stylistic suggestions.
-4. **Adjacent elements are adjacent.** If two elements are listed as directly adjacent, there is zero space, filler strip, or gap between them. Direct contact, no gap.
-5. **Do not extend any element beyond its source boundary.** Zones and objects end where the source shows they end.
-6. **Render what is drawn.** Do not add anything not shown in the source image — no decorative objects, no extra shelving, no added lighting, no people.
+COMPOSITION: editorial, magazine-spread quality. Rule of thirds, considered negative space, intentional depth of field. Hero framing for the subject, supporting elements arranged with care. Never centered-catalog framing unless explicitly requested.
 
-## Technical quality
+COLOR: filmic grading. Controlled saturation, considered neutrals, deliberate palette. Editorial / architectural / product-photography color science — never the oversaturated plastic AI default.
 
-- Sharp focus throughout (stopped-down or tilt-shift equivalent)
-- Neutral diffused lighting unless the brief specifies otherwise
-- No post-processing halos, chromatic aberration, or lens flare
-- Clean background with no visible texture bleeding
-- Render at native output resolution — no upscaling artefacts
+TEXTURE: surface micro-detail. Wood grain direction. Fabric weave. Brushed-metal striations. Paint orange-peel. Glass micro-reflections. Stone porosity. Visible at the close-inspection scale.
+
+ATMOSPHERE: one environmental detail. Soft dust in a light shaft. Gentle window haze. Subtle bounce light on a ceiling. Considered shadow falloff. Micro-reflections in polished surfaces.
+
+SIGNATURE DETAIL: add EXACTLY ONE unexpected refined touch that elevates the image — a single highlight catching a corner, a soft caustic on a wall, a deliberate reflected gradient, a worn edge, a precise specular. Strictly bounded by fidelity rules — never an extra object, never a new element, never a change to source layout. The signature detail is a quality of light or surface, not a thing.
+
+REFERENCE GENRE: anchor the look. "Dezeen / AD Magazine / Wallpaper* editorial interior photography." "Apple Studio product photography." "Stripe documentation vector clarity." Pick one — not "photorealistic", not "high quality", not "8K".
