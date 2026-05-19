@@ -10,10 +10,13 @@ ARG CODEX_NPM_VERSION=latest
 # hadolint ignore=DL3002
 USER root
 
-# Install Codex CLI — separate layer so npm cache survives pip changes.
+# Install Codex CLI + bundled MCP servers — separate layer so npm cache survives pip changes.
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g "@openai/codex@${CODEX_NPM_VERSION}" \
-    && codex --version
+    npm install -g \
+        "@openai/codex@${CODEX_NPM_VERSION}" \
+        "@modelcontextprotocol/server-filesystem" \
+    && codex --version \
+    && mcp-server-filesystem --version 2>/dev/null || true
 
 # Install uv — the 2026 standard Python package manager (10-100x faster than pip,
 # single Rust binary, no get-pip.py bootstrap needed).

@@ -186,6 +186,15 @@ plugins:
   - observability/langfuse  # active only when HERMES_LANGFUSE_PUBLIC_KEY is set
   # botji-render removed 2026-05-19: broken plugin (bad import + missing 'images' attr).
   # Image generation flows through artifact_transform.edit_image.openai_codex instead.
+
+# MCP servers — scoped to artifact directory only. Add more via `hermes mcp add <name> ...`.
+# The filesystem server is preinstalled in the Dockerfile (npm install -g).
+mcp_servers:
+  filesystem:
+    command: /usr/local/bin/mcp-server-filesystem
+    args:
+      - /opt/data/artifacts
+    enabled: true
 stt:
   enabled: true
   local:
