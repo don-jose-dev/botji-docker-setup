@@ -16,6 +16,22 @@ echo "=== AGENT LOG — last 200 lines ==="
 $EXEC 'tail -200 /opt/data/logs/agent.log 2>/dev/null || echo AGENT_LOG_MISSING'
 echo ""
 
+echo "=== GATEWAY LOG — last 2000 lines (extended window) ==="
+$EXEC 'tail -2000 /opt/data/logs/gateway.log 2>/dev/null | grep -vE "memory_monitor|aiohttp.access.*GET /health" || echo NONE'
+echo ""
+
+echo "=== AGENT LOG — last 2000 lines (extended window, filtered) ==="
+$EXEC 'tail -2000 /opt/data/logs/agent.log 2>/dev/null | grep -vE "memory_monitor|aiohttp.access.*GET /health|hermes_cli.plugins.*registered" || echo NONE'
+echo ""
+
+echo "=== INBOUND + RESPONSE TIMELINE (grep for slow requests) ==="
+$EXEC 'grep -E "inbound message|response ready|conversation turn|API call|Turn ended|gate:|finalized|Suppressing" /opt/data/logs/gateway.log /opt/data/logs/agent.log 2>/dev/null | tail -80'
+echo ""
+
+echo "=== SESSION FILES CREATED IN LAST HOUR ==="
+$EXEC 'find /opt/data/sessions -mmin -60 -type f 2>/dev/null | head -30'
+echo ""
+
 echo "=== ERRORS LOG — last 30 lines ==="
 $EXEC 'tail -30 /opt/data/logs/errors.log 2>/dev/null || echo ERRORS_LOG_MISSING'
 echo ""
