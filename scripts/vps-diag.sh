@@ -134,3 +134,39 @@ echo ""
 
 echo "=== CODEX VERSION + AUTH STATE (redacted) ==="
 $EXEC 'codex --version 2>&1; echo ---; if [ -f /opt/data/auth.json ]; then echo "auth.json present, size=$(stat -c%s /opt/data/auth.json) bytes, mtime=$(stat -c%y /opt/data/auth.json); contents redacted"; else echo "auth.json missing"; fi'
+echo ""
+
+# === SECOND CONTAINER PASS: degain-hermes (if running) ===
+if docker ps --format '{{.Names}}' | grep -q '^degain-hermes$'; then
+  echo "================================================================="
+  echo "=== DEGAIN-HERMES DIAGNOSTIC ==="
+  echo "================================================================="
+  DEGAIN_EXEC="docker exec degain-hermes bash -c"
+
+  echo "=== DEGAIN CONTAINER RECENT LOGS (last 80 lines, timestamped) ==="
+  docker logs degain-hermes --tail 80 --timestamps 2>&1
+  echo ""
+
+  echo "=== DEGAIN GATEWAY LOG — last 150 lines ==="
+  $DEGAIN_EXEC 'tail -150 /opt/data/logs/gateway.log 2>/dev/null || echo GATEWAY_LOG_MISSING'
+  echo ""
+
+  echo "=== DEGAIN AGENT LOG — last 300 lines (filtered) ==="
+  $DEGAIN_EXEC 'tail -300 /opt/data/logs/agent.log 2>/dev/null | grep -vE "memory_monitor|aiohttp.access.*GET /health|hermes_cli.plugins.*registered" || echo NONE'
+  echo ""
+
+  echo "=== DEGAIN INBOUND + RESPONSE TIMELINE ==="
+  $DEGAIN_EXEC 'grep -E "inbound message|response ready|conversation turn|API call|Turn ended|gate:|finalized|Suppressing" /opt/data/logs/gateway.log /opt/data/logs/agent.log 2>/dev/null | tail -80'
+  echo ""
+
+  echo "=== DEGAIN ERRORS LOG — last 30 lines ==="
+  $DEGAIN_EXEC 'tail -30 /opt/data/logs/errors.log 2>/dev/null || echo ERRORS_LOG_MISSING'
+  echo ""
+
+  echo "=== DEGAIN CONFIG: active model ==="
+  $DEGAIN_EXEC 'grep -E "default:|provider:|model:" /opt/data/config.yaml 2>/dev/null | head -15'
+  echo ""
+
+  echo "=== DEGAIN CONTAINER STATUS ==="
+  docker inspect degain-hermes --format='Started: {{.State.StartedAt}}  Health: {{.State.Health.Status}}' 2>/dev/null
+fi
