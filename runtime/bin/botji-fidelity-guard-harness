@@ -150,7 +150,20 @@ def run_major_inventory_guard(plugin_root: Path) -> list[str]:
     assert assessed["verdict"] == "block", assessed
     assert any("hood/extractor" in item for item in assessed["blockers"]), assessed
     assert any("pendant count" in item for item in assessed["blockers"]), assessed
-    return ["major_inventory_silence_blocks"]
+
+    comparison = json.dumps({
+        "verdict": "warn",
+        "matches": ["Single-bowl sink is present in the kitchen run."],
+        "partials": [],
+        "hard_conflicts": [],
+        "soft_conflicts": [],
+        "unknowns": ["Whether the left-shifted sink matches the exact target position cannot be verified."],
+        "required_corrections": [],
+    })
+    assessed = _assess_vision_payload({"comparison": comparison}, ["Preserve sink/faucet."])
+    assert assessed["verdict"] == "warn", assessed
+    assert not assessed["blockers"], assessed
+    return ["major_inventory_silence_blocks", "major_inventory_match_beats_unknown"]
 
 
 def main() -> int:

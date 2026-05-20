@@ -63,12 +63,29 @@ def _read_fresh_verdict(session_id: str) -> dict[str, Any] | None:
     age = time.time() - stat.st_mtime
     if age > _VERDICT_MAX_AGE_SECONDS:
         logger.info("gate: ignoring stale verdict %s (age=%.0fs)", path, age)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning("gate: failed to remove stale verdict %s: %s", path, exc)
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         logger.warning("gate: failed to parse %s: %s", path, exc)
         return None
+
+
+def _consume_fresh_verdict(session_id: str) -> dict[str, Any] | None:
+    """Return one fresh verdict and remove it so it cannot gate later turns."""
+    path = _verdict_path_for_session(session_id)
+    verdict = _read_fresh_verdict(session_id)
+    if verdict is None:
+        return None
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("gate: failed to consume %s: %s", path, exc)
+    return verdict
 
 
 def _format_block_message(verdict: dict[str, Any]) -> str:
@@ -112,7 +129,7 @@ def _transform_llm_output(
     """
     if not session_id:
         return None
-    verdict = _read_fresh_verdict(session_id)
+    verdict = _consume_fresh_verdict(session_id)
     if verdict is None:
         return None  # no fidelity contract for this turn
     delivery_gate = str(verdict.get("delivery_gate") or "").lower()

@@ -228,9 +228,11 @@ def _major_inventory_blockers(
     for label, terms in required.items():
         mentioned = any(term in review_text for term in terms)
         unknown = any(term in unknown_text for term in terms)
+        if mentioned:
+            continue
         if unknown:
             blockers.append(f"Vision review could not verify required major source item: {label}.")
-        elif not mentioned:
+        else:
             blockers.append(f"Vision review did not verify required major source item: {label}.")
     return blockers
 

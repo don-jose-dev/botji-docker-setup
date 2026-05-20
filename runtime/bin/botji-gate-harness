@@ -52,11 +52,15 @@ def main() -> int:
         write_verdict(verdict_root, "clear", {"delivery_gate": "clear", "axes": {"content": True}})
         if module._transform_llm_output("deliver", session_id="clear") is not None:
             raise AssertionError("clear verdict should pass through")
+        if module._transform_llm_output("deliver", session_id="clear") is not None:
+            raise AssertionError("consumed clear verdict should not affect a later turn")
 
         write_verdict(verdict_root, "warned", {"delivery_gate": "warned", "axes": {"content": True}})
         warned = module._transform_llm_output("deliver", session_id="warned")
         if not warned or "Review noted minor caveats" not in warned:
             raise AssertionError(f"warned verdict did not prepend caveat: {warned!r}")
+        if module._transform_llm_output("deliver", session_id="warned") is not None:
+            raise AssertionError("consumed warned verdict should not affect a later turn")
 
         write_verdict(
             verdict_root,
@@ -71,12 +75,16 @@ def main() -> int:
         blocked = module._transform_llm_output("do not leak this final answer", session_id="blocked")
         if not blocked or "layout drift" not in blocked or "do not leak" in blocked:
             raise AssertionError(f"blocked verdict did not rewrite safely: {blocked!r}")
+        if module._transform_llm_output("deliver", session_id="blocked") is not None:
+            raise AssertionError("consumed blocked verdict should not affect a later turn")
 
         stale_path = write_verdict(verdict_root, "stale", {"delivery_gate": "blocked", "axes": {"content": False}})
         old = time.time() - module._VERDICT_MAX_AGE_SECONDS - 10
         os.utime(stale_path, (old, old))
         if module._transform_llm_output("deliver", session_id="stale") is not None:
             raise AssertionError("stale verdict should be ignored")
+        if stale_path.exists():
+            raise AssertionError("stale verdict should be removed after it is ignored")
 
     print(json.dumps({"success": True, "checks": ["missing", "clear", "warned", "blocked", "stale"]}, indent=2))
     return 0
