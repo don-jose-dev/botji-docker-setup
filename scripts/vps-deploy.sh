@@ -115,9 +115,60 @@ docker pull "$IMAGE_REF"
 
 echo "==> Force-update config.yaml (provider change requires overwrite)"
 mkdir -p "$DATA_DIR"
-cp seed/hermes/config.yaml "$DATA_DIR/config.yaml"
-chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR" "$DATA_DIR/config.yaml" 2>/dev/null || true
-echo "    config.yaml updated"
+# Directory must be traversable by the hermes runtime UID; restrictive umasks
+# (e.g. 0077) have produced 0700 dirs that silently broke config reads.
+chmod 0755 "$DATA_DIR"
+# install honours an explicit mode regardless of the deploying shell's umask;
+# previous `cp` + best-effort chown left config.yaml owned by root mode 0600
+# under restrictive umasks, which the container UID 10000 could not read.
+install -m 0644 seed/hermes/config.yaml "$DATA_DIR/config.yaml"
+if ! chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR" "$DATA_DIR/config.yaml"; then
+  echo "ERROR: chown to UID $HERMES_RUNTIME_UID failed for $DATA_DIR/config.yaml." >&2
+  echo "       Hermes will silently fall back to defaults — every config.yaml override IGNORED." >&2
+  echo "       Re-run this deploy as root (CAP_CHOWN required to change ownership across UIDs)." >&2
+  exit 3
+fi
+# Final sanity check: the file must end up readable by UID 10000 once mounted.
+# A 0644 file owned by UID 10000 passes; so does 0644 owned by root since
+# others-read is set. Anything more restrictive is a regression.
+config_perms="$(stat -c '%a' "$DATA_DIR/config.yaml")"
+case "$config_perms" in
+  *4|*5|*6|*7) : ;;  # others-read bit set
+  *)
+    echo "ERROR: $DATA_DIR/config.yaml mode is $config_perms — UID $HERMES_RUNTIME_UID cannot read it." >&2
+    exit 3
+    ;;
+esac
+echo "    config.yaml updated (mode 0644, owner $HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID)"
+
+# ---- Kanban DB schema migration --------------------------------------------
+# Hermes >= the version that began referencing kanban session_id columns will
+# log `sqlite3.OperationalError: no such column: session_id` every dispatcher
+# tick (60s) against a kanban.db seeded by an older Hermes. Best-effort: add
+# the column to the likely tables if missing. No-op when already present.
+KANBAN_DB="$DATA_DIR/kanban.db"
+if [ -f "$KANBAN_DB" ]; then
+  python3 - "$KANBAN_DB" <<'PY' || echo "    WARNING: kanban schema migration failed — dispatcher may continue to log errors"
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+added = []
+existing = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+for table in ("tasks", "task_runs", "task_events", "kanban_notify_subs"):
+    if table not in existing:
+        continue
+    cols = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+    if "session_id" not in cols:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN session_id TEXT")
+        added.append(table)
+db.commit()
+db.close()
+if added:
+    print("    kanban migration: added session_id to " + ", ".join(added))
+else:
+    print("    kanban migration: schema already up to date")
+PY
+  chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$KANBAN_DB" 2>/dev/null || true
+fi
 
 echo "==> Bootstrap seed (idempotent — skips existing files)"
 export BOTJI_PROD_IMAGE="$IMAGE_REF"
