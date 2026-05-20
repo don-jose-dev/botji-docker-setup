@@ -112,6 +112,49 @@ WORKSPACE_DIR="${WORKSPACE_DIR:-./workspace}"
 TENANT_ID="$(grep -E '^BOTJI_TENANT_ID=' .env 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'" | tr -d '"')"
 TENANT_ID="${TENANT_ID:-botji}"
 CONTAINER_NAME="${TENANT_ID}-hermes"
+
+# Hermes core still evaluates TELEGRAM_ALLOWED_USERS at container start, while
+# botji-allowlist uses the hot-reloaded JSON file. Keep the core env guard as a
+# superset of the file-backed allowlist so users added through the JSON file do
+# not get rejected before the plugin sees the message.
+ALLOWLIST_FILE="$DATA_DIR/allowed_users.json"
+if [ -f "$ALLOWLIST_FILE" ]; then
+  CURRENT_TELEGRAM_ALLOWED_USERS="$(
+    grep -E '^TELEGRAM_ALLOWED_USERS=' .env 2>/dev/null \
+      | tail -n1 \
+      | cut -d= -f2- \
+      | tr -d "'" \
+      | tr -d '"'
+  )"
+  MERGED_TELEGRAM_ALLOWED_USERS="$(python3 - "$ALLOWLIST_FILE" "$CURRENT_TELEGRAM_ALLOWED_USERS" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+allowlist_path = Path(sys.argv[1])
+env_users = [part.strip() for part in sys.argv[2].replace(";", ",").split(",") if part.strip()]
+try:
+    payload = json.loads(allowlist_path.read_text(encoding="utf-8"))
+except Exception:
+    payload = {}
+file_users = payload.get("users") if isinstance(payload, dict) else payload
+if not isinstance(file_users, list):
+    file_users = []
+
+merged: list[str] = []
+for user in [*env_users, *[str(item).strip() for item in file_users]]:
+    if user and user not in merged:
+        merged.append(user)
+print(",".join(merged))
+PY
+  )"
+  if [ -n "$MERGED_TELEGRAM_ALLOWED_USERS" ]; then
+    set_env_var TELEGRAM_ALLOWED_USERS "$MERGED_TELEGRAM_ALLOWED_USERS"
+    chmod 600 .env
+    echo "    TELEGRAM_ALLOWED_USERS synced with $ALLOWLIST_FILE"
+  fi
+fi
+
 export HERMES_UID="$HERMES_RUNTIME_UID"
 export HERMES_GID="$HERMES_RUNTIME_GID"
 export BOTJI_DATA_DIR="$DATA_DIR"

@@ -236,7 +236,7 @@ container hasn't picked up the new `config.yaml` — `docker compose restart her
 
 ## Telegram operations
 
-### Add a user (preferred — file-backed allowlist, no restart)
+### Add a user (preferred — file-backed allowlist)
 
 Edit `/opt/botji/data/botji/allowed_users.json`:
 
@@ -248,8 +248,14 @@ Edit `/opt/botji/data/botji/allowed_users.json`:
 ```
 
 The `botji-allowlist` plugin watches the file via mtime and re-reads on
-every Telegram message. The new user can DM immediately — no restart, no
-container recreate, no env-var edit.
+every Telegram message. Hermes core also enforces `TELEGRAM_ALLOWED_USERS`
+at container start, so brand-new users must be present in both places until
+the upstream core gate is disabled or delegated fully to the plugin.
+
+The deploy script automatically syncs the JSON users into
+`TELEGRAM_ALLOWED_USERS` before recreating the container. For an immediate
+production add outside deploy, update the JSON file and the tenant `.env`,
+then recreate only that tenant container.
 
 To find a user's Telegram ID: have them DM the bot once, then
 `grep 'rejected telegram user' /opt/data/logs/gateway.log` — the ID is logged.
@@ -257,10 +263,9 @@ To find a user's Telegram ID: have them DM the bot once, then
 ### Add a user (legacy — env-var fallback)
 
 If `allowed_users.json` is missing on first boot, the plugin bootstraps it
-from the `TELEGRAM_ALLOWED_USERS` env var. After bootstrap, the env var is
-ignored. To revert to env-var mode, delete the JSON file and recreate the
-container — but the file-backed path is strictly better and you should
-prefer it.
+from the `TELEGRAM_ALLOWED_USERS` env var. After bootstrap, the JSON file is
+the plugin authority, but the env var remains the Hermes core gateway guard.
+Keep it as a superset of the JSON users.
 
 ### Get a user's Telegram ID
 
