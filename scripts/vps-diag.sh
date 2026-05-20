@@ -4,6 +4,14 @@ set -euo pipefail
 
 EXEC="docker exec botji-hermes bash -c"
 
+echo "=== ALL VPS CONTAINERS (docker ps -a) ==="
+docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' 2>&1
+echo ""
+
+echo "=== SYSTEMD UNITS (telegram/bot/agent related) ==="
+systemctl list-units --type=service --all 2>/dev/null | grep -iE "bot|telegram|hermes|agent|degain" | head -20 || echo "no systemctl access"
+echo ""
+
 echo "=== CONTAINER RECENT LOGS (last 80 lines, timestamped) ==="
 docker logs botji-hermes --tail 80 --timestamps 2>&1
 echo ""
