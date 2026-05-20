@@ -122,3 +122,39 @@ echo ""
 
 echo "=== CODEX VERSION + AUTH STATE (redacted) ==="
 $EXEC 'codex --version 2>&1; echo ---; if [ -f /opt/data/auth.json ]; then echo "auth.json present, size=$(stat -c%s /opt/data/auth.json) bytes, mtime=$(stat -c%y /opt/data/auth.json); contents redacted"; else echo "auth.json missing"; fi'
+echo ""
+
+# ===== SECOND TENANT: degain-hermes =====
+if docker inspect degain-hermes >/dev/null 2>&1; then
+  DEGAIN_EXEC="docker exec degain-hermes bash -c"
+  echo ""
+  echo "############################################################"
+  echo "# DEGAIN-HERMES (second tenant)"
+  echo "############################################################"
+
+  echo "=== DEGAIN: BOT IDENTITY (redacted) ==="
+  $DEGAIN_EXEC 'echo TELEGRAM_BOT_USERNAME=$TELEGRAM_BOT_USERNAME; echo TELEGRAM_ALLOWED_USERS_COUNT=$(echo "$TELEGRAM_ALLOWED_USERS" | tr "," "\n" | grep -c .); echo GATEWAY_ALLOW_ALL_USERS=$GATEWAY_ALLOW_ALL_USERS'
+  echo ""
+
+  echo "=== DEGAIN: CONTAINER STATUS ==="
+  docker inspect degain-hermes --format='Started: {{.State.StartedAt}}  Health: {{.State.Health.Status}}' 2>/dev/null
+  echo ""
+
+  echo "=== DEGAIN: CONTAINER RECENT LOGS (last 60 lines) ==="
+  docker logs degain-hermes --tail 60 --timestamps 2>&1
+  echo ""
+
+  echo "=== DEGAIN: INBOUND + RESPONSE TIMELINE ==="
+  $DEGAIN_EXEC 'grep -E "inbound message|response ready|conversation turn|Turn ended|gate:" /opt/data/logs/gateway.log /opt/data/logs/agent.log 2>/dev/null | tail -60'
+  echo ""
+
+  echo "=== DEGAIN: ERRORS LOG — last 20 lines ==="
+  $DEGAIN_EXEC 'tail -20 /opt/data/logs/errors.log 2>/dev/null || echo ERRORS_LOG_MISSING'
+  echo ""
+
+  echo "=== DEGAIN: CONFIG model + image_gen ==="
+  $DEGAIN_EXEC 'grep -E "default:|provider:|model:" /opt/data/config.yaml 2>/dev/null | head -15'
+  echo ""
+else
+  echo "=== DEGAIN-HERMES: not present on this host ==="
+fi
