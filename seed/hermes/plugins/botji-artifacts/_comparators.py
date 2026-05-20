@@ -379,13 +379,30 @@ _BANNED_NOISE_TERMS = (
     "realistic", "photorealistic", "hyperrealistic",
     "high quality", "8k", "4k", "ultra hd", "hdr",
     "beautiful", "nice", "gorgeous", "stunning", "amazing",
-    "modern style", "luxury", "elegant", "polished", "refined",
+    "modern style", "luxury", "elegant", "refined",
     "sleek", "sophisticated",
     "good lighting", "warm tones", "well-lit",
     "cosy", "cozy", "inviting", "dreamy", "magical",
 )
 
 _KELVIN_RE = _re.compile(r"\b\d{3,5}\s*K\b")
+_BRIEF_SECTION_HEADERS = (
+    "CAMERA",
+    "LIGHT",
+    "MATERIAL",
+    "MATERIALS",
+    "MOOD",
+    "REFERENCE",
+    "REFERENCES",
+    "SIGNATURE",
+    "SUBJECT",
+    "HARD PRESERVE",
+    "FORBIDDEN",
+)
+_BRIEF_SECTION_RE = _re.compile(
+    r"(?ims)^\s*(?P<header>" + "|".join(_re.escape(h) for h in _BRIEF_SECTION_HEADERS) + r")\s*:\s*(?P<body>.*?)"
+    r"(?=^\s*(?:" + "|".join(_re.escape(h) for h in _BRIEF_SECTION_HEADERS) + r")\s*:|\Z)"
+)
 _MATERIAL_FINISH_HINTS = (
     "rift-sawn", "hand-rubbed", "honed", "brushed", "patina",
     "matte oil", "lime-wash", "herringbone", "wide-plank",
@@ -409,6 +426,35 @@ _SIGNATURE_HINTS = (
 )
 
 
+def _brief_sections(prompt: str | None) -> dict[str, str]:
+    sections: dict[str, str] = {}
+    for match in _BRIEF_SECTION_RE.finditer(prompt or ""):
+        header = match.group("header").strip().upper()
+        body = match.group("body").strip()
+        sections[header] = f"{sections.get(header, '')}\n{body}".strip()
+    return sections
+
+
+def _structured_material_count(materials_section: str) -> int:
+    if not materials_section.strip():
+        return 0
+
+    segments = [
+        segment.strip(" -\t\r\n")
+        for segment in _re.split(r"(?:\n+|[;•·|])", materials_section)
+        if segment.strip(" -\t\r\n")
+    ]
+    named_specs = 0
+    for segment in segments:
+        if ":" in segment:
+            _, value = segment.split(":", 1)
+            if len(value.strip()) >= 3 and _re.search(r"[A-Za-z]", value):
+                named_specs += 1
+        elif _re.search(r"\b(tile|stone|granite|marble|wood|oak|walnut|ash|veneer|plaster|concrete|metal|glass|linen|leather|laminate|lacquer|matte|honed|brushed|polished)\b", segment, _re.I):
+            named_specs += 1
+    return named_specs
+
+
 def brief_specificity(prompt: str | None) -> dict:
     """Score a brief against premium-vocabulary discipline.
 
@@ -419,12 +465,19 @@ def brief_specificity(prompt: str | None) -> dict:
     A `match` brief: zero banned terms, ≥1 Kelvin number, ≥3 material
     hints, ≥1 reference hint, ≥1 signature hint.
     """
+    sections = _brief_sections(prompt)
     text = (prompt or "").lower()
     banned = sorted({term for term in _BANNED_NOISE_TERMS if term in text})
     has_kelvin = bool(_KELVIN_RE.search(prompt or ""))
-    material_count = sum(1 for h in _MATERIAL_FINISH_HINTS if h in text)
-    has_reference = any(h in text for h in _REFERENCE_HINTS)
-    has_signature = any(h in text for h in _SIGNATURE_HINTS)
+    materials_section = sections.get("MATERIALS") or sections.get("MATERIAL") or ""
+    reference_section = sections.get("REFERENCE") or sections.get("REFERENCES") or ""
+    signature_section = sections.get("SIGNATURE") or ""
+    material_count = max(
+        sum(1 for h in _MATERIAL_FINISH_HINTS if h in text),
+        _structured_material_count(materials_section),
+    )
+    has_reference = bool(reference_section.strip()) or any(h in text for h in _REFERENCE_HINTS)
+    has_signature = bool(signature_section.strip()) or any(h in text for h in _SIGNATURE_HINTS)
 
     required_ok = has_kelvin and material_count >= 3 and has_reference and has_signature
     if required_ok and not banned:

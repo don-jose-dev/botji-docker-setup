@@ -463,7 +463,7 @@ def _codex_vision_compare(sources: list[dict[str, Any]], output: dict[str, Any],
     content: list[dict[str, Any]] = [
         {
             "type": "input_text",
-            "text": _vision_review_prompt(fidelity_requirements),
+            "text": _vision_review_prompt(fidelity_requirements, output.get("user_intent")),
         }
     ]
     for index, artifact in enumerate(sources, start=1):
@@ -497,4 +497,5 @@ def _codex_vision_compare(sources: list[dict[str, Any]], output: dict[str, Any],
         "endpoint": "codex.responses.create",
         "comparison": text,
         "fidelity_requirements": fidelity_requirements,
+        "transform_brief": (output.get("user_intent") or "")[:2500],
     }

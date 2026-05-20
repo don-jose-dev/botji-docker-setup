@@ -3,6 +3,14 @@ Compare the source image(s) and output image for source fidelity using only visi
 Hard fidelity requirements:
 {{REQUIREMENTS}}
 
+Requested / allowed transform brief:
+{{TRANSFORM_BRIEF}}
+
+Treat explicit user-requested additions, removals, moves, and replacements in
+the transform brief as allowed changes. Do not classify those requested changes
+as hard conflicts against the original source. Still block source drift outside
+the requested transform and still enforce the hard fidelity requirements above.
+
 ## MODALITY RULE (apply first)
 
 Determine the source image type before classifying conflicts:

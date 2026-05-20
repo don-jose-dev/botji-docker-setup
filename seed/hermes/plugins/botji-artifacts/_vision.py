@@ -12,12 +12,19 @@ def _data_url(path: Path, mime: str) -> str:
     return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
 
 
-def _vision_review_prompt(fidelity_requirements: list[str]) -> str:
+def _vision_review_prompt(fidelity_requirements: list[str], transform_brief: str | None = None) -> str:
     if fidelity_requirements:
         requirements = "\n".join(f"- {item}" for item in fidelity_requirements)
     else:
         requirements = "- Preserve visible source layout, object identity, proportions, text/labels, and avoid invented elements."
-    return load_prompt("vision_review").replace("{{REQUIREMENTS}}", requirements)
+    brief = (transform_brief or "").strip()
+    if not brief:
+        brief = "- No explicit transform brief was provided. Treat source-visible additions, removals, count changes, and reorders as conflicts."
+    return (
+        load_prompt("vision_review")
+        .replace("{{REQUIREMENTS}}", requirements)
+        .replace("{{TRANSFORM_BRIEF}}", brief[:2500])
+    )
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
@@ -352,4 +359,3 @@ def _assess_vision_payload(
     if any(signal in lowered for signal in warn_signals):
         return {"verdict": "warn", "blockers": [], "corrections": [], "summary": text[:1600]}
     return {"verdict": "pass", "blockers": [], "corrections": [], "summary": text[:1600] or "Vision review returned no text."}
-
