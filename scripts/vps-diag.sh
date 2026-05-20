@@ -2,6 +2,26 @@
 # Runs ON the VPS via SSH. Focused diagnostic: message timing, steps, model used.
 set -euo pipefail
 
+echo "=== HOST INVENTORY: all running containers ==="
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+echo ""
+
+echo "=== HOST INVENTORY: hermes-family containers and their bot identity ==="
+HERMES_CONTAINERS=$(docker ps --format '{{.Names}}' | grep -E '(hermes|botji)' || true)
+if [ -z "$HERMES_CONTAINERS" ]; then
+  echo "No hermes/botji containers running"
+else
+  for c in $HERMES_CONTAINERS; do
+    echo "--- container: $c ---"
+    docker exec "$c" bash -lc 'echo TENANT_ID=${BOTJI_TENANT_ID:-unset}; echo BOT_USERNAME=${TELEGRAM_BOT_USERNAME:-unset}; echo DATA_DIR=${BOTJI_DATA_DIR:-unset}; echo ALLOWED_USERS_COUNT=$(echo "${TELEGRAM_ALLOWED_USERS:-}" | tr "," "\n" | grep -c .)' 2>&1 | head -10
+    echo ""
+  done
+fi
+
+echo "=== HOST INVENTORY: per-tenant data dirs ==="
+ls -la /opt/botji/data/ 2>/dev/null | head -20 || echo "no /opt/botji/data"
+echo ""
+
 EXEC="docker exec botji-hermes bash -c"
 
 echo "=== CONTAINER RECENT LOGS (last 80 lines, timestamped) ==="
