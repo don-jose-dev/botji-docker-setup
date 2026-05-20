@@ -1,6 +1,6 @@
 # Hermes-Native Botji Rewrite Plan
 
-Status: Phase 0 in progress
+Status: Phase 1 in progress
 Date: 2026-05-20
 
 ## Why rewrite
@@ -203,10 +203,12 @@ Goal: add the new substrate without removing old paths.
 
 Tasks:
 
-- implement `botji-core` tools listed above
-- keep `botji-artifacts` available behind legacy skills
+- implement `botji-core` tools listed above (done)
+- keep `botji-artifacts` available behind legacy skills (done)
 - add harnesses for source registration, current-turn lineage, receipt records,
   and delivery gate
+- add skill entrypoints for current source, visual inventory review, and
+  delivery receipts
 
 Gate:
 

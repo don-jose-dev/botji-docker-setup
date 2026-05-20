@@ -13,6 +13,13 @@ Use this skill first for every image/render request, before reading `botji-2d-to
 The router owns the workflow decision. Plugins execute tools. Reviews enforce
 delivery. Do not let a plugin capability decide the route by accident.
 
+Prefer the Hermes-native path when `botji-core` tools are available:
+`source_register` / `source_current` for current-turn lineage,
+source-bound generation through the available image route, skill-authored
+inventory review, then `artifact_write` / `receipt_record` / `delivery_gate`.
+Use the legacy `artifact_*` pipeline only when the core tools are unavailable or
+the request needs a legacy technical extractor that has not moved to skills yet.
+
 ---
 
 ## Route Decision
@@ -36,6 +43,22 @@ or schematic annotations.
 ## Fast Path For "Make 3D"
 
 For a single uploaded photo/reference image and the text `Make 3d`:
+
+1. Create a `current_turn_id` for the active request and register the image
+   attached in the **current user turn**:
+   `source_register(path=<current attachment path>, current_turn_id=<id>, role="source", declared_type="image")`
+2. Confirm the source set:
+   `source_current(current_turn_id=<id>, required_type="image")`
+3. Build a structured premium brief from visible facts and user memory. Fill
+   `camera_brief`, `light_brief`, `materials_brief`, `mood_brief`,
+   `reference_brief`, and `signature_brief`; do not rely on mood alone for the
+   premium look.
+4. Generate/edit the image with the active source image and the brief.
+5. Use `botji-visual-inventory-review`, then call `artifact_write`,
+   `receipt_record`, and `delivery_gate`. Deliver only if the gate is `clear`
+   or `warned`.
+
+Legacy fallback:
 
 1. Register the image attached in the **current user turn**:
    `artifact_register(path=<current attachment path>, role="source", declared_type="image")`

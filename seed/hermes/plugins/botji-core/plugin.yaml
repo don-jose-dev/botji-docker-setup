@@ -1,0 +1,12 @@
+name: botji-core
+version: 0.1.0
+description: "Thin Hermes-native Botji source, artifact, receipt, and delivery gate substrate."
+author: Botji
+kind: standalone
+requires_env: []
+provides_tools:
+  - source_register
+  - source_current
+  - artifact_write
+  - receipt_record
+  - delivery_gate

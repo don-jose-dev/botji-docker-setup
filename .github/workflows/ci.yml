@@ -69,6 +69,7 @@ jobs:
             --plugin-path seed/hermes/plugins/botji-allowlist/__init__.py
           python runtime/bin/botji-gate-harness \
             --plugin-path seed/hermes/plugins/botji-gate/__init__.py
+          python runtime/bin/botji-core-harness
           python runtime/bin/botji-fidelity-guard-harness \
             --plugin-root seed/hermes/plugins/botji-artifacts
           python runtime/bin/botji-log-budget \

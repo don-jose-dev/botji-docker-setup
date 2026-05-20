@@ -73,6 +73,10 @@ PLUGIN_CONTRACTS = {
         "submodules": [],   # logic lives in __init__.py
         "symbols": {},
     },
+    "botji-core": {
+        "submodules": [],   # thin substrate lives in __init__.py
+        "symbols": {},
+    },
     "botji-gate": {
         "submodules": [],
         "symbols": {},
@@ -91,6 +95,10 @@ else:
         os.path.join(plugins_root, d)
         for d in sorted(os.listdir(plugins_root))
         if d in PLUGIN_CONTRACTS and os.path.isdir(os.path.join(plugins_root, d))
+        and (
+            os.path.exists(os.path.join(plugins_root, d, "plugin.yaml"))
+            or os.path.exists(os.path.join(plugins_root, d, "__init__.py"))
+        )
     ]
 
 failures = []

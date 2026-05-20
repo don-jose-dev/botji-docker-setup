@@ -57,6 +57,7 @@ COPY runtime/bin/botji-artifact-harness /usr/local/bin/botji-artifact-harness
 COPY runtime/bin/botji-log-budget /usr/local/bin/botji-log-budget
 COPY runtime/bin/botji-allowlist-harness /usr/local/bin/botji-allowlist-harness
 COPY runtime/bin/botji-gate-harness /usr/local/bin/botji-gate-harness
+COPY runtime/bin/botji-core-harness /usr/local/bin/botji-core-harness
 COPY runtime/bin/botji-runtime-harness /usr/local/bin/botji-runtime-harness
 COPY runtime/bin/botji-fidelity-guard-harness /usr/local/bin/botji-fidelity-guard-harness
 

@@ -29,6 +29,9 @@ docker exec "$CONTAINER_NAME" botji-allowlist-harness
 echo "=== postdeploy: gate harness ==="
 docker exec "$CONTAINER_NAME" botji-gate-harness
 
+echo "=== postdeploy: core substrate harness ==="
+docker exec "$CONTAINER_NAME" botji-core-harness
+
 echo "=== postdeploy: fidelity guard harness ==="
 docker exec "$CONTAINER_NAME" botji-fidelity-guard-harness
 

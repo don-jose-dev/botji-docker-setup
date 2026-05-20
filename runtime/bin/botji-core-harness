@@ -1,0 +1,198 @@
+#!/opt/hermes/.venv/bin/python
+"""Regression harness for the Hermes-native botji-core substrate."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+
+
+class FakeContext:
+    def __init__(self) -> None:
+        self.tools: dict[str, Any] = {}
+
+    def register_tool(self, *, name: str, handler: Any, **_: Any) -> None:
+        self.tools[name] = handler
+
+
+def default_plugin_path() -> Path:
+    home_plugin = Path(os.environ.get("HERMES_HOME", "/opt/data")) / "plugins" / "botji-core" / "__init__.py"
+    if home_plugin.is_file():
+        return home_plugin
+    repo_root = Path(__file__).resolve().parents[2]
+    return repo_root / "seed" / "hermes" / "plugins" / "botji-core" / "__init__.py"
+
+
+def load_plugin(plugin_path: Path) -> FakeContext:
+    spec = importlib.util.spec_from_file_location("botji_core_test", plugin_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot import {plugin_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["botji_core_test"] = module
+    spec.loader.exec_module(module)
+    ctx = FakeContext()
+    module.register(ctx)
+    return ctx
+
+
+def call(ctx: FakeContext, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    result = json.loads(ctx.tools[name](payload))
+    if not result.get("success"):
+        raise AssertionError(f"{name} failed: {result}")
+    return result
+
+
+def main() -> int:
+    plugin_path = default_plugin_path()
+    with tempfile.TemporaryDirectory(prefix="botji-core-") as tmp:
+        home = Path(tmp)
+        os.environ["HERMES_HOME"] = str(home)
+        os.environ["BOTJI_CORE_ROOT"] = str(home / "botji-core")
+        os.environ["BOTJI_ARTIFACT_ROOT"] = str(home / "artifacts")
+        ctx = load_plugin(plugin_path)
+
+        incoming = home / "incoming"
+        incoming.mkdir(parents=True, exist_ok=True)
+        source_path = incoming / "source.txt"
+        output_path = incoming / "output.txt"
+        orphan_path = incoming / "orphan.txt"
+        source_path.write_text("source", encoding="utf-8")
+        output_path.write_text("output", encoding="utf-8")
+        orphan_path.write_text("orphan", encoding="utf-8")
+
+        source = call(
+            ctx,
+            "source_register",
+            {
+                "path": str(source_path),
+                "current_turn_id": "turn-a",
+                "role": "source",
+                "declared_type": "text",
+            },
+        )["source"]
+        source_id = source["artifact_id"]
+        alternate_source_path = incoming / "alternate-source.txt"
+        alternate_source_path.write_text("alternate", encoding="utf-8")
+        alternate_source = call(
+            ctx,
+            "source_register",
+            {
+                "path": str(alternate_source_path),
+                "current_turn_id": "turn-a",
+                "role": "source",
+                "declared_type": "text",
+            },
+        )["source"]
+        alternate_source_id = alternate_source["artifact_id"]
+
+        current = call(ctx, "source_current", {"current_turn_id": "turn-a", "required_type": "text"})
+        assert current["source_ids"] == [source_id, alternate_source_id], current
+
+        output = call(
+            ctx,
+            "artifact_write",
+            {
+                "path": str(output_path),
+                "parents": [source_id],
+                "current_turn_id": "turn-a",
+                "claim_level": "reviewed",
+                "metadata": {"route": "harness"},
+            },
+        )["artifact"]
+        output_id = output["artifact_id"]
+
+        receipt_id = call(
+            ctx,
+            "receipt_record",
+            {
+                "source_ids": [source_id],
+                "output_id": output_id,
+                "route": "harness",
+                "status": "pass",
+                "claim_level": "reviewed",
+                "current_turn_id": "turn-a",
+                "checks": [{"name": "lineage", "status": "pass"}],
+            },
+        )["receipt_id"]
+        gate = call(ctx, "delivery_gate", {"receipt_id": receipt_id})
+        assert gate["delivery_gate"] == "clear", gate
+
+        blocked_receipt_id = call(
+            ctx,
+            "receipt_record",
+            {
+                "source_ids": [source_id],
+                "output_id": output_id,
+                "route": "harness",
+                "status": "block",
+                "primary_blocker": "semantic_review_failed",
+                "current_turn_id": "turn-a",
+            },
+        )["receipt_id"]
+        blocked = call(ctx, "delivery_gate", {"receipt_id": blocked_receipt_id})
+        assert blocked["delivery_gate"] == "blocked", blocked
+        assert blocked["primary_blocker"] == "semantic_review_failed", blocked
+
+        mismatch_path = incoming / "mismatch.txt"
+        mismatch_path.write_text("mismatch", encoding="utf-8")
+        mismatch_output = call(
+            ctx,
+            "artifact_write",
+            {
+                "path": str(mismatch_path),
+                "parents": [alternate_source_id],
+                "current_turn_id": "turn-a",
+                "claim_level": "reviewed",
+            },
+        )["artifact"]
+        mismatch_receipt = call(
+            ctx,
+            "receipt_record",
+            {
+                "source_ids": [source_id],
+                "output_id": mismatch_output["artifact_id"],
+                "route": "harness",
+                "status": "pass",
+                "current_turn_id": "turn-a",
+            },
+        )["receipt_id"]
+        mismatch = call(ctx, "delivery_gate", {"receipt_id": mismatch_receipt})
+        assert mismatch["delivery_gate"] == "blocked", mismatch
+        assert mismatch["primary_blocker"] == "output_parent_mismatch", mismatch
+
+        orphan = call(
+            ctx,
+            "artifact_write",
+            {
+                "path": str(orphan_path),
+                "parents": [source_id],
+                "current_turn_id": "turn-b",
+                "claim_level": "reviewed",
+            },
+        )["artifact"]
+        bad_receipt = call(
+            ctx,
+            "receipt_record",
+            {
+                "source_ids": [source_id],
+                "output_id": orphan["artifact_id"],
+                "route": "harness",
+                "status": "pass",
+                "current_turn_id": "turn-b",
+            },
+        )["receipt_id"]
+        stale = call(ctx, "delivery_gate", {"receipt_id": bad_receipt})
+        assert stale["delivery_gate"] == "blocked", stale
+        assert stale["primary_blocker"] == "stale_current_turn_source", stale
+
+    print("botji-core-harness=pass")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
