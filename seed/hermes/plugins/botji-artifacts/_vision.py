@@ -76,6 +76,10 @@ _HARD_CONFLICT_PHRASES = (
     # Element removals
     "missing cabinet", "missing module", "missing tower", "missing appliance",
     "missing stool", "missing panel", "missing element", "missing door",
+    "missing hood", "missing extractor", "missing range hood", "missing sink",
+    "missing faucet", "missing tap", "missing island", "missing pendant",
+    "missing pendant light", "missing refrigerator", "missing fridge",
+    "missing oven", "missing cooktop", "missing hob",
     "removed cabinet", "removed module", "removed tower", "removed appliance",
     "removed element",
     # Count mismatches
@@ -113,7 +117,7 @@ _SOFT_CONFLICT_PHRASES = (
 # Verbs that indicate addition or removal of a discrete element.
 _CHANGE_VERBS = (
     "added", "extra", "new ", "invented", "hallucinated", "fabricated",
-    "missing", "removed", "absent", "deleted", "lost", "gone",
+    "missing", "removed", "absent", "deleted", "lost", "gone", "omitted",
 )
 
 # Element nouns — when paired with a change verb in the same sentence,
@@ -135,6 +139,18 @@ _SOURCE_NEGATION_PHRASES = (
     "not present in source", "absent from source",
     "wasn't in the source", "isn't in the source",
 )
+
+
+_MAJOR_INVENTORY_TERMS: dict[str, tuple[str, ...]] = {
+    "hood/extractor": ("hood", "extractor", "range hood", "vent hood", "canopy"),
+    "refrigerator": ("refrigerator", "fridge"),
+    "sink/faucet": ("sink", "faucet", "tap"),
+    "island": ("island",),
+    "stool count": ("stool", "bar stool", "chair"),
+    "pendant count": ("pendant", "pendant light"),
+    "oven stack": ("oven", "appliance stack"),
+    "cooktop": ("cooktop", "hob", "range"),
+}
 
 
 def _classify_conflict(text: str) -> str:
@@ -170,8 +186,54 @@ def _classify_conflict(text: str) -> str:
     return "soft"
 
 
-def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
+def _required_major_inventory_items(fidelity_requirements: list[str]) -> dict[str, tuple[str, ...]]:
+    joined = "\n".join(fidelity_requirements).lower()
+    return {
+        label: terms
+        for label, terms in _MAJOR_INVENTORY_TERMS.items()
+        if any(term in joined for term in terms)
+    }
+
+
+def _major_inventory_blockers(
+    *,
+    fidelity_requirements: list[str],
+    matches: list[str],
+    hard: list[str],
+    soft: list[str],
+    partials: list[str],
+    unknowns: list[str],
+) -> list[str]:
+    required = _required_major_inventory_items(fidelity_requirements)
+    if not required:
+        return []
+    review_text = json.dumps(
+        {
+            "matches": matches,
+            "hard_conflicts": hard,
+            "soft_conflicts": soft,
+            "partials": partials,
+        },
+        ensure_ascii=False,
+    ).lower()
+    unknown_text = json.dumps(unknowns, ensure_ascii=False).lower()
+    blockers: list[str] = []
+    for label, terms in required.items():
+        mentioned = any(term in review_text for term in terms)
+        unknown = any(term in unknown_text for term in terms)
+        if unknown:
+            blockers.append(f"Vision review could not verify required major source item: {label}.")
+        elif not mentioned:
+            blockers.append(f"Vision review did not verify required major source item: {label}.")
+    return blockers
+
+
+def _assess_vision_payload(
+    vision_payload: dict[str, Any],
+    fidelity_requirements: list[str] | None = None,
+) -> dict[str, Any]:
     text = str(vision_payload.get("comparison") or "").strip()
+    requirements = fidelity_requirements or vision_payload.get("fidelity_requirements") or []
     data = _extract_json_object(text)
     if data is not None:
         raw_verdict = str(data.get("verdict") or "").strip().lower()
@@ -193,6 +255,21 @@ def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
         unknowns = _coerce_review_items(data.get("unknowns") or [])
         matches = _coerce_review_items(data.get("matches") or [])
         corrections = _coerce_review_items(data.get("required_corrections") or data.get("corrections") or [])
+        major_blockers = _major_inventory_blockers(
+            fidelity_requirements=[str(item) for item in requirements],
+            matches=matches,
+            hard=hard,
+            soft=soft,
+            partials=partials,
+            unknowns=unknowns,
+        )
+        if major_blockers:
+            hard.extend(major_blockers)
+            corrections.extend(
+                "Regenerate with the required major source item visibly preserved: "
+                + blocker.rsplit(": ", 1)[-1].rstrip(".")
+                for blocker in major_blockers
+            )
 
         # Verdict ladder, with sketch-to-render leniency built in:
         #
@@ -275,5 +352,4 @@ def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
     if any(signal in lowered for signal in warn_signals):
         return {"verdict": "warn", "blockers": [], "corrections": [], "summary": text[:1600]}
     return {"verdict": "pass", "blockers": [], "corrections": [], "summary": text[:1600] or "Vision review returned no text."}
-
 

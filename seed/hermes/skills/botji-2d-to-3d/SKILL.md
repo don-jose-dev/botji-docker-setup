@@ -1,7 +1,7 @@
 ---
 name: botji-2d-to-3d
 version: 3.1.0
-description: Convert 2D sketches, floor plans, or hand-drawn layouts to 3D renders using a spatial-manifest pipeline. Required when the source is a sketch, not a photo.
+description: Convert 2D sketches, floor plans, or hand-drawn layouts to 3D renders using a spatial-manifest pipeline. Required when the source is a sketch, not a photo. Use botji-render-router first.
 tags: [botji, 2d-to-3d, sketch-to-render, interior, design, fidelity, spatial-manifest]
 ---
 
@@ -62,13 +62,27 @@ Verify the manifest against the sketch. If a label is ambiguous, write both inte
 
 ---
 
-## Step 1 — Register source + extract manifest
+## Step 1 — Register source + choose manifest extraction depth
 
 ```python
 # Register
 source = artifact_register(path=..., role="source", declared_type="image")
+```
 
-# Extract manifest automatically (preferred over writing it by hand)
+Use the manual manifest from Step 0 as the default. It is faster, keeps the
+source facts in the main contract, and avoids a 60-90s vision extraction call for
+simple sketches.
+
+Call `artifact_extract_manifest` only when at least one is true:
+
+- the sketch has more than 10 elements,
+- two or more adjacency relationships are ambiguous,
+- labels/dimensions are hard to read,
+- the user explicitly asks for strict spatial extraction,
+- the first review blocks on count/order/adjacency and the manual manifest needs audit.
+
+```python
+# Extract manifest automatically only when the manual manifest needs audit
 manifest_result = artifact_extract_manifest(artifact_id=source["artifact_id"])
 manifest = manifest_result["manifest"]
 fidelity_reqs = manifest_result["fidelity_requirements"]
@@ -76,7 +90,8 @@ fidelity_reqs = manifest_result["fidelity_requirements"]
 # adjacency_constraints[], layout_hints[]
 ```
 
-If `artifact_extract_manifest` fails (Codex unavailable), fall back to writing the manifest manually as shown in Step 0.
+If `artifact_extract_manifest` is not used, set `manifest` and `fidelity_reqs`
+from your Step 0 manual manifest.
 
 ---
 
@@ -175,6 +190,11 @@ If `delivery_gate == "blocked"` AND the ONLY conflicts are proportion/geometry d
 
 ## Step 5 — Retry strategy (on block)
 
+Do not run an open-ended retry loop. One automatic retry is allowed only when
+the blocker is a concrete count/order/adjacency issue and the correction is
+obvious. A second block on the same issue must be surfaced to the user with
+accept/retry/adjust options.
+
 **Attempt 2:** Add the exact `primary_blocker` text from the review as the FIRST FORBIDDEN entry:
 ```python
 forbidden_elements=[
@@ -183,7 +203,7 @@ forbidden_elements=[
 ]
 ```
 
-**Attempt 3:** Move the adjacency constraint to the very first item in `subject_inventory`, before camera info:
+**Attempt 3 (user-approved only):** Move the adjacency constraint to the very first item in `subject_inventory`, before camera info:
 ```python
 subject_inventory=[
     f"CRITICAL SPATIAL CONSTRAINT (most important): {adjacency_constraint}",
@@ -191,7 +211,7 @@ subject_inventory=[
 ]
 ```
 
-**After 3 blocked attempts on the same constraint:**
+**After 2 blocked attempts on the same constraint:**
 > "I've made [N] attempts. The closest result I could produce conflicts on: [primary_blocker]. gpt-image-2 is having difficulty with this specific constraint. Options: (1) Accept this result with the noted conflict, (2) Adjust the sketch to be less ambiguous about this constraint, (3) Try a different camera angle."
 
 ---

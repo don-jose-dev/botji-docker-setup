@@ -1,6 +1,6 @@
 # Botji V1: Generic Artifact Fidelity Runtime
 
-Botji V1 is a single-tenant Hermes runtime for source-aware work. Its core job is not chat. Its core job is to turn user intent plus files into traceable artifacts with evidence, schemas, transformations, and review receipts.
+Botji V1 is a tenant-scoped Hermes runtime for source-aware work. Its core job is not chat. Its core job is to turn user intent plus files into traceable artifacts with evidence, schemas, transformations, and review receipts.
 
 ## V1 Contract
 
@@ -113,7 +113,7 @@ V1 is acceptable when:
 
 These are future work, not hidden V1 claims:
 
-- SaaS/multi-tenant platform.
+- SaaS-style shared-process multi-tenant platform. The supported isolation model is one tenant per Hermes profile/container with the same skills.
 - Exact CAD/BIM construction validation from raster images.
 - Universal lossless conversion between arbitrary formats.
 - Content-level OCR/transcription/frame/CAD/BIM/code-compliance validation unless the relevant second-stage tool was actually run.

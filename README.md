@@ -1,6 +1,6 @@
-# Botji single-tenant Docker setup
+# Botji tenant-isolated Docker setup
 
-This bundle runs Botji as one isolated tenant:
+This bundle runs one isolated Botji tenant per Compose project/profile:
 
 ```text
 Telegram → Hermes gateway → Botji contract/review skills → Codex CLI worker → reviewed reply
@@ -8,7 +8,10 @@ Telegram → Hermes gateway → Botji contract/review skills → Codex CLI worke
 
 See [BOTJI_V1.md](BOTJI_V1.md) for the current generic artifact-fidelity architecture.
 
-The important design choice is boring on purpose: one company gets one Hermes home, one Codex auth store, one workspace, and one VM/container boundary. No tenant soup. No cross-memory stew.
+The important design choice is boring on purpose: one company gets one Hermes
+home, one Codex auth store, one workspace, and one VM/container boundary. To
+run multiple tenants, repeat the same stack with a different project/profile,
+token, allowlist, data directory, and workspace.
 
 ## What this setup gives you
 
@@ -18,6 +21,7 @@ The important design choice is boring on purpose: one company gets one Hermes ho
 - Tenant-local `CODEX_HOME=/opt/data/.codex`.
 - Botji `SOUL.md` that forces contract → pre-review → execution → source-fidelity review.
 - Botji skills:
+  - render router
   - prompt contract
   - source-fidelity review
   - Codex engineering worker discipline
@@ -139,6 +143,28 @@ Codex defaults:
 - `botji_write`: workspace-write sandbox, no web search, network disabled
 - credentials: `/opt/data/.codex`
 - workspace: `/workspace`
+
+## Skill-first render architecture
+
+Image work starts with `botji-render-router`. The router classifies the request
+as Photo, Sketch, Technical, Parallel, or Concept mode, then reads only the
+needed downstream skill. For a normal single-photo "Make 3d" request, the fast
+path is `artifact_register -> artifact_transform -> artifact_review`; it does
+not run manifest extraction or schema normalization.
+
+Tenant isolation stays below the skill layer: every tenant receives the same
+`botji-*` skills and plugins, while `HERMES_HOME`, `CODEX_HOME`, Telegram token,
+allowlist, sessions, artifacts, memory, and workspace remain tenant-local.
+
+Extra harnesses:
+
+```bash
+botji-allowlist-harness
+botji-gate-harness
+botji-runtime-harness --expected-tenant botji
+botji-log-budget --since-minutes 30 --max-response-seconds 180 --max-api-calls 8
+bash scripts/smoke-tenants.sh .env /path/to/degain.env
+```
 
 ## Production hardening checklist
 

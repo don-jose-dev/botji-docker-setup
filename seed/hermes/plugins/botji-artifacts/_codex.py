@@ -496,5 +496,5 @@ def _codex_vision_compare(sources: list[dict[str, Any]], output: dict[str, Any],
         "model": CODEX_CHAT_MODEL,
         "endpoint": "codex.responses.create",
         "comparison": text,
+        "fidelity_requirements": fidelity_requirements,
     }
-

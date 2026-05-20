@@ -55,6 +55,7 @@ from _handlers import (  # noqa: E402
     _write_verdict_file,
 )
 from _truncate import transform as _truncate_transform  # noqa: E402
+from _guardrails import apply_current_turn_source_guard  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -92,19 +93,40 @@ def _on_tool_result(
             review = payload.get("review")
             if isinstance(review, dict):
                 try:
+                    review, guard_changed = apply_current_turn_source_guard(review, session_id)
+                    if guard_changed:
+                        payload["review"] = review
+                        payload["verdict"] = review.get("verdict")
+                        payload["delivery_gate"] = review.get("delivery_gate")
+                        payload["recommended_action"] = review.get("recommended_action")
+                        payload["primary_blocker"] = review.get("primary_blocker")
+                        payload["retry_guidance"] = review.get("retry_guidance")
+                        payload["delivery_gate_notice"] = (
+                            "[DELIVERY GATE: BLOCKED] Do not deliver this artifact. "
+                            "Retry with the current user attachment as source."
+                        )
+                        for path_key in ("review_path", "artifact_review_path"):
+                            path_value = payload.get(path_key)
+                            if isinstance(path_value, str) and path_value:
+                                Path(path_value).write_text(
+                                    json.dumps(review, indent=2, ensure_ascii=False, default=str),
+                                    encoding="utf-8",
+                                )
                     _write_verdict_file(
                         session_id=session_id,
-                        verdict=str(payload.get("verdict") or ""),
-                        delivery_gate=str(payload.get("delivery_gate") or ""),
-                        recommended_action=str(payload.get("recommended_action") or ""),
-                        primary_blocker=payload.get("primary_blocker"),
-                        retry_guidance=payload.get("retry_guidance"),
+                        verdict=str(review.get("verdict") or payload.get("verdict") or ""),
+                        delivery_gate=str(review.get("delivery_gate") or payload.get("delivery_gate") or ""),
+                        recommended_action=str(review.get("recommended_action") or payload.get("recommended_action") or ""),
+                        primary_blocker=review.get("primary_blocker", payload.get("primary_blocker")),
+                        retry_guidance=review.get("retry_guidance", payload.get("retry_guidance")),
                         review=review,
                     )
                     logger.info(
                         "botji-artifacts: wrote verdict file session=%s gate=%s",
-                        session_id, payload.get("delivery_gate"),
+                        session_id, review.get("delivery_gate") or payload.get("delivery_gate"),
                     )
+                    if guard_changed:
+                        return json.dumps(payload, indent=2, ensure_ascii=False, default=str)
                 except Exception:
                     logger.exception("botji-artifacts: failed to write verdict file")
         return None  # don't truncate review output — agent needs full detail to ship

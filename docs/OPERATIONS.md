@@ -68,8 +68,25 @@ docker compose restart hermes
 |---|---|---|
 | Pre-deploy (auto) | `bash scripts/smoke-plugin.sh` from `vps-deploy.sh` | Imports every plugin submodule, verifies public symbols |
 | CI (auto) | `.github/workflows/ci.yml` | Same smoke + shellcheck on deploy scripts |
+| CI tenant isolation (auto) | `bash scripts/smoke-tenants.sh <env1> <env2>` | Verifies unique tenant IDs, data/workspace dirs, ports, tokens, and model parity |
+| Post-deploy (auto) | `bash scripts/vps-postdeploy-smoke.sh` | Checks runtime tenant config, allowlist, gate, mini artifact harness, and recent latency budgets |
+| Post-deploy source guard (auto) | `botji-fidelity-guard-harness` | Verifies stale current-turn source lineage blocks and major kitchen inventory is explicitly reviewed |
 | Post-deploy (manual) | `bash scripts/smoke-agent.sh` | Exercises an end-to-end agent turn against the live API |
 | VPS diagnostic | `bash scripts/vps-diag.sh` | Logs, artifact index, recent reviews, config, auth status |
+
+The live provider E2E is intentionally opt-in from the deploy workflow
+(`run_live_provider_smoke=true`) because it spends real provider quota.
+
+After skill routing changes, rotate active sessions so existing Telegram
+threads reload current `SOUL.md` and skill text:
+
+```sh
+bash scripts/vps-rotate-sessions.sh /opt/botji /opt/botji-degain
+docker restart botji-hermes degain-hermes
+```
+
+The script archives session files under `sessions/archive/<timestamp>/`; it does
+not delete artifacts, reviews, verdicts, allowlists, or credentials.
 
 The smoke can also run inside the live container:
 
@@ -114,6 +131,16 @@ artifact_transform  ─── operation = edit_image | render_schema | exact_cop
         │
 artifact_review     ─── verdict = pass | warn | block + delivery_gate
 ```
+
+For a normal photo/reference-image "make 3d" request, `botji-render-router`
+selects Photo mode and skips manifest extraction:
+
+```
+artifact_register → artifact_transform(edit_image) → artifact_review
+```
+
+`artifact_extract_manifest` is reserved for sketch/floor-plan/schematic sources
+or ambiguous spatial layouts. It is not part of the Photo mode fast path.
 
 The review response always carries top-level fields the agent must inspect:
 

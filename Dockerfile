@@ -20,10 +20,6 @@ RUN --mount=type=cache,target=/root/.npm \
     && codex --version \
     && mcp-server-filesystem --version 2>/dev/null || true
 
-# Install uv — the 2026 standard Python package manager (10-100x faster than pip,
-# single Rust binary, no get-pip.py bootstrap needed).
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
 # System libraries + all Python deps installed into the hermes venv via uv.
 # The hermes gateway imports plugins through /opt/hermes/.venv/bin/python,
 # so that is the only interpreter that needs these packages.
@@ -35,6 +31,10 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
       && rm -rf /var/lib/apt/lists/*; \
     fi \
     && ([ -f /opt/hermes/.venv/bin/python ] || python3 -m venv /opt/hermes/.venv) \
+    && if ! command -v uv >/dev/null 2>&1; then \
+         /opt/hermes/.venv/bin/python -m pip install --no-cache-dir uv \
+         && ln -sf /opt/hermes/.venv/bin/uv /usr/local/bin/uv; \
+       fi \
     && uv pip install --python /opt/hermes/.venv/bin/python \
          openai \
          pillow \
@@ -54,6 +54,11 @@ COPY runtime/bin/botji-validate-review /usr/local/bin/botji-validate-review
 COPY runtime/bin/botji-contract-new /usr/local/bin/botji-contract-new
 COPY runtime/bin/botji-artifact-e2e /usr/local/bin/botji-artifact-e2e
 COPY runtime/bin/botji-artifact-harness /usr/local/bin/botji-artifact-harness
+COPY runtime/bin/botji-log-budget /usr/local/bin/botji-log-budget
+COPY runtime/bin/botji-allowlist-harness /usr/local/bin/botji-allowlist-harness
+COPY runtime/bin/botji-gate-harness /usr/local/bin/botji-gate-harness
+COPY runtime/bin/botji-runtime-harness /usr/local/bin/botji-runtime-harness
+COPY runtime/bin/botji-fidelity-guard-harness /usr/local/bin/botji-fidelity-guard-harness
 
 RUN chmod +x /usr/local/bin/botji-* \
     && mkdir -p /workspace \

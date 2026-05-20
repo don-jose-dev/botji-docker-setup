@@ -231,16 +231,21 @@ def _dxf_metadata(path: Path) -> dict[str, Any]:
     doc = ezdxf.readfile(str(path))
     msp = doc.modelspace()
     entity_counts = Counter(entity.dxftype() for entity in msp)
+    entity_count = sum(entity_counts.values())
     extents: dict[str, Any] | None = None
-    try:
-        bbox = msp.bbox()
-        if bbox.has_data:
-            extents = {
-                "min": [bbox.extmin.x, bbox.extmin.y, bbox.extmin.z],
-                "max": [bbox.extmax.x, bbox.extmax.y, bbox.extmax.z],
-            }
-    except Exception:
-        extents = None
+    extents_skipped = False
+    if entity_count < 5_000:
+        try:
+            bbox = msp.bbox()
+            if bbox.has_data:
+                extents = {
+                    "min": [bbox.extmin.x, bbox.extmin.y, bbox.extmin.z],
+                    "max": [bbox.extmax.x, bbox.extmax.y, bbox.extmax.z],
+                }
+        except Exception:
+            extents = None
+    else:
+        extents_skipped = True
     return {
         "adapter": "dxf",
         "dxfversion": doc.dxfversion,
@@ -249,6 +254,7 @@ def _dxf_metadata(path: Path) -> dict[str, Any]:
         "blocks": [block.name for block in doc.blocks],
         "modelspace_entity_counts": dict(sorted(entity_counts.items())),
         "modelspace_extents": extents,
+        "modelspace_extents_skipped": extents_skipped,
     }
 
 

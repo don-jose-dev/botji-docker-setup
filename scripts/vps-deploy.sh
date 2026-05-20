@@ -31,9 +31,13 @@ echo "    Branch: $GIT_BRANCH"
 
 cd "$DEPLOY_PATH"
 
+PREVIOUS_TENANT_ID="$(grep -E '^BOTJI_TENANT_ID=' .env 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'" | tr -d '"')"
+PREVIOUS_TENANT_ID="${PREVIOUS_TENANT_ID:-botji}"
+PREVIOUS_CONTAINER_NAME="${PREVIOUS_TENANT_ID}-hermes"
 PREVIOUS_GIT_HEAD="$(git rev-parse HEAD 2>/dev/null || true)"
-PREVIOUS_IMAGE="$(docker inspect botji-hermes --format='{{.Config.Image}}' 2>/dev/null || true)"
+PREVIOUS_IMAGE="$(docker inspect "$PREVIOUS_CONTAINER_NAME" --format='{{.Config.Image}}' 2>/dev/null || true)"
 echo "    Previous commit: ${PREVIOUS_GIT_HEAD:-none}"
+echo "    Previous container: ${PREVIOUS_CONTAINER_NAME}"
 echo "    Previous image: ${PREVIOUS_IMAGE:-none}"
 
 echo "==> GHCR login"
@@ -105,10 +109,20 @@ DATA_DIR="$(grep -E '^BOTJI_DATA_DIR=' .env 2>/dev/null | tail -n1 | cut -d= -f2
 DATA_DIR="${DATA_DIR:-./data/botji}"
 WORKSPACE_DIR="$(grep -E '^BOTJI_WORKSPACE_DIR=' .env 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'" | tr -d '"')"
 WORKSPACE_DIR="${WORKSPACE_DIR:-./workspace}"
+TENANT_ID="$(grep -E '^BOTJI_TENANT_ID=' .env 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'" | tr -d '"')"
+TENANT_ID="${TENANT_ID:-botji}"
+CONTAINER_NAME="${TENANT_ID}-hermes"
 export HERMES_UID="$HERMES_RUNTIME_UID"
 export HERMES_GID="$HERMES_RUNTIME_GID"
 export BOTJI_DATA_DIR="$DATA_DIR"
 export BOTJI_WORKSPACE_DIR="$WORKSPACE_DIR"
+export BOTJI_TENANT_ID="$TENANT_ID"
+echo "    Tenant: $TENANT_ID"
+echo "    Container: $CONTAINER_NAME"
+
+compose() {
+  docker compose --env-file .env -p "$TENANT_ID" -f docker-compose.yml -f docker-compose.prod.yml "$@"
+}
 
 echo "==> Pull image: $IMAGE_REF"
 docker pull "$IMAGE_REF"
@@ -124,8 +138,7 @@ export BOTJI_PROD_IMAGE="$IMAGE_REF"
 # Ensure workspace is writable by the hermes user (UID 10000) before bootstrap runs
 mkdir -p "$WORKSPACE_DIR"
 chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$WORKSPACE_DIR" 2>/dev/null || true
-docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-  --profile bootstrap run --rm bootstrap
+compose --profile bootstrap run --rm bootstrap
 
 sync_code_components() {
   # Code artefacts — always reseed from the checked-out release. The glob-based
@@ -166,16 +179,15 @@ rollback_to_previous() {
 
   if [ -n "${PREVIOUS_IMAGE:-}" ]; then
     export BOTJI_PROD_IMAGE="$PREVIOUS_IMAGE"
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-      up -d --force-recreate --no-build --remove-orphans || true
+    compose up -d --force-recreate --no-build --remove-orphans || true
     for _ in $(seq 1 15); do
-      ROLLBACK_STATUS=$(docker inspect botji-hermes \
+      ROLLBACK_STATUS=$(docker inspect "$CONTAINER_NAME" \
         --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")
       [ "$ROLLBACK_STATUS" = "healthy" ] && break
       sleep 4
     done
     echo "    Rollback status: ${ROLLBACK_STATUS:-unknown}" >&2
-    [ "${ROLLBACK_STATUS:-}" = "healthy" ] || docker logs botji-hermes --tail 40 >&2 || true
+    [ "${ROLLBACK_STATUS:-}" = "healthy" ] || docker logs "$CONTAINER_NAME" --tail 40 >&2 || true
   else
     echo "    No previous image available; manual intervention required" >&2
   fi
@@ -269,12 +281,11 @@ if [ -n "$BOT_TOKEN" ]; then
 fi
 
 echo "==> Start / reload"
-docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-  up -d --force-recreate --no-build --remove-orphans
+compose up -d --force-recreate --no-build --remove-orphans
 
 echo "==> Waiting for healthy..."
 for _ in $(seq 1 15); do
-  STATUS=$(docker inspect botji-hermes \
+  STATUS=$(docker inspect "$CONTAINER_NAME" \
     --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")
   [ "$STATUS" = "healthy" ] && break
   sleep 4
@@ -282,7 +293,7 @@ done
 
 echo "==> Smoke check"
 sleep 10
-STATUS=$(docker inspect botji-hermes \
+STATUS=$(docker inspect "$CONTAINER_NAME" \
   --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")
 echo "    Status: $STATUS"
 if [ "$STATUS" = "healthy" ]; then
@@ -301,7 +312,7 @@ EOF
   echo "==> Deploy complete."
 else
   echo "ERROR: Container not healthy ($STATUS)" >&2
-  docker logs botji-hermes --tail 40 >&2 || true
+  docker logs "$CONTAINER_NAME" --tail 40 >&2 || true
   rollback_to_previous "$STATUS"
   exit 1
 fi

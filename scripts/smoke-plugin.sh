@@ -14,10 +14,18 @@ PLUGINS_ROOT="${PLUGINS_ROOT:-${PLUGIN_DIR_PARENT:-/opt/data/plugins}}"
 # Legacy single-plugin support: if PLUGIN_DIR points at one plugin dir, derive
 # the root and the target plugin name so old invocations still work.
 LEGACY_PLUGIN="${PLUGIN_DIR:-}"
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [ -z "$PYTHON_BIN" ]; then
+  if [ -x /opt/hermes/.venv/bin/python ]; then
+    PYTHON_BIN=/opt/hermes/.venv/bin/python
+  else
+    PYTHON_BIN=python3
+  fi
+fi
 
 echo "=== smoke-plugin: checking $PLUGINS_ROOT ==="
 
-python3 - <<PYEOF
+"$PYTHON_BIN" - <<PYEOF
 import sys, os, importlib, importlib.util, traceback
 
 plugins_root = "${PLUGINS_ROOT}"
@@ -32,6 +40,7 @@ PLUGIN_CONTRACTS = {
             "_constants", "_utils", "_detect", "_registry", "_metadata",
             "_extraction", "_rendering", "_normalization", "_codex", "_vision",
             "_review", "_models", "_handlers", "_schemas", "_prompts",
+            "_guardrails",
         ],
         "symbols": {
             "_handlers": ["_handle_artifact_register", "_handle_artifact_transform",
@@ -48,6 +57,8 @@ PLUGIN_CONTRACTS = {
                             "_deterministic_schema_for_artifact"],
             "_constants": ["MAX_SOURCE_ARTIFACTS", "ARTIFACT_SCHEMA_VERSION",
                            "STRUCTURED_ADAPTERS"],
+            "_guardrails": ["latest_user_attachment_paths",
+                            "apply_current_turn_source_guard"],
         },
     },
     "botji-render": {

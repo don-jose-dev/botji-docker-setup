@@ -113,7 +113,7 @@ def _build_review(
             )
             vision_evidence_id = evidence["evidence_id"]
             all_evidence.append(vision_evidence_id)
-            assessment = _assess_vision_payload(vision_payload)
+            assessment = _assess_vision_payload(vision_payload, fidelity_requirements)
             vision_note = assessment["summary"]
             if assessment["verdict"] == "block":
                 vision_blockers.extend(assessment["blockers"])

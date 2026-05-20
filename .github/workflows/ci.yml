@@ -63,6 +63,20 @@ jobs:
             python -m py_compile "$f" 2>/dev/null || echo "  skip $f (non-Python)"
           done
 
+      - name: Run deterministic behavior harnesses
+        run: |
+          python runtime/bin/botji-allowlist-harness \
+            --plugin-path seed/hermes/plugins/botji-allowlist/__init__.py
+          python runtime/bin/botji-gate-harness \
+            --plugin-path seed/hermes/plugins/botji-gate/__init__.py
+          python runtime/bin/botji-fidelity-guard-harness \
+            --plugin-root seed/hermes/plugins/botji-artifacts
+          python runtime/bin/botji-log-budget \
+            --gateway-log /tmp/missing-gateway.log \
+            --agent-log /tmp/missing-agent.log \
+            --allow-empty \
+            --max-response-seconds 180
+
   shell-lint:
     name: Shell scripts shellcheck
     runs-on: ubuntu-latest
@@ -78,7 +92,43 @@ jobs:
         # The deploy script is single point of failure for production — keep it clean.
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
-          shellcheck -S warning scripts/vps-deploy.sh scripts/smoke-plugin.sh scripts/server-setup.sh
+          shellcheck -S warning \
+            scripts/vps-deploy.sh \
+            scripts/smoke-plugin.sh \
+            scripts/server-setup.sh \
+            scripts/smoke-tenants.sh \
+            scripts/vps-postdeploy-smoke.sh \
+            scripts/vps-rotate-sessions.sh
+
+      - name: Run tenant isolation smoke
+        run: |
+          cat > /tmp/botji-a.env <<'EOF'
+          BOTJI_TENANT_ID=botji
+          BOTJI_DATA_DIR=./data/botji
+          BOTJI_WORKSPACE_DIR=./workspace-botji
+          BOTJI_IMAGE_NAME=botji/hermes-codex
+          BOTJI_IMAGE_TAG=local
+          TELEGRAM_BOT_TOKEN=111:aaa
+          HERMES_API_PORT=8642
+          HERMES_DASHBOARD_PORT=9119
+          API_SERVER_KEY=dummy-a
+          BOTJI_CODEX_IMAGE_CHAT_MODEL=gpt-5.4-mini
+          BOTJI_VISION_REVIEW_MODEL=gpt-5.4-mini
+          EOF
+          cat > /tmp/degain.env <<'EOF'
+          BOTJI_TENANT_ID=degain
+          BOTJI_DATA_DIR=./data/degain
+          BOTJI_WORKSPACE_DIR=./workspace-degain
+          BOTJI_IMAGE_NAME=botji/hermes-codex
+          BOTJI_IMAGE_TAG=local
+          TELEGRAM_BOT_TOKEN=222:bbb
+          HERMES_API_PORT=8643
+          HERMES_DASHBOARD_PORT=9120
+          API_SERVER_KEY=dummy-b
+          BOTJI_CODEX_IMAGE_CHAT_MODEL=gpt-5.4-mini
+          BOTJI_VISION_REVIEW_MODEL=gpt-5.4-mini
+          EOF
+          bash scripts/smoke-tenants.sh /tmp/botji-a.env /tmp/degain.env
 
       - name: Lint Dockerfile (hadolint)
         # Catches common Dockerfile mistakes before the full Docker build runs in

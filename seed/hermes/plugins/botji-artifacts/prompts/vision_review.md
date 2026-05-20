@@ -19,6 +19,12 @@ Determine the source image type before classifying conflicts:
 3. The LEFT-TO-RIGHT ELEMENT ORDER on a SINGLE WALL or ZONE is changed (e.g. "on the right wall, the desk and the wardrobe are swapped").
 4. Two elements that share a wall/zone and were drawn touching now have a REAL FILLER, PANEL, or EXTRA ELEMENT between them in the output (e.g. "a shelf is inserted between the desk and the wardrobe on the right wall").
 
+**Kitchen / elevation major-inventory rule:** if the source or hard requirements
+include any of these major items, you must explicitly verify each one in
+`matches` or list it in `hard_conflicts`: extractor/range hood, refrigerator,
+sink/faucet, island, stool count, pendant count, oven stack, cooktop/range. A
+missing major item is always a hard conflict even for sketch-to-render.
+
 **NOT hard conflicts (these are soft, do not block):**
 - Open floor space, walking space, or clearance between a central element and a perimeter wall. Open-plan layouts are SUPPOSED to have clearance between zones and perimeter — this is architectural, not a violation.
 - "Appears repositioned", "appears expanded", "appears shifted" — these describe proportional drift, not real reorder.

@@ -1,0 +1,274 @@
+#!/opt/hermes/.venv/bin/python
+"""Check Botji/Hermes logs against latency and orchestration budgets.
+
+This is intentionally log-based. It catches the class of failures where the
+plugin imports cleanly, but a real gateway turn spends minutes in repeated
+artifact_transform/artifact_review loops.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+
+TS_RE = re.compile(r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3}")
+RESPONSE_RE = re.compile(
+    r"response ready: .*?chat=(?P<chat>\S+) time=(?P<seconds>[0-9.]+)s "
+    r"api_calls=(?P<api_calls>\d+)"
+)
+TOOL_RE = re.compile(
+    r"\[(?P<session>[^\]]+)\].*?agent\.tool_executor: tool "
+    r"(?P<tool>[A-Za-z0-9_]+) completed \((?P<seconds>[0-9.]+)s"
+)
+TOOL_ERROR_RE = re.compile(
+    r"\[(?P<session>[^\]]+)\].*?agent\.tool_executor: Tool "
+    r"(?P<tool>[A-Za-z0-9_]+) returned error \((?P<seconds>[0-9.]+)s"
+)
+API_RE = re.compile(
+    r"\[(?P<session>[^\]]+)\].*?API call #(?P<num>\d+): .*?"
+    r"in=(?P<input>\d+) out=(?P<output>\d+) total=(?P<total>\d+) "
+    r"latency=(?P<seconds>[0-9.]+)s"
+)
+TURN_RE = re.compile(
+    r"\[(?P<session>[^\]]+)\].*?Turn ended: .*?api_calls=(?P<api_calls>\d+)/"
+    r"\d+ .*?tool_turns=(?P<tool_turns>\d+)"
+)
+
+
+def parse_time(line: str) -> datetime | None:
+    match = TS_RE.search(line)
+    if not match:
+        return None
+    return datetime.strptime(match.group("ts"), "%Y-%m-%d %H:%M:%S")
+
+
+def iter_recent_lines(path: Path, since: datetime | None) -> list[tuple[datetime | None, str]]:
+    if not path.is_file():
+        return []
+    rows: list[tuple[datetime | None, str]] = []
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            ts = parse_time(line)
+            if since is not None and ts is not None and ts < since:
+                continue
+            rows.append((ts, line.rstrip("\n")))
+    return rows
+
+
+def parse_named_threshold(raw: str) -> tuple[str, float]:
+    if "=" not in raw:
+        raise argparse.ArgumentTypeError("expected NAME=NUMBER")
+    name, value = raw.split("=", 1)
+    name = name.strip()
+    if not name:
+        raise argparse.ArgumentTypeError("threshold name is empty")
+    try:
+        return name, float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"bad numeric threshold: {value}") from exc
+
+
+def session_entry(summary: dict[str, Any], session: str) -> dict[str, Any]:
+    sessions = summary.setdefault("sessions", {})
+    return sessions.setdefault(
+        session,
+        {
+            "api_calls_seen": 0,
+            "api_latency_seconds": 0.0,
+            "max_api_latency_seconds": 0.0,
+            "max_input_tokens": 0,
+            "max_total_tokens": 0,
+            "tool_counts": Counter(),
+            "tool_seconds": defaultdict(float),
+            "tool_errors": Counter(),
+            "turn_api_calls": None,
+            "turn_tool_turns": None,
+        },
+    )
+
+
+def summarize(gateway_lines: list[tuple[datetime | None, str]], agent_lines: list[tuple[datetime | None, str]]) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "responses": [],
+        "sessions": {},
+        "tool_totals": Counter(),
+        "tool_seconds": defaultdict(float),
+        "tool_errors": Counter(),
+    }
+
+    for ts, line in gateway_lines:
+        match = RESPONSE_RE.search(line)
+        if not match:
+            continue
+        summary["responses"].append(
+            {
+                "timestamp": ts.isoformat(sep=" ") if ts else None,
+                "chat": match.group("chat"),
+                "seconds": float(match.group("seconds")),
+                "api_calls": int(match.group("api_calls")),
+            }
+        )
+
+    for ts, line in agent_lines:
+        if match := TOOL_RE.search(line):
+            session = match.group("session")
+            tool = match.group("tool")
+            seconds = float(match.group("seconds"))
+            entry = session_entry(summary, session)
+            entry["tool_counts"][tool] += 1
+            entry["tool_seconds"][tool] += seconds
+            summary["tool_totals"][tool] += 1
+            summary["tool_seconds"][tool] += seconds
+            continue
+
+        if match := TOOL_ERROR_RE.search(line):
+            session = match.group("session")
+            tool = match.group("tool")
+            entry = session_entry(summary, session)
+            entry["tool_errors"][tool] += 1
+            summary["tool_errors"][tool] += 1
+            continue
+
+        if match := API_RE.search(line):
+            entry = session_entry(summary, match.group("session"))
+            seconds = float(match.group("seconds"))
+            entry["api_calls_seen"] += 1
+            entry["api_latency_seconds"] += seconds
+            entry["max_api_latency_seconds"] = max(entry["max_api_latency_seconds"], seconds)
+            entry["max_input_tokens"] = max(entry["max_input_tokens"], int(match.group("input")))
+            entry["max_total_tokens"] = max(entry["max_total_tokens"], int(match.group("total")))
+            continue
+
+        if match := TURN_RE.search(line):
+            entry = session_entry(summary, match.group("session"))
+            entry["turn_api_calls"] = int(match.group("api_calls"))
+            entry["turn_tool_turns"] = int(match.group("tool_turns"))
+
+    # Convert Counters/defaultdicts so json.dumps is deterministic.
+    summary["tool_totals"] = dict(sorted(summary["tool_totals"].items()))
+    summary["tool_seconds"] = {k: round(v, 3) for k, v in sorted(summary["tool_seconds"].items())}
+    summary["tool_errors"] = dict(sorted(summary["tool_errors"].items()))
+    for entry in summary["sessions"].values():
+        entry["tool_counts"] = dict(sorted(entry["tool_counts"].items()))
+        entry["tool_seconds"] = {k: round(v, 3) for k, v in sorted(entry["tool_seconds"].items())}
+        entry["tool_errors"] = dict(sorted(entry["tool_errors"].items()))
+        entry["api_latency_seconds"] = round(entry["api_latency_seconds"], 3)
+        entry["max_api_latency_seconds"] = round(entry["max_api_latency_seconds"], 3)
+    return summary
+
+
+def build_violations(summary: dict[str, Any], args: argparse.Namespace) -> list[dict[str, Any]]:
+    violations: list[dict[str, Any]] = []
+
+    if not args.allow_empty and not summary["responses"] and not summary["sessions"]:
+        violations.append({"type": "empty_logs", "message": "no response/session lines found in selected window"})
+
+    if args.max_response_seconds is not None:
+        for response in summary["responses"]:
+            if response["seconds"] > args.max_response_seconds:
+                violations.append(
+                    {
+                        "type": "response_latency",
+                        "chat": response["chat"],
+                        "actual": response["seconds"],
+                        "limit": args.max_response_seconds,
+                    }
+                )
+
+    if args.max_api_calls is not None:
+        for response in summary["responses"]:
+            if response["api_calls"] > args.max_api_calls:
+                violations.append(
+                    {
+                        "type": "response_api_calls",
+                        "chat": response["chat"],
+                        "actual": response["api_calls"],
+                        "limit": args.max_api_calls,
+                    }
+                )
+
+    for session, entry in summary["sessions"].items():
+        if args.max_session_api_calls is not None and entry["api_calls_seen"] > args.max_session_api_calls:
+            violations.append(
+                {
+                    "type": "session_api_calls",
+                    "session": session,
+                    "actual": entry["api_calls_seen"],
+                    "limit": args.max_session_api_calls,
+                }
+            )
+        if args.max_session_tool_turns is not None and entry["turn_tool_turns"] is not None and entry["turn_tool_turns"] > args.max_session_tool_turns:
+            violations.append(
+                {
+                    "type": "session_tool_turns",
+                    "session": session,
+                    "actual": entry["turn_tool_turns"],
+                    "limit": args.max_session_tool_turns,
+                }
+            )
+        for tool, limit in args.max_tool_count:
+            count = entry["tool_counts"].get(tool, 0)
+            if count > limit:
+                violations.append(
+                    {
+                        "type": "tool_count",
+                        "session": session,
+                        "tool": tool,
+                        "actual": count,
+                        "limit": limit,
+                    }
+                )
+        for tool, limit in args.max_tool_seconds:
+            seconds = entry["tool_seconds"].get(tool, 0.0)
+            if seconds > limit:
+                violations.append(
+                    {
+                        "type": "tool_seconds",
+                        "session": session,
+                        "tool": tool,
+                        "actual": seconds,
+                        "limit": limit,
+                    }
+                )
+
+    return violations
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gateway-log", default="/opt/data/logs/gateway.log")
+    parser.add_argument("--agent-log", default="/opt/data/logs/agent.log")
+    parser.add_argument("--since-minutes", type=float, default=None)
+    parser.add_argument("--max-response-seconds", type=float)
+    parser.add_argument("--max-api-calls", type=int)
+    parser.add_argument("--max-session-api-calls", type=int)
+    parser.add_argument("--max-session-tool-turns", type=int)
+    parser.add_argument("--max-tool-count", type=parse_named_threshold, action="append", default=[])
+    parser.add_argument("--max-tool-seconds", type=parse_named_threshold, action="append", default=[])
+    parser.add_argument("--allow-empty", action="store_true")
+    args = parser.parse_args()
+
+    since = datetime.now() - timedelta(minutes=args.since_minutes) if args.since_minutes else None
+    gateway_lines = iter_recent_lines(Path(args.gateway_log), since)
+    agent_lines = iter_recent_lines(Path(args.agent_log), since)
+    summary = summarize(gateway_lines, agent_lines)
+    violations = build_violations(summary, args)
+    payload = {
+        "success": not violations,
+        "window": {"since_minutes": args.since_minutes},
+        "summary": summary,
+        "violations": violations,
+    }
+    print(json.dumps(payload, indent=2, default=str))
+    return 0 if not violations else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

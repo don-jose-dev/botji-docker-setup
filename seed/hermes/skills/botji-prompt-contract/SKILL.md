@@ -114,6 +114,12 @@ For source-bound files, images, renders, diagrams, CAD, screenshots, slides, doc
 - comparator requirement and current comparator status
 - review requirement before final reply
 
+When the route is `artifact_transform`, always pass `source_artifact_ids` as a
+list. Never pass singular `artifact_id`, even for one source; use
+`source_artifact_ids=["art_..."]`. The only common exception is a bare inline
+`render_schema` call with no source artifact, and source-bound work should not
+use that exception.
+
 If the user provides a source file, default the route to `exact_copy` until the user explicitly authorizes a transform route and change list. If the user says “make 3D” after an image upload, default to `fidelity`: preserve layout and dimensions as far as visible; treat materials/color/camera as assumptions unless specified.
 For source-image fidelity work, `image_generate` is prompt-only and must not be selected unless the contract explicitly marks `visual_mode: concept_generation`.
 

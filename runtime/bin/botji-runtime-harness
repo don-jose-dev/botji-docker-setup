@@ -1,0 +1,109 @@
+#!/opt/hermes/.venv/bin/python
+"""Check one running Botji tenant for isolation-critical runtime settings."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+
+def parse_config_model(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.is_file():
+        return values
+    in_model = False
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.rstrip()
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith(" ") and line.endswith(":"):
+            in_model = line.strip() == "model:"
+            continue
+        if not in_model:
+            continue
+        match = re.match(r"\s{2}([A-Za-z0-9_]+):\s*(.+?)\s*$", line)
+        if match:
+            values[match.group(1)] = match.group(2).strip("\"'")
+    return values
+
+
+def is_under(child: str, parent: str) -> bool:
+    try:
+        Path(child).resolve().relative_to(Path(parent).resolve())
+        return True
+    except Exception:
+        return False
+
+
+def read_allowlist(path: Path) -> list[str]:
+    if not path.is_file():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    users = data.get("users") if isinstance(data, dict) else data
+    if not isinstance(users, list):
+        raise ValueError("allowed_users.json must contain a users list")
+    return [str(item) for item in users if str(item).strip()]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--expected-tenant", default=os.environ.get("BOTJI_TENANT_ID", ""))
+    parser.add_argument("--expected-model", default=os.environ.get("BOTJI_EXPECTED_MODEL", "gpt-5.4-mini"))
+    parser.add_argument("--expected-provider", default=os.environ.get("BOTJI_EXPECTED_PROVIDER", "openai-codex"))
+    parser.add_argument("--require-token", action="store_true")
+    parser.add_argument("--require-allowlist", action="store_true")
+    args = parser.parse_args()
+
+    home = os.environ.get("HERMES_HOME", "/opt/data")
+    codex_home = os.environ.get("CODEX_HOME", "")
+    artifact_root = os.environ.get("BOTJI_ARTIFACT_ROOT", "")
+    tenant = os.environ.get("BOTJI_TENANT_ID", "")
+    config = parse_config_model(Path(home) / "config.yaml")
+    allowlist_users = read_allowlist(Path(os.environ.get("BOTJI_ALLOWLIST_PATH", str(Path(home) / "allowed_users.json"))))
+
+    checks: dict[str, Any] = {
+        "tenant": tenant,
+        "hermes_home": home,
+        "codex_home": codex_home,
+        "artifact_root": artifact_root,
+        "model": config.get("default"),
+        "provider": config.get("provider"),
+        "allowlist_users": len(allowlist_users),
+        "telegram_token_present": bool(os.environ.get("TELEGRAM_BOT_TOKEN")),
+        "allow_all_users": os.environ.get("GATEWAY_ALLOW_ALL_USERS", "").lower(),
+    }
+    violations: list[str] = []
+
+    if args.expected_tenant and tenant != args.expected_tenant:
+        violations.append(f"BOTJI_TENANT_ID mismatch: expected {args.expected_tenant}, got {tenant or '<unset>'}")
+    if args.expected_model and config.get("default") != args.expected_model:
+        violations.append(f"model.default mismatch: expected {args.expected_model}, got {config.get('default')}")
+    if args.expected_provider and config.get("provider") != args.expected_provider:
+        violations.append(f"model.provider mismatch: expected {args.expected_provider}, got {config.get('provider')}")
+    if codex_home and not is_under(codex_home, home):
+        violations.append(f"CODEX_HOME is not inside HERMES_HOME: {codex_home}")
+    if artifact_root and not is_under(artifact_root, home):
+        violations.append(f"BOTJI_ARTIFACT_ROOT is not inside HERMES_HOME: {artifact_root}")
+    if checks["allow_all_users"] == "true":
+        violations.append("GATEWAY_ALLOW_ALL_USERS=true")
+    if args.require_token and not checks["telegram_token_present"]:
+        violations.append("TELEGRAM_BOT_TOKEN missing")
+    if args.require_allowlist and not allowlist_users:
+        violations.append("allowed_users.json missing or empty")
+
+    payload = {"success": not violations, "checks": checks, "violations": violations}
+    print(json.dumps(payload, indent=2))
+    return 0 if not violations else 2
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(json.dumps({"success": False, "error": str(exc), "error_type": type(exc).__name__}, indent=2), file=sys.stderr)
+        raise SystemExit(2)

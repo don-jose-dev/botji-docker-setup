@@ -1,6 +1,6 @@
 ---
 name: botji-artifact-fidelity
-description: Generic artifact fidelity for any file type — register, extract, normalize, transform, review. Enforces exact_copy default, schema-first rendering, and no-silent-fallback rule.
+description: Generic artifact fidelity for any file type — register, extract, normalize, transform, review. Enforces exact_copy default, Photo mode fast path, schema-first rendering, and no-silent-fallback rule. Use botji-render-router first for image/render requests.
 tags:
   - botji
   - artifact-fidelity
@@ -35,6 +35,9 @@ The default transformation policy is exact preservation: if the user provided a 
 ## Required loop
 
 1. Call `artifact_register` for every source file path.
+   For source-bound work, use the file attached in the current user turn. Do
+   not reuse a previous turn's artifact ID unless the user explicitly says to
+   use the previous image/file.
 2. Call `artifact_extract` before making claims about file contents, dimensions, text, pages, layers, tables, or visible structure.
 3. Call `artifact_normalize` to create a `botji.artifact_schema.v1` contract before transformation.
    This applies to every file type: image, PDF, text, DXF/CAD, DOCX, XLSX, HTML, SVG, STEP, IFC, ZIP, audio, video, or binary fallback.
@@ -48,6 +51,34 @@ The default transformation policy is exact preservation: if the user provided a 
    Pass the hard acceptance requirements as `fidelity_requirements`; advisory preferences may warn but must not become blockers unless the user made them mandatory.
 7. Final replies must name the output artifact ID/path and review ID/path when available.
    Return the artifact record `path` under `/opt/data/artifacts/outputs/...`, not a raw `/opt/data/cache/...` path from a generation tool. Cache paths are only staging inputs.
+
+## Schema-preview primitive minimum
+
+When using `artifact_transform(operation="render_schema")` with
+`semantic_schema.render_primitives`, include one primitive per meaningful source
+inventory element plus a bounding frame. A preview with fewer than four
+primitives is underspecified unless the source truly has fewer than three
+visible elements. At least one primitive must be a non-text shape (`rect`,
+`line`, `ellipse`, or `polygon`); text-only previews are not layout evidence.
+
+## Major inventory review blockers
+
+For kitchen/interior elevations and cutlists, put every visible major item into
+`fidelity_requirements` before calling `artifact_review`:
+
+- extractor/range hood
+- refrigerator
+- sink/faucet
+- island
+- stool count
+- pendant count
+- oven stack
+- cooktop/range
+- left-to-right major zone order
+
+If the output omits or fails to verify one of these, `delivery_gate` must be
+`blocked`. Treat material, perspective, and finish differences as warnings only
+after major inventory has passed.
 
 ## Route rules
 
@@ -112,6 +143,9 @@ Use when source is a raster image (phone photo, render, screenshot, reference) �
 ### Photo mode pipeline (4 steps, ~60–90s)
 
 Do NOT run `artifact_extract`, `artifact_normalize`, `schema_validate`, or `user_confirm` on a photo. Those steps are for technical drawings only.
+Do NOT run `artifact_extract_manifest` on a photo. Manifest extraction belongs to sketch/floor-plan sources through `botji-2d-to-3d`.
+
+For a single "Make 3d" photo/reference request, the budget is one `artifact_transform` and one `artifact_review`. If review blocks, surface the blocker and ask whether to retry unless the correction is obvious.
 
 ```
 1. artifact_register(path, role="source", declared_type="image")
@@ -198,6 +232,13 @@ Set `schema_authority: user_waived`, `final_claim_level: draft`. One step: `imag
 Do not auto-block for minor style drift. Block when object count changes or source elements are invented or removed.
 
 Photo mode claim level is always `reviewed`. Never `verified` for an image edit.
+
+### Photo mode retry budget
+
+- One automatic retry maximum, only for concrete object count/layout blockers.
+- No automatic retry for style, finish, proportion, or camera drift; deliver with caveat.
+- If the second review blocks, stop and ask the user to accept, retry, or adjust the source/brief.
+- Never exceed two `artifact_transform(operation="edit_image")` calls in one turn for a single output.
 
 ### Sketch-to-render review thresholds
 

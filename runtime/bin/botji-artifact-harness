@@ -393,6 +393,7 @@ def semantic_schema_for(adapter: str) -> dict[str, Any]:
             "domain_profile": "harness_image",
             "canvas": {"width": 900, "height": 520, "background": "white"},
             "render_primitives": [
+                {"shape": "rect", "x": 35, "y": 55, "w": 820, "h": 400, "fill": None, "outline": "#1f2937", "width": 3, "label": "frame"},
                 {"shape": "rect", "x": 70, "y": 90, "w": 300, "h": 220, "fill": "#e9f0ff", "outline": "#2250aa", "width": 5, "label": "rectangle"},
                 {"shape": "ellipse", "x": 450, "y": 120, "w": 180, "h": 180, "fill": "#ffe1e1", "outline": "#aa2533", "width": 5, "label": "circle"},
                 {"shape": "text", "x": 70, "y": 350, "text": "BOTJI HARNESS"},

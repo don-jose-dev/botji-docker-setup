@@ -101,13 +101,28 @@ def _render_schema_transform(
         output_path = output_dir / "schema-preview.png"
         _render_schema_preview_png(schema_payload, output_path, render_title)
         declared_type = "image"
-        # Guard: a degenerate preview (pure metadata text with tiny default font) produces
-        # a ~12–15 KB PNG that vision reviewers correctly identify as a "text panel", not a
-        # layout diagram. Fail fast here so the agent retries with richer schema data rather
-        # than registering an unusable artifact.
-        preview_size = output_path.stat().st_size
-        _SCHEMA_PREVIEW_MIN_BYTES = 40_000
-        if preview_size < _SCHEMA_PREVIEW_MIN_BYTES:
+        semantic_schema = schema_payload.get("semantic_schema")
+        render_primitives = (
+            semantic_schema.get("render_primitives")
+            if isinstance(semantic_schema, dict)
+            else None
+        )
+        if isinstance(render_primitives, list) and render_primitives:
+            non_text_primitives = [
+                primitive for primitive in render_primitives
+                if isinstance(primitive, dict)
+                and str(primitive.get("shape") or primitive.get("type") or "").lower() != "text"
+            ]
+            if len(render_primitives) < 4 or not non_text_primitives:
+                shutil.rmtree(output_dir, ignore_errors=True)
+                raise ValueError(
+                    "render_schema primitive preview is underspecified. "
+                    "Populate semantic_schema.render_primitives with at least 4 primitives "
+                    "including at least one non-text shape."
+                )
+        # Guard: the generic metadata fallback can produce a tiny text-only PNG that
+        # vision reviewers correctly identify as a text panel rather than a layout diagram.
+        elif (preview_size := output_path.stat().st_size) < (_SCHEMA_PREVIEW_MIN_BYTES := 40_000):
             shutil.rmtree(output_dir, ignore_errors=True)
             raise ValueError(
                 f"render_schema produced a degenerate preview ({preview_size:,} bytes < "
@@ -154,5 +169,4 @@ def _render_schema_transform(
         "model": "schema-renderer",
         "endpoint": "artifact_transform.render_schema",
     }
-
 

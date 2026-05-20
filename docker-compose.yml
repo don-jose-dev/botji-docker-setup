@@ -1,4 +1,4 @@
-name: botji-single-tenant
+name: ${BOTJI_TENANT_ID:-botji}
 
 services:
   hermes:
@@ -27,6 +27,7 @@ services:
     environment:
       TZ: ${TZ:-Europe/Amsterdam}
       HERMES_HOME: /opt/data
+      BOTJI_TENANT_ID: ${BOTJI_TENANT_ID:-botji}
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
 

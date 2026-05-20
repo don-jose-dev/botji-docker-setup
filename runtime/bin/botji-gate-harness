@@ -1,0 +1,90 @@
+#!/opt/hermes/.venv/bin/python
+"""Deterministic harness for botji-gate delivery behavior."""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+
+def load_plugin(path: Path):
+    spec = importlib.util.spec_from_file_location("botji_gate_harness_plugin", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot import gate plugin: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_verdict(root: Path, session_id: str, payload: dict) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{session_id}.verdict.json"
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--plugin-path",
+        default=str(Path(os.environ.get("HERMES_HOME", "/opt/data")) / "plugins" / "botji-gate" / "__init__.py"),
+    )
+    args = parser.parse_args()
+
+    plugin_path = Path(args.plugin_path)
+    if not plugin_path.is_file():
+        raise SystemExit(f"botji-gate plugin not found: {plugin_path}")
+
+    with tempfile.TemporaryDirectory(prefix="botji-gate-") as tmp:
+        verdict_root = Path(tmp) / "verdicts"
+        os.environ["BOTJI_VERDICT_ROOT"] = str(verdict_root)
+        module = load_plugin(plugin_path)
+
+        if module._transform_llm_output("hello", session_id="missing") is not None:
+            raise AssertionError("missing verdict should pass through")
+
+        write_verdict(verdict_root, "clear", {"delivery_gate": "clear", "axes": {"content": True}})
+        if module._transform_llm_output("deliver", session_id="clear") is not None:
+            raise AssertionError("clear verdict should pass through")
+
+        write_verdict(verdict_root, "warned", {"delivery_gate": "warned", "axes": {"content": True}})
+        warned = module._transform_llm_output("deliver", session_id="warned")
+        if not warned or "Review noted minor caveats" not in warned:
+            raise AssertionError(f"warned verdict did not prepend caveat: {warned!r}")
+
+        write_verdict(
+            verdict_root,
+            "blocked",
+            {
+                "delivery_gate": "blocked",
+                "axes": {"content_fidelity": False, "groundedness": True},
+                "primary_blocker": "layout drift",
+                "retry_guidance": "retry with source layout locked",
+            },
+        )
+        blocked = module._transform_llm_output("do not leak this final answer", session_id="blocked")
+        if not blocked or "layout drift" not in blocked or "do not leak" in blocked:
+            raise AssertionError(f"blocked verdict did not rewrite safely: {blocked!r}")
+
+        stale_path = write_verdict(verdict_root, "stale", {"delivery_gate": "blocked", "axes": {"content": False}})
+        old = time.time() - module._VERDICT_MAX_AGE_SECONDS - 10
+        os.utime(stale_path, (old, old))
+        if module._transform_llm_output("deliver", session_id="stale") is not None:
+            raise AssertionError("stale verdict should be ignored")
+
+    print(json.dumps({"success": True, "checks": ["missing", "clear", "warned", "blocked", "stale"]}, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(json.dumps({"success": False, "error": str(exc), "error_type": type(exc).__name__}, indent=2), file=sys.stderr)
+        raise SystemExit(2)

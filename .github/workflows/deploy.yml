@@ -13,6 +13,11 @@ on:
         options:
           - deploy
           - logs
+      run_live_provider_smoke:
+        description: 'Run real provider artifact E2E after deploy'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: botji-production-${{ github.workflow }}-${{ github.ref }}
@@ -250,7 +255,14 @@ jobs:
 
           retry 8 15 ssh "${SSH_OPTS[@]}" "$HOST" "echo ssh-ok"
           retry 5 15 scp "${SSH_OPTS[@]}" \
-            scripts/vps-deploy.sh /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 \
+            scripts/vps-deploy.sh scripts/vps-postdeploy-smoke.sh /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 \
             "$HOST:/tmp/"
           retry 3 30 ssh "${SSH_OPTS[@]}" "$HOST" \
             "chmod +x /tmp/vps-deploy.sh && bash /tmp/vps-deploy.sh"
+
+          live_provider=0
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.run_live_provider_smoke }}" = "true" ]; then
+            live_provider=1
+          fi
+          retry 3 30 ssh "${SSH_OPTS[@]}" "$HOST" \
+            "chmod +x /tmp/vps-postdeploy-smoke.sh && RUN_LIVE_PROVIDER_E2E=$live_provider bash /tmp/vps-postdeploy-smoke.sh"
