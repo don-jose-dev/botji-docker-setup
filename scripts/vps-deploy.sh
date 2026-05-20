@@ -320,6 +320,20 @@ if [ -n "$BOT_TOKEN" ]; then
 fi
 
 echo "==> Start / reload"
+# Defensive: free the container_name compose is about to claim. `--remove-orphans`
+# only prunes within the current compose project, so a container left behind by
+# a previous deploy under a different project/tenant prefix silently squats on
+# the name and `compose up` fails with `Conflict. The container name is already
+# in use`. We've seen this when BOTJI_TENANT_ID drifted (botji vs botji-single-
+# tenant); the would-be name is whatever ${BOTJI_TENANT_ID:-botji}-hermes
+# resolves to, plus the historical bare `botji-hermes`.
+EXPECTED_CONTAINER="${BOTJI_TENANT_ID:-botji}-hermes"
+for name in botji-hermes "$EXPECTED_CONTAINER"; do
+  if docker inspect "$name" >/dev/null 2>&1; then
+    echo "    pre-existing container '$name' found — removing to free the name"
+    docker rm -f "$name" >/dev/null 2>&1 || true
+  fi
+done
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   up -d --force-recreate --no-build --remove-orphans
 
