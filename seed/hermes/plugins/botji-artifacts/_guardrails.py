@@ -13,6 +13,7 @@ from _utils import _hermes_home, _sha256
 
 _IMAGE_ATTACHMENT_RE = re.compile(r"\[Image attached at:\s*([^\]\n]+)\]")
 _OPT_DATA_PATH_RE = re.compile(r"(/opt/data/(?:image_cache|artifacts|uploads|files)/[^\s\]\"')]+)")
+_COMPACTION_PREFIX = "[CONTEXT COMPACTION"
 
 
 def _iter_text(value: Any) -> list[str]:
@@ -38,9 +39,9 @@ def _attached_paths_from_content(content: Any) -> list[str]:
     paths: list[str] = []
     for text in _iter_text(content):
         for match in _IMAGE_ATTACHMENT_RE.finditer(text):
-            paths.append(match.group(1).strip())
+            paths.append(match.group(1).strip().rstrip("`,."))
         for match in _OPT_DATA_PATH_RE.finditer(text):
-            paths.append(match.group(1).strip())
+            paths.append(match.group(1).strip().rstrip("`,."))
     return list(dict.fromkeys(paths))
 
 
@@ -65,9 +66,11 @@ def latest_user_attachment_paths(session_id: str) -> list[str]:
             continue
         if record.get("role") != "user":
             continue
-        found = _attached_paths_from_content(record.get("content"))
-        if found:
-            latest = found
+        content = record.get("content")
+        texts = _iter_text(content)
+        if any(text.lstrip().startswith(_COMPACTION_PREFIX) for text in texts):
+            continue
+        latest = _attached_paths_from_content(content)
     return latest
 
 
