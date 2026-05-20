@@ -47,6 +47,11 @@ def call(ctx: FakeContext, name: str, payload: dict[str, Any]) -> dict[str, Any]
     return result
 
 
+def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     plugin_path = default_plugin_path()
     with tempfile.TemporaryDirectory(prefix="botji-core-") as tmp:
@@ -189,6 +194,56 @@ def main() -> int:
         stale = call(ctx, "delivery_gate", {"receipt_id": bad_receipt})
         assert stale["delivery_gate"] == "blocked", stale
         assert stale["primary_blocker"] == "stale_current_turn_source", stale
+
+        legacy_source_path = home / "artifacts" / "sources" / "art_legacy_src" / "legacy-source.txt"
+        legacy_output_path = home / "artifacts" / "outputs" / "art_legacy_out" / "legacy-output.txt"
+        legacy_source_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_output_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_source_path.write_text("legacy-source", encoding="utf-8")
+        legacy_output_path.write_text("legacy-output", encoding="utf-8")
+        write_jsonl(
+            home / "artifacts" / "index" / "artifacts.jsonl",
+            [
+                {
+                    "artifact_id": "art_legacy_src",
+                    "role": "source",
+                    "path": str(legacy_source_path),
+                    "parents": [],
+                    "created_at": "2026-05-20T00:00:00Z",
+                },
+                {
+                    "artifact_id": "art_legacy_out",
+                    "role": "output",
+                    "path": str(legacy_output_path),
+                    "parents": ["art_legacy_src"],
+                    "created_at": "2026-05-20T00:01:00Z",
+                },
+            ],
+        )
+        legacy_written = call(
+            ctx,
+            "artifact_write",
+            {
+                "path": str(legacy_output_path),
+                "parents": ["art_legacy_src"],
+                "current_turn_id": "turn-legacy",
+                "claim_level": "reviewed",
+            },
+        )
+        assert legacy_written["artifact"]["parents"] == ["art_legacy_src"], legacy_written
+        legacy_receipt = call(
+            ctx,
+            "receipt_record",
+            {
+                "source_ids": ["art_legacy_src"],
+                "output_id": "art_legacy_out",
+                "route": "legacy-compat",
+                "status": "pass",
+                "current_turn_id": "turn-legacy",
+            },
+        )["receipt_id"]
+        legacy_gate = call(ctx, "delivery_gate", {"receipt_id": legacy_receipt})
+        assert legacy_gate["delivery_gate"] == "clear", legacy_gate
 
     print("botji-core-harness=pass")
     return 0

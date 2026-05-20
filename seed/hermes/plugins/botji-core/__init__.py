@@ -146,8 +146,43 @@ def _find_record(kind: str, record_id: str, id_field: str) -> dict[str, Any] | N
     return None
 
 
+def _legacy_artifact_index_path() -> Path:
+    root = Path(os.environ.get("BOTJI_ARTIFACT_ROOT", str(_hermes_home() / "artifacts"))).resolve()
+    return root / "index" / "artifacts.jsonl"
+
+
+def _find_legacy_artifact(artifact_id: str) -> dict[str, Any] | None:
+    """Compatibility lookup for legacy botji-artifacts records.
+
+    Phase 1 runs botji-core beside the older artifact plugin. During migration,
+    skills may legitimately hold legacy ``art_*`` IDs from ``artifact_register``
+    or ``artifact_transform``. Treat those as known artifacts for mechanical
+    receipt/gate checks instead of forcing extra repair loops.
+    """
+    path = _legacy_artifact_index_path()
+    if not path.exists():
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        logger.warning("botji-core: failed to read legacy artifact index %s: %s", path, exc)
+        return None
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict) and str(record.get("artifact_id") or "") == str(artifact_id):
+            compatible = dict(record)
+            compatible["_record_source"] = "legacy-botji-artifacts"
+            return compatible
+    return None
+
+
 def _find_artifact(artifact_id: str) -> dict[str, Any] | None:
-    return _find_record("artifacts", artifact_id, "artifact_id")
+    return _find_record("artifacts", artifact_id, "artifact_id") or _find_legacy_artifact(artifact_id)
 
 
 def _copy_into_store(src: Path, bucket: str, artifact_id: str) -> Path:
@@ -367,7 +402,9 @@ def _handle_delivery_gate(args: dict[str, Any], **_: Any) -> str:
             stale_sources = [
                 str(source.get("artifact_id"))
                 for source in sources
-                if source and str(source.get("current_turn_id") or "") != current_turn_id
+                if source
+                and str(source.get("current_turn_id") or "").strip()
+                and str(source.get("current_turn_id") or "").strip() != current_turn_id
             ]
             if stale_sources:
                 return _block(receipt, "stale_current_turn_source", ", ".join(stale_sources))

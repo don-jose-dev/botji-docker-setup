@@ -20,6 +20,18 @@ inventory review, then `artifact_write` / `receipt_record` / `delivery_gate`.
 Use the legacy `artifact_*` pipeline only when the core tools are unavailable or
 the request needs a legacy technical extractor that has not moved to skills yet.
 
+Do not mix identifier families:
+
+- `src_*` IDs come from `botji-core` and are valid for `source_current`,
+  `artifact_write`, `receipt_record`, and `delivery_gate`.
+- `art_*` IDs come from legacy `artifact_*` tools and are valid for
+  `artifact_extract_manifest`, `artifact_transform`, and `artifact_review`.
+- Never pass a `src_*` ID to a legacy `artifact_*` tool. If a legacy extractor is
+  required, call `artifact_register` on the same current attachment path and use
+  that returned `art_*` ID for the legacy leg.
+- Do not repair a receipt failure with repeated retries. One ID-family repair is
+  allowed; after that, deliver the reviewed output with a caveat or stop.
+
 ---
 
 ## Route Decision
