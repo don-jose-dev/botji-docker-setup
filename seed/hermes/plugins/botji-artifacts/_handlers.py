@@ -199,7 +199,10 @@ def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
         parts: list[str] = []
         if params.camera_brief:    parts.append(f"CAMERA: {params.camera_brief}")
         if params.light_brief:     parts.append(f"LIGHT: {params.light_brief}")
+        if params.materials_brief: parts.append(f"MATERIALS: {params.materials_brief}")
         if params.mood_brief:      parts.append(f"MOOD: {params.mood_brief}")
+        if params.reference_brief: parts.append(f"REFERENCE: {params.reference_brief}")
+        if params.signature_brief: parts.append(f"SIGNATURE: {params.signature_brief}")
         if params.subject_inventory:
             parts.append("SUBJECT:\n" + "\n".join(f"  - {s}" for s in params.subject_inventory))
         if params.hard_preserve:

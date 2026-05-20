@@ -104,10 +104,28 @@ class ArtifactTransformParams(BaseModel):
         description="Lighting spec for edit_image: quality, direction, colour temp. "
         "e.g. 'soft diffused · front-left 30° · 5500K'",
     )
+    materials_brief: str = Field(
+        default="",
+        description="Premium material spec for edit_image: at least three named surfaces "
+        "with finish, grain, or wear state. e.g. 'floor: wide-plank European oak, "
+        "matte oil · joinery: rift-sawn white oak veneer · hardware: brushed bronze'",
+    )
     mood_brief: str = Field(
         default="",
         description="Photography/rendering genre for edit_image. "
         "e.g. 'architectural interior photography · editorial showroom'",
+    )
+    reference_brief: str = Field(
+        default="",
+        description="Specific visual reference genre/publication for edit_image. "
+        "e.g. 'Dezeen editorial residential photography' or "
+        "'Architectural Digest residential feature'",
+    )
+    signature_brief: str = Field(
+        default="",
+        description="Exactly one premium signature detail for edit_image, expressed as "
+        "a quality of light or surface, never a new object. e.g. 'soft caustic from "
+        "the side window catching the honed counter edge'",
     )
     subject_inventory: list[str] = Field(
         default_factory=list,
@@ -141,7 +159,8 @@ class ArtifactTransformParams(BaseModel):
         return v
 
     @field_validator(
-        "camera_brief", "light_brief", "mood_brief",
+        "camera_brief", "light_brief", "materials_brief", "mood_brief",
+        "reference_brief", "signature_brief",
         "instructions", "prior_blocker",
         mode="before",
     )

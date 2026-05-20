@@ -107,7 +107,10 @@ artifact_transform(
 
     camera_brief="24mm tilt-shift · straight-on front elevation · centred · eye level",
     light_brief="soft diffused overcast · front-left 30° · studio fill · 5500K daylight",
+    materials_brief="floor: wide-plank European oak, matte oil · cabinets: rift-sawn white oak veneer with hand-rubbed oil · counter: honed Carrara marble with grey veining · hardware: brushed bronze with subtle patina",
     mood_brief="architectural interior photography · editorial showroom · clean",
+    reference_brief="Dezeen editorial residential photography",
+    signature_brief="a gentle bounce light catching the cabinet grain at the counter edge",
 
     subject_inventory=[
         # List elements in strict LEFT-TO-RIGHT order, one entry per wall/zone

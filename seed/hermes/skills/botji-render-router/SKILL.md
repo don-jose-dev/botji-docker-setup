@@ -39,7 +39,10 @@ For a single uploaded photo/reference image and the text `Make 3d`:
 
 1. Register the image attached in the **current user turn**:
    `artifact_register(path=<current attachment path>, role="source", declared_type="image")`
-2. Build a structured premium brief from visible facts and user memory.
+2. Build a structured premium brief from visible facts and user memory. Fill
+   `camera_brief`, `light_brief`, `materials_brief`, `mood_brief`,
+   `reference_brief`, and `signature_brief`; do not rely on mood alone for the
+   premium look.
 3. `artifact_transform(operation="edit_image", source_artifact_ids=[source_id], ...)`
 4. `artifact_review(..., use_openai_vision=True)`
 5. Deliver if `delivery_gate` is `clear` or `warned`; if blocked, show the blocker and ask whether to retry.

@@ -125,7 +125,7 @@ For source-image fidelity work, `image_generate` is prompt-only and must not be 
 
 ## Premium-brief discipline (route=edit_image only)
 
-When the contract selects route `edit_image` (and `fidelity_mode != "exact_copy"`), the brief passed as `instructions=` MUST follow `botji-premium-brief`. The contract is invalid until the brief passes the **noise-vocabulary check** and contains all four required specifications.
+When the contract selects route `edit_image` (and `fidelity_mode != "exact_copy"`), the transform brief MUST follow `botji-premium-brief`. Fill the first-class fields `light_brief`, `materials_brief`, `reference_brief`, and `signature_brief`; use `instructions=` only for overflow constraints. The contract is invalid until the brief passes the **noise-vocabulary check** and contains all four required specifications.
 
 **Banned noise vocabulary in the brief** (reject the contract if any appears):
 

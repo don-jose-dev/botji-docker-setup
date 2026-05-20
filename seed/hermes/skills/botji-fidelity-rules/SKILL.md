@@ -30,7 +30,8 @@ Every generated artifact must trace:
 
 For every `artifact_transform(operation="edit_image")`, the brief MUST be structured (not freeform prose):
 
-- Use structured fields: `camera_brief`, `light_brief`, `mood_brief`, `subject_inventory`, `hard_preserve`, `forbidden_elements`
+- Use structured fields: `camera_brief`, `light_brief`, `materials_brief`, `mood_brief`, `reference_brief`, `signature_brief`, `subject_inventory`, `hard_preserve`, `forbidden_elements`
+- `materials_brief`, `reference_brief`, and `signature_brief` are not optional style garnish. Missing them produces flat AI-default output; fill them before every provider render unless the user explicitly asked for a quick draft.
 - NEVER use "photorealistic", "high quality", "8K", or "hyperrealistic" — these are noise. Use camera body + lens + lighting instead.
 - FORBIDDEN list must explicitly name what gpt-image-2 is likely to hallucinate for the scene type (plants, clutter, extra panels, extra objects, people, furniture).
 

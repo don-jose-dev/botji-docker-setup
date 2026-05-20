@@ -156,7 +156,10 @@ For a single "Make 3d" photo/reference request, the budget is one `artifact_tran
      contract_id=contract_id,
      camera_brief="[body · lens · view angle]",
      light_brief="[quality · direction · color temp]",
+     materials_brief="[floor/wall/joinery/hardware named materials with finish]",
      mood_brief="[photography/rendering genre]",
+     reference_brief="[specific publication or visual genre]",
+     signature_brief="[one quality of light or surface; never a new object]",
      subject_inventory=["[element 1 with count and position]", "[element 2]"],
      hard_preserve=[
        "Overall spatial layout and composition",

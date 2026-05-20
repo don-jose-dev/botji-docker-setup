@@ -212,7 +212,11 @@ FORBIDDEN:
    - MATERIALS names at least 3 surfaces with finish
    - REFERENCE names one specific genre or publication
    - SIGNATURE describes a quality of light or surface, not an object
-7. Call `artifact_transform(operation="edit_image", source_artifact_ids=[...], instructions=<brief>)`.
+7. Call `artifact_transform(operation="edit_image", source_artifact_ids=[...])` with the premium fields filled explicitly:
+   `camera_brief`, `light_brief`, `materials_brief`, `mood_brief`,
+   `reference_brief`, `signature_brief`, then the fidelity lists
+   `subject_inventory`, `hard_preserve`, and `forbidden_elements`. Use
+   `instructions` only for extra constraints that do not fit those fields.
 
 ---
 
