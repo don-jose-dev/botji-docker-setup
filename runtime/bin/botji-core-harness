@@ -245,6 +245,39 @@ def main() -> int:
         legacy_gate = call(ctx, "delivery_gate", {"receipt_id": legacy_receipt})
         assert legacy_gate["delivery_gate"] == "clear", legacy_gate
 
+        # Mixed-pipeline guard: a turn that already has a native src_* must
+        # reject any receipt whose source_ids point to a legacy art_* record,
+        # even if the bytes/SHA happen to match. This catches the "same image
+        # re-uploaded, model carried over old art_ ID" failure observed on
+        # 2026-05-20.
+        mixed_source_path = incoming / "mixed-source.txt"
+        mixed_source_path.write_text("mixed", encoding="utf-8")
+        native_for_legacy_turn = call(
+            ctx,
+            "source_register",
+            {
+                "path": str(mixed_source_path),
+                "current_turn_id": "turn-legacy",
+                "role": "source",
+                "declared_type": "text",
+            },
+        )["source"]
+        mixed_receipt = call(
+            ctx,
+            "receipt_record",
+            {
+                "source_ids": ["art_legacy_src"],
+                "output_id": "art_legacy_out",
+                "route": "legacy-while-native-present",
+                "status": "pass",
+                "current_turn_id": "turn-legacy",
+            },
+        )["receipt_id"]
+        mixed_gate = call(ctx, "delivery_gate", {"receipt_id": mixed_receipt})
+        assert mixed_gate["delivery_gate"] == "blocked", mixed_gate
+        assert mixed_gate["primary_blocker"] == "mixed_pipeline_source", mixed_gate
+        assert native_for_legacy_turn["artifact_id"].startswith("src_"), native_for_legacy_turn
+
     print("botji-core-harness=pass")
     return 0
 

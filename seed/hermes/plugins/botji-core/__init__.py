@@ -185,6 +185,19 @@ def _find_artifact(artifact_id: str) -> dict[str, Any] | None:
     return _find_record("artifacts", artifact_id, "artifact_id") or _find_legacy_artifact(artifact_id)
 
 
+def _native_sources_for_turn(current_turn_id: str) -> list[str]:
+    if not current_turn_id:
+        return []
+    matches: list[str] = []
+    for record in _read_records("sources"):
+        if str(record.get("current_turn_id") or "").strip() != current_turn_id:
+            continue
+        artifact_id = str(record.get("artifact_id") or "").strip()
+        if artifact_id.startswith("src_"):
+            matches.append(artifact_id)
+    return matches
+
+
 def _copy_into_store(src: Path, bucket: str, artifact_id: str) -> Path:
     dest_dir = _core_root() / bucket / artifact_id
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -408,6 +421,25 @@ def _handle_delivery_gate(args: dict[str, Any], **_: Any) -> str:
             ]
             if stale_sources:
                 return _block(receipt, "stale_current_turn_source", ", ".join(stale_sources))
+
+            # If the current turn already registered native botji-core sources
+            # (src_*), reject any receipt whose source_ids point to legacy
+            # art_* records. Same-bytes SHA fallback in the artifact guard
+            # otherwise silently passes stale art_ IDs from earlier turns.
+            native_for_turn = _native_sources_for_turn(current_turn_id)
+            if native_for_turn:
+                legacy_in_receipt = [
+                    source_id
+                    for source_id, source in zip(source_ids, sources)
+                    if source
+                    and str(source.get("_record_source") or "") == "legacy-botji-artifacts"
+                ]
+                if legacy_in_receipt:
+                    return _block(
+                        receipt,
+                        "mixed_pipeline_source",
+                        f"legacy art_ ids {', '.join(legacy_in_receipt)} present while current turn has native src_ ids {', '.join(native_for_turn)}",
+                    )
 
         gate = "warned" if status == "warn" else "clear"
         return _ok(
