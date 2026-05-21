@@ -12,12 +12,13 @@ on orchestration only.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
-from _utils import _new_id, _hermes_home
+from _utils import _new_id, _hermes_home, _artifact_root
 from _registry import _store_evidence
-from _vision import _assess_vision_payload
+from _vision import _assess_vision_payload, _extract_json_object
 from _codex import _codex_vision_compare, _resolve_review_provider_route
 from _comparators import (
     _geometry_fidelity_note,
@@ -26,6 +27,146 @@ from _comparators import (
     _run_high_fidelity_provider_transform,
     brief_specificity,
 )
+
+
+_TECHNICAL_MODALITIES = {
+    "schematic", "elevation", "cutlist", "drawing", "technical",
+    "cad", "dxf", "blueprint", "plan", "floorplan",
+}
+_TECHNICAL_INTENT_KEYWORDS = (
+    "elevation", "cutlist", "schematic", "blueprint", "floor plan",
+    "floorplan", "drawing", "plan view", "section view",
+)
+
+
+def _load_source_manifest_elements(sources: list[dict[str, Any]]) -> tuple[list[str], str | None]:
+    """Return (element_labels, source_modality) from the most recent manifest
+    extractor evidence across all sources. Empty list if no manifest exists yet.
+    """
+    labels: list[str] = []
+    modality: str | None = None
+    ev_root = _artifact_root() / "evidence"
+    for source in sources:
+        ev_dir = ev_root / str(source.get("artifact_id") or "")
+        if not ev_dir.is_dir():
+            continue
+        # Newest evidence files first
+        files = sorted(ev_dir.glob("ev_*.json"), reverse=True)
+        for evfile in files:
+            try:
+                ev = json.loads(evfile.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if ev.get("extractor") != "codex_manifest_extractor":
+                continue
+            data = ev.get("data") or {}
+            manifest = data.get("manifest") if isinstance(data, dict) else None
+            if not isinstance(manifest, dict):
+                continue
+            if not modality:
+                modality = str(manifest.get("source_modality") or "").strip().lower() or None
+            elements = manifest.get("elements")
+            if isinstance(elements, list):
+                for el in elements:
+                    if isinstance(el, dict):
+                        label = str(el.get("label") or "").strip()
+                        if label:
+                            labels.append(label.lower())
+            break  # only use the most recent manifest evidence per source
+    # de-dup while preserving order
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for label in labels:
+        if label not in seen:
+            seen.add(label)
+            deduped.append(label)
+    return deduped, modality
+
+
+def _is_technical_source(
+    source_modality: str | None,
+    sources: list[dict[str, Any]],
+    output: dict[str, Any],
+) -> bool:
+    """A source is 'technical' when its manifest modality is schematic/elevation/etc.
+    OR when the source declared_type / output user_intent flags a technical drawing.
+    Technical sources get stricter fidelity gating.
+    """
+    if source_modality and source_modality in _TECHNICAL_MODALITIES:
+        return True
+    for source in sources:
+        declared = str(source.get("declared_type") or "").lower()
+        mime = str(source.get("mime_type") or "").lower()
+        if declared in _TECHNICAL_MODALITIES:
+            return True
+        if mime in {"application/pdf", "image/vnd.dxf", "application/dxf", "application/x-dxf"}:
+            return True
+    intent = str(output.get("user_intent") or "").lower()
+    return any(kw in intent for kw in _TECHNICAL_INTENT_KEYWORDS)
+
+
+_STOP_WORDS = {"the", "a", "an", "and", "or", "of", "to", "for", "on", "in", "at",
+               "with", "panel", "section", "unit", "module", "wall", "side", "left",
+               "right", "center", "centre", "main"}
+
+
+def _label_match(label: str, matches_text: str) -> bool:
+    """Token-level fuzzy match: a label matches when EITHER the full label is a
+    substring of the matches blob OR every significant word in the label (after
+    dropping stop-words and trailing 's' from each) appears in the blob.
+
+    Tolerates plural/singular drift and common phrasing variants ("wooden
+    louvers" vs "wooden louver panel") without inflating coverage with
+    incidental stop-word matches.
+    """
+    label = label.strip().lower()
+    if not label:
+        return False
+    if label in matches_text:
+        return True
+    tokens = [t for t in label.replace("-", " ").replace("/", " ").split() if t]
+    significant = [t.rstrip("s") for t in tokens if t not in _STOP_WORDS and len(t) > 1]
+    if not significant:
+        # Whole label was stop-words — fall back to substring of the raw label
+        return label in matches_text
+    return all(t in matches_text for t in significant)
+
+
+def _manifest_alignment_axis(
+    *,
+    source_element_labels: list[str],
+    vision_matches: list[str],
+    technical_source: bool,
+) -> dict[str, Any] | None:
+    """Deterministically compare source manifest elements to vision-matched items.
+
+    Returns axis params (status, severity, notes) or None when no manifest is
+    available — in which case the axis is skipped. Coverage thresholds:
+        coverage >= 0.85  -> match
+        0.60 <= coverage < 0.85 -> partial (severity=low; blocking for technical sources)
+        coverage <  0.60  -> conflict (severity=blocking)
+    """
+    if not source_element_labels:
+        return None
+    matches_text = " ".join(str(m) for m in vision_matches).lower()
+    covered = sum(1 for label in source_element_labels if _label_match(label, matches_text))
+    total = len(source_element_labels)
+    coverage = covered / total if total else 0.0
+    if coverage >= 0.85:
+        status, severity = "match", "none"
+    elif coverage >= 0.60:
+        status = "partial"
+        severity = "blocking" if technical_source else "low"
+    else:
+        status, severity = "conflict", "blocking"
+    notes = json.dumps({
+        "manifest_elements": total,
+        "vision_matched": covered,
+        "coverage_percent": round(coverage * 100, 1),
+        "missing_labels": [label for label in source_element_labels if not _label_match(label, matches_text)],
+        "technical_source": technical_source,
+    }, ensure_ascii=False)
+    return {"status": status, "severity": severity, "notes": notes}
 
 
 def _reviews_dir() -> Path:
@@ -92,6 +233,7 @@ def _build_review(
     vision_warning = False
     vision_blockers: list[str] = []
     vision_corrections: list[str] = []
+    vision_full_matches: list[str] = []
     if (
         route != "artifact_transform.exact_copy"
         and not is_schema_render
@@ -115,6 +257,14 @@ def _build_review(
             all_evidence.append(vision_evidence_id)
             assessment = _assess_vision_payload(vision_payload, fidelity_requirements)
             vision_note = assessment["summary"]
+            # Re-parse the raw vision JSON to recover the FULL matches list (the
+            # assessment summary truncates to 8 entries; the manifest_alignment
+            # axis needs every match to compute coverage).
+            full_obj = _extract_json_object(str(vision_payload.get("comparison") or ""))
+            if isinstance(full_obj, dict):
+                raw_matches = full_obj.get("matches") or []
+                if isinstance(raw_matches, list):
+                    vision_full_matches = [str(m).strip() for m in raw_matches if str(m).strip()]
             if assessment["verdict"] == "block":
                 vision_blockers.extend(assessment["blockers"])
                 vision_corrections.extend(assessment["corrections"])
@@ -245,9 +395,16 @@ def _build_review(
 
     # geometry_fidelity: for raster image outputs only vision evidence constitutes a hard
     # geometry block; modality metadata differences are structural and non-blocking.
+    # Raster outputs cannot be measured to physical dimensions, so a non-exact image
+    # transform is "not applicable" rather than "partial" — partials here were inflating
+    # the warn rate (39× across production reviews) without representing any real defect.
     if _image_to_image:
-        geometry_status = "conflict" if _vision_blocked else ("match" if exact_match else "partial")
-        geometry_severity = "blocking" if _vision_blocked else ("none" if exact_match else "low")
+        if _vision_blocked:
+            geometry_status, geometry_severity = "conflict", "blocking"
+        elif exact_match:
+            geometry_status, geometry_severity = "match", "none"
+        else:
+            geometry_status, geometry_severity = "match", "none"
     else:
         geometry_status = (
             "conflict" if (_vision_blocked or _modality_blocked or (exact_result and exact_result["status"] == "conflict"))
@@ -297,19 +454,57 @@ def _build_review(
     ])
 
     # Informational axis: scan the agent's brief (output.user_intent) for premium-
-    # vocabulary discipline. Never blocks delivery — severity is always `none` —
-    # but surfaces missing Kelvin / materials / reference / signature so the
-    # agent gets a feedback signal on prompt-construction quality.
+    # vocabulary discipline. Surfaces missing Kelvin / materials / reference /
+    # signature so the agent gets a feedback signal on prompt-construction quality.
+    # For technical sources (elevations, cutlists, schematics) under-specified
+    # briefs let the model invent — they get severity=low so the agent sees the
+    # signal in the review, but they do not block delivery on their own.
+    _source_element_labels, _source_modality = _load_source_manifest_elements(sources)
+    _technical_source = _is_technical_source(_source_modality, sources, output)
     if _image_to_image:
         _brief_score = brief_specificity(output.get("user_intent") or "")
+        _brief_severity = "none"
+        if _brief_score["status"] == "partial" and _technical_source:
+            _brief_severity = "low"
         axes.append(_axis(
             "brief_specificity",
             _brief_score["status"],
-            "none",
+            _brief_severity,
             _brief_score["notes"],
             claim_level="reviewed",
             evidence_ids=all_evidence,
         ))
+
+    # manifest_alignment: deterministic check that compares the source manifest
+    # element list (from codex_manifest_extractor evidence) to the vision-matched
+    # items in this review. When the output is missing manifest elements, this
+    # is a hard signal that the render dropped or added objects — currently the
+    # noisiest source of post-delivery quality complaints. For technical sources
+    # a partial coverage (60-85%) escalates to blocking; for concept/photo
+    # sources it remains a warning.
+    _manifest_axis = _manifest_alignment_axis(
+        source_element_labels=_source_element_labels,
+        vision_matches=vision_full_matches,
+        technical_source=_technical_source,
+    )
+    if _manifest_axis is not None:
+        axes.append(_axis(
+            "manifest_alignment",
+            _manifest_axis["status"],
+            _manifest_axis["severity"],
+            _manifest_axis["notes"],
+            claim_level="reviewed",
+            evidence_ids=[vision_evidence_id] if vision_evidence_id else all_evidence,
+        ))
+        if _manifest_axis["severity"] == "blocking":
+            blockers.append(
+                f"Manifest alignment failed: {_manifest_axis['notes']}"
+            )
+            corrections.append(
+                "Regenerate with explicit element-count enforcement; the output must contain every label "
+                "from the source manifest before delivery."
+            )
+
     verdict = "block" if blockers else ("warn" if review_warning else "pass")
     final_claim_level = "verified" if exact_match and not blockers else "reviewed"
 
