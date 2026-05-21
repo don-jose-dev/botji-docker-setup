@@ -179,7 +179,9 @@ platform_toolsets:
   google_chat:
   - hermes-google_chat
 image_gen:
-  provider: botji-codex   # botji-render registers this provider
+  # botji-render plugin was removed 2026-05-19; image generation falls through to
+  # the built-in openai-codex provider that ships with Hermes.
+  provider: openai-codex
   model: gpt-image-2-high
   openai-codex:
     model: gpt-image-2-high
