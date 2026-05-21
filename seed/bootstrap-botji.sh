@@ -80,6 +80,7 @@ copy_file "$SEED/hermes/config.yaml" "$DATA/config.yaml"
 copy_dir "$SEED/hermes/prompts" "$DATA/prompts"
 for _plugin_src in "$SEED/hermes/plugins"/botji-*/; do
   [ -d "$_plugin_src" ] || continue
+  [ -f "$_plugin_src/plugin.yaml" ] && [ -f "$_plugin_src/__init__.py" ] || continue
   _plugin_name="$(basename "$_plugin_src")"
   copy_dir "$_plugin_src" "$DATA/plugins/$_plugin_name"
 done

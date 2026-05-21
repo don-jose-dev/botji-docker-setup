@@ -1,9 +1,13 @@
 """PIL-based schema preview PNG renderers.
 
 Two render modes:
-- ``_render_generic_schema_preview_png``: metadata-only diagnostic image (used when
-  the semantic_schema has no ``render_primitives``). Shows artifact metadata, hard
-  requirements, advisory preferences, and a list of semantic keys.
+- ``_render_semantic_blockout_preview_png``: deterministic fallback blockout (used
+  when semantic fields exist but there are no explicit ``render_primitives``).
+  Shows source-derived elements/items as labelled blocks, so render_schema does
+  not force another model turn just to add drawing primitives.
+- ``_render_generic_schema_preview_png``: metadata-only diagnostic image (used
+  when the semantic_schema has no renderable fields). Shows artifact metadata,
+  hard requirements, advisory preferences, and a list of semantic keys.
 - ``_render_primitives_schema_preview_png``: data-driven blockout (used when the
   semantic_schema includes ``render_primitives`` — rectangles, ellipses, lines,
   polygons, text). The renderer is intentionally generic; all domain-specific
@@ -51,12 +55,187 @@ def _load_pil_font(size: int) -> Any:
 
 
 def _render_schema_preview_png(schema_payload: dict[str, Any], output_path: Path, title: str) -> None:
-    """Dispatcher: pick primitive-driven mode when the schema has render_primitives, else generic."""
+    """Dispatcher: prefer explicit primitives, then semantic blockout, then metadata diagnostic."""
     semantic = schema_payload.get("semantic_schema") or {}
-    if isinstance(semantic.get("render_primitives"), list):
+    if isinstance(semantic.get("render_primitives"), list) and semantic.get("render_primitives"):
         _render_primitives_schema_preview_png(schema_payload, output_path, title)
+    elif _semantic_block_labels(semantic):
+        _render_semantic_blockout_preview_png(schema_payload, output_path, title)
     else:
         _render_generic_schema_preview_png(schema_payload, output_path, title)
+
+
+def _semantic_block_labels(semantic: dict[str, Any]) -> list[str]:
+    """Extract stable labels from common schema fields for fallback blockout rendering."""
+    if not isinstance(semantic, dict):
+        return []
+    labels: list[str] = []
+    preferred = (
+        "elements", "objects", "items", "zones", "features",
+        "required_visible_items", "required_entities", "required_text",
+        "required_sheets", "required_paragraphs", "required_tables",
+    )
+    for key in preferred:
+        labels.extend(_labels_from_value(key, semantic.get(key)))
+    if not labels:
+        for key, value in semantic.items():
+            if key in {"canvas", "render_primitives"}:
+                continue
+            labels.extend(_labels_from_value(key, value))
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for label in labels:
+        clean = " ".join(str(label).split())
+        if not clean or clean in seen:
+            continue
+        deduped.append(clean[:120])
+        seen.add(clean)
+        if len(deduped) >= 24:
+            break
+    return deduped
+
+
+def _labels_from_value(key: str, value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [f"{key}: {value}"]
+    if isinstance(value, (int, float, bool)):
+        return [f"{key}: {value}"]
+    if isinstance(value, dict):
+        labels: list[str] = []
+        for item_key, item_value in value.items():
+            if isinstance(item_value, (str, int, float, bool)):
+                labels.append(f"{item_key}: {item_value}")
+            elif isinstance(item_value, list):
+                labels.extend(_labels_from_value(str(item_key), item_value))
+            elif isinstance(item_value, dict):
+                labels.append(str(item_key))
+        return labels
+    if isinstance(value, list):
+        labels = []
+        for index, item in enumerate(value, start=1):
+            if isinstance(item, dict):
+                name = (
+                    item.get("label")
+                    or item.get("name")
+                    or item.get("id")
+                    or item.get("text")
+                    or item.get("type")
+                    or item.get("kind")
+                    or f"{key} {index}"
+                )
+                parts = [str(name)]
+                for extra_key in ("wall_or_zone", "zone", "position", "position_index", "notes"):
+                    extra = item.get(extra_key)
+                    if extra not in (None, ""):
+                        parts.append(f"{extra_key}={extra}")
+                labels.append(" | ".join(parts))
+            elif isinstance(item, (str, int, float, bool)):
+                labels.append(str(item))
+        return labels
+    return []
+
+
+def _render_semantic_blockout_preview_png(schema_payload: dict[str, Any], output_path: Path, title: str) -> None:
+    """Fallback semantic preview: labelled blocks derived from schema fields."""
+    from PIL import Image, ImageDraw
+
+    font_title = _load_pil_font(28)
+    font_section = _load_pil_font(18)
+    font_body = _load_pil_font(15)
+    font_small = _load_pil_font(13)
+
+    width, height = 1600, 950
+    image = Image.new("RGB", (width, height), (248, 250, 252))
+    draw = ImageDraw.Draw(image)
+
+    # Light grid makes the preview clearly spatial without inventing measured geometry.
+    for x in range(40, width, 80):
+        draw.line((x, 120, x, height - 40), fill=(225, 230, 238), width=1)
+    for y in range(120, height - 40, 80):
+        draw.line((40, y, width - 40, y), fill=(225, 230, 238), width=1)
+
+    draw.rectangle((30, 24, width - 30, 92), fill=(28, 48, 76))
+    draw.text((50, 38), title[:120], fill=(255, 255, 255), font=font_title)
+    draw.text(
+        (50, 96),
+        "Deterministic semantic blockout from schema fields. Positions are ordinal, not measured source geometry.",
+        fill=(65, 75, 90),
+        font=font_small,
+    )
+
+    semantic = schema_payload.get("semantic_schema") or {}
+    labels = _semantic_block_labels(semantic)
+    contract = schema_payload.get("fidelity_contract") or {}
+    hard = [str(item) for item in (contract.get("hard_requirements") or []) if str(item).strip()]
+
+    n = max(1, len(labels))
+    cols = min(4, max(2, int((n - 1) ** 0.5) + 1))
+    rows = (n + cols - 1) // cols
+    area_left, area_top, area_right, area_bottom = 80, 155, width - 80, 700
+    gap = 18
+    card_w = max(190, (area_right - area_left - gap * (cols - 1)) // cols)
+    card_h = max(92, (area_bottom - area_top - gap * (rows - 1)) // rows)
+    palette = [
+        ((231, 239, 255), (44, 88, 156)),
+        ((232, 246, 237), (38, 123, 74)),
+        ((255, 241, 224), (174, 104, 23)),
+        ((244, 235, 255), (103, 76, 160)),
+    ]
+
+    for index, label in enumerate(labels):
+        row, col = divmod(index, cols)
+        x1 = area_left + col * (card_w + gap)
+        y1 = area_top + row * (card_h + gap)
+        x2 = min(area_right, x1 + card_w)
+        y2 = min(area_bottom, y1 + card_h)
+        fill, outline = palette[index % len(palette)]
+        draw.rounded_rectangle((x1, y1, x2, y2), radius=8, fill=fill, outline=outline, width=3)
+        draw.text((x1 + 14, y1 + 12), f"{index + 1:02d}", fill=outline, font=font_section)
+        text_x = x1 + 62
+        text_y = y1 + 12
+        for line in _wrap_preview_text(label, max(18, (x2 - text_x - 12) // 8))[:4]:
+            draw.text((text_x, text_y), line, fill=(25, 32, 44), font=font_body)
+            text_y += 20
+
+    draw.rectangle((80, 735, width - 80, 900), fill=(255, 255, 255), outline=(165, 174, 190), width=2)
+    draw.text((100, 755), "Hard requirements", fill=(130, 40, 40), font=font_section)
+    if hard:
+        y = 785
+        for item in hard[:5]:
+            for line in _wrap_preview_text(item, 145)[:2]:
+                draw.text((115, y), f"- {line}", fill=(80, 35, 35), font=font_small)
+                y += 18
+                if y > 890:
+                    break
+            if y > 890:
+                break
+    else:
+        draw.text((115, 785), "- None supplied", fill=(80, 80, 80), font=font_small)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_path)
+
+
+def _wrap_preview_text(text: str, max_chars: int) -> list[str]:
+    words = str(text).split()
+    if not words:
+        return [""]
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+        current = word[:max_chars]
+    if current:
+        lines.append(current)
+    return lines
 
 
 def _render_generic_schema_preview_png(schema_payload: dict[str, Any], output_path: Path, title: str) -> None:

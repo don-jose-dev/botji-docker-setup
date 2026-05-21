@@ -11,6 +11,7 @@ ABSOLUTE FIDELITY CONSTRAINTS (these always win over aesthetics):
 5. HARD PRESERVE items are load-bearing architectural constraints from the source — not preferences.
 6. FORBIDDEN items are known hallucination patterns for this scene type. DO NOT produce any FORBIDDEN item regardless of how natural it looks.
 7. Preserve object counts exactly. No extra elements, no extra objects, no extra decorative items.
+8. Doors, entries, windows, openings, thresholds, and arches are binding architectural elements. Preserve their source wall/side, position along the wall, and visible swing/handing; never relocate an opening to another wall.
 
 Violating any of the above makes the output unusable and requires a full retry.
 

@@ -94,11 +94,16 @@ group_sessions_per_user: true
 streaming:
   enabled: true
 skills:
-  creation_nudge_interval: 15
+  # Live Botji runs should not spend customer turns patching skills. Skill edits
+  # happen through repository review, not runtime self-mutation.
+  creation_nudge_interval: 100000
+  guard_agent_created: true
 agent:
   max_turns: 60
   verbose: false
   reasoning_effort: medium
+  disabled_toolsets:
+  - skills
   # Force native vision attachment on user-attached images. gpt-5.5 is
   # multimodal (models.dev supports_vision=True for openai-codex/gpt-5.5);
   # without this, auxiliary.vision.provider being set causes the auto router to
@@ -180,6 +185,7 @@ image_gen:
     model: gpt-image-2-high
 plugins:
   enabled:
+  - botji-core        # compatibility receipts/delivery gate for legacy art_* outputs
   - botji-artifacts   # bookkeeping (register/extract/normalize/list/read) + legacy review
   - botji-allowlist   # file-backed Telegram allowlist with hot reload
   - botji-gate        # Default-FAIL delivery gate (transform_llm_output)

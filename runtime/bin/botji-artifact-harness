@@ -15,8 +15,8 @@ import importlib.util
 import json
 import os
 import subprocess
-import sys
 import struct
+import sys
 import wave
 import zipfile
 from pathlib import Path
@@ -102,12 +102,48 @@ def load_plugin():
     return module
 
 
+def validate_review_command() -> list[str]:
+    local = Path(__file__).resolve().with_name("botji-validate-review")
+    if local.is_file():
+        return [sys.executable, str(local)]
+    return ["botji-validate-review"]
+
+
 def call_tool(module: Any, name: str, args: dict[str, Any]) -> dict[str, Any]:
     handler = getattr(module, f"_handle_{name}")
     payload = json.loads(handler(args))
     if not payload.get("success"):
         raise RuntimeError(f"{name} failed: {payload.get('error')} ({payload.get('error_type')})")
     return payload
+
+
+def validate_retry_prompt_contract() -> None:
+    from _handlers import _build_edit_image_prompt
+    from _models import ArtifactTransformParams
+
+    prompt = _build_edit_image_prompt(
+        ArtifactTransformParams.model_validate(
+            {
+                "operation": "edit_image",
+                "source_artifact_ids": ["art_harness_source"],
+                "prior_blocker": "Maid-room door moved to the left vertical wall.",
+                "retry_guidance": "Keep the maid-room door on the bottom wall with the same swing/handing.",
+                "hard_preserve": ["Total element count unchanged."],
+                "forbidden_elements": ["Do not add extra openings."],
+                "instructions": "Render a 3D floor-plan image.",
+            }
+        )
+    )
+    required = [
+        "CRITICAL RETRY CORRECTION",
+        "Prior blocked review: Maid-room door moved to the left vertical wall.",
+        "Required correction: Keep the maid-room door on the bottom wall with the same swing/handing.",
+        "Required retry correction: Keep the maid-room door on the bottom wall with the same swing/handing.",
+        "Do not repeat prior blocked review failure: Maid-room door moved to the left vertical wall.",
+    ]
+    missing = [item for item in required if item not in prompt]
+    if missing:
+        raise RuntimeError(f"retry prompt contract missing required text: {missing}")
 
 
 def validate_schema_payload(payload: dict[str, Any]) -> None:
@@ -490,6 +526,44 @@ def run_adapter(module: Any, adapter: str, *, copy_into_registry: bool) -> dict[
             "instructions": f"Deterministically render {adapter} normalized schema.",
         },
     )
+    if adapter == "image":
+        fallback_normalized = call_tool(
+            module,
+            "artifact_normalize",
+            {
+                "artifact_id": source_id,
+                "schema_profile": "image_harness_semantic_fallback",
+                "intent": "harness_image_semantic_fallback",
+                "semantic_schema": {
+                    "kind": "source_image_layout",
+                    "required_visible_items": [
+                        "blue rectangular panel",
+                        "red circle",
+                        "green label block",
+                    ],
+                },
+                "hard_requirements": hard_requirements_for(adapter),
+                "evidence_ids": [extracted["evidence"]["evidence_id"]],
+            },
+        )
+        fallback_transformed = call_tool(
+            module,
+            "artifact_transform",
+            {
+                "contract_id": "artifact-harness-image-semantic-fallback",
+                "source_artifact_ids": [source_id],
+                "operation": "render_schema",
+                "output_type": "image",
+                "schema_evidence_id": fallback_normalized["schema_evidence"]["evidence_id"],
+                "render_title": "Botji harness image semantic fallback preview",
+                "instructions": "Render schema without explicit render_primitives; fallback must not force a retry.",
+            },
+        )
+        fallback_artifact = fallback_transformed["output_artifact"]
+        if fallback_artifact.get("schema_preview_has_render_primitives") is not False:
+            raise RuntimeError("semantic fallback preview incorrectly reported render_primitives")
+        if int(fallback_artifact.get("size_bytes") or 0) <= 0:
+            raise RuntimeError("semantic fallback preview produced an empty image")
     reviewed = call_tool(
         module,
         "artifact_review",
@@ -507,7 +581,13 @@ def run_adapter(module: Any, adapter: str, *, copy_into_registry: bool) -> dict[
             "require_vision_api": False,
         },
     )
-    subprocess.run(["botji-validate-review", reviewed["review_path"]], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    subprocess.run(
+        [*validate_review_command(), reviewed["review_path"]],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     modality_axes = [axis for axis in reviewed["review"].get("axes", []) if axis.get("axis") == "modality_comparator"]
     if not modality_axes:
         raise RuntimeError("artifact_review did not emit modality_comparator axis")
@@ -541,7 +621,13 @@ def run_adapter(module: Any, adapter: str, *, copy_into_registry: bool) -> dict[
             "require_vision_api": False,
         },
     )
-    subprocess.run(["botji-validate-review", exact_reviewed["review_path"]], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    subprocess.run(
+        [*validate_review_command(), exact_reviewed["review_path"]],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     if exact_reviewed["review"]["verdict"] != "pass":
         raise RuntimeError(f"exact_copy review did not pass: {exact_reviewed['review']['verdict']}")
     if exact_reviewed["review"].get("final_claim_level") != "verified":
@@ -625,6 +711,7 @@ def main() -> int:
     args = parser.parse_args()
 
     module = load_plugin()
+    validate_retry_prompt_contract()
     results = []
     requested = [item.strip() for item in args.adapters.split(",") if item.strip()]
     for adapter in requested:

@@ -66,12 +66,19 @@ PLUGIN_CONTRACTS = {
         "submodules": [],
         "symbols": {},
     },
+    "botji-core": {
+        "submodules": [],
+        "symbols": {},
+    },
 }
+REQUIRED_PLUGINS = {"botji-allowlist", "botji-artifacts", "botji-core", "botji-gate"}
 
 # Resolve which plugins to check: if PLUGINS_ROOT is set use it (preferred),
 # else fall back to a single legacy PLUGIN_DIR for back-compat.
+legacy_mode = False
 if legacy_plugin and not os.path.isdir(plugins_root):
     plugin_dirs = [legacy_plugin]
+    legacy_mode = True
 else:
     if not os.path.isdir(plugins_root):
         print(f"FAIL  plugins root not found: {plugins_root}", flush=True)
@@ -79,12 +86,21 @@ else:
     plugin_dirs = [
         os.path.join(plugins_root, d)
         for d in sorted(os.listdir(plugins_root))
-        if d in PLUGIN_CONTRACTS and os.path.isdir(os.path.join(plugins_root, d))
+        if (
+            d in PLUGIN_CONTRACTS
+            and os.path.isdir(os.path.join(plugins_root, d))
+            and os.path.isfile(os.path.join(plugins_root, d, "__init__.py"))
+            and os.path.isfile(os.path.join(plugins_root, d, "plugin.yaml"))
+        )
     ]
 
 failures = []
 total_submodules = 0
 total_symbols = 0
+present_plugins = {os.path.basename(path.rstrip("/")) for path in plugin_dirs}
+missing_required = [] if legacy_mode else sorted(REQUIRED_PLUGINS - present_plugins)
+if missing_required:
+    failures.extend(f"missing required plugin: {name}" for name in missing_required)
 
 for plugin_dir in plugin_dirs:
     plugin_name = os.path.basename(plugin_dir.rstrip("/"))

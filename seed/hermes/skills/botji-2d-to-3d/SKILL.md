@@ -56,6 +56,10 @@ TOTAL ELEMENT COUNT: [N]
 CRITICAL ADJACENCY CONSTRAINTS:
   — [Pos X Wall Y] is DIRECTLY adjacent to [Pos Z Wall Y] — NO filler, panel, or gap between them
   — [Element] terminates at [point] — does NOT continue further
+
+OPENING CONSTRAINTS:
+  — [Room/zone] [door/entry/window] is on the [wall/side] at [left/center/right/near corner]
+  — [Door] swing/handing: [visible source swing/handing, or unknown if not legible]
 ```
 
 Verify the manifest against the sketch. If a label is ambiguous, write both interpretations.
@@ -73,7 +77,7 @@ manifest_result = artifact_extract_manifest(artifact_id=source["artifact_id"])
 manifest = manifest_result["manifest"]
 fidelity_reqs = manifest_result["fidelity_requirements"]
 # manifest contains: scene_type, source_modality, elements[], element_count,
-# adjacency_constraints[], layout_hints[]
+# adjacency_constraints[], opening_constraints[], layout_hints[]
 ```
 
 If `artifact_extract_manifest` fails (Codex unavailable), fall back to writing the manifest manually as shown in Step 0.
@@ -106,12 +110,15 @@ artifact_transform(
         "Total element count: exactly [N] units",
         # One entry per adjacency constraint from manifest:
         "[Wall, Pos X] [label] is DIRECTLY adjacent to [Wall, Pos Y] [label] — ZERO space between them",
+        "[Room/zone] [door/entry/opening] stays on the [wall/side] at [position] with the same visible swing/handing",
         # repeat per constraint
     ],
 
     forbidden_elements=[
         # SPECIFIC adjacency violations first (name the exact elements):
         "DO NOT place any filler, panel, or empty space between [label A] and [label B] on the [wall/zone name]",
+        "Do NOT move [room/zone] [door/entry/opening] from the [source wall/side] to any other wall",
+        "Do NOT change the visible swing/handing of [room/zone] door",
         # repeat per adjacency constraint
         # Generic scene hallucinations (always include):
         "Do NOT reorder or swap any element from its drawn position",
@@ -177,10 +184,12 @@ If `delivery_gate == "blocked"` AND the ONLY conflicts are proportion/geometry d
 
 **Attempt 2:** Add the exact `primary_blocker` text from the review as the FIRST FORBIDDEN entry:
 ```python
-forbidden_elements=[
-    f"DO NOT: {review['primary_blocker']}",  # verbatim from review verdict
-    # ... rest of original FORBIDDEN list
-]
+artifact_transform(
+    ...
+    prior_blocker=review["primary_blocker"],      # verbatim from review verdict
+    retry_guidance=review.get("retry_guidance", ""),
+    forbidden_elements=[...original list...],
+)
 ```
 
 **Attempt 3:** Move the adjacency constraint to the very first item in `subject_inventory`, before camera info:

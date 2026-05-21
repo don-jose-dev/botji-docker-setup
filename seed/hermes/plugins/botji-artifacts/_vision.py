@@ -85,6 +85,9 @@ _HARD_CONFLICT_PHRASES = (
     "swapped position", "swapped order", "swapped places",
     "wrong wall", "moved to wrong",
     "reordered modules", "reordered cabinets",
+    "wrong door swing", "wrong swing", "wrong handing",
+    "door swing/handing", "entrance is not placed", "door on the wrong wall",
+    "door is on the wrong wall", "opening on the wrong wall",
     # Adjacency violations (a real cabinet/panel inserted between two adjacent modules)
     "cabinet inserted between", "panel inserted between", "filler between",
     "cabinet between the oven", "cabinet between the ref", "cabinet between the tower",
@@ -122,6 +125,7 @@ _CHANGE_VERBS = (
 _ELEMENT_NOUNS = (
     "cabinet", "module", "tower", "appliance", "stool", "chair",
     "panel", "shelf", "shelves", "island", "peninsula", "door",
+    "opening", "entrance", "threshold",
     "drawer", "wardrobe", "pantry", "fridge", "refrigerator", "oven",
     "range", "hood", "sink", "faucet", "tap", "table", "bench",
     "plant", "vase", "bowl", "fruit", "lamp", "pendant", "fixture",
@@ -170,7 +174,57 @@ def _classify_conflict(text: str) -> str:
     return "soft"
 
 
-def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
+_MAJOR_REQUIREMENT_TERMS = (
+    ("hood/extractor", ("hood", "extractor", "range hood")),
+    ("pendant count", ("pendant", "pendant light", "pendant lights")),
+    ("stool count", ("stool", "stools", "chair", "chairs")),
+    ("refrigerator", ("refrigerator", "fridge")),
+    ("island", ("island",)),
+    ("door", ("door", "doors")),
+    ("oven", ("oven", "ovens")),
+    ("sink", ("sink", "faucet", "tap")),
+    ("cooktop", ("cooktop", "hob", "range")),
+)
+
+
+def _major_requirement_silence_blockers(
+    fidelity_requirements: list[str] | None,
+    observed_items: list[str],
+) -> list[str]:
+    """Block when a major hard requirement is absent from the vision assessment.
+
+    A model can return "warn" while simply omitting a required inventory item
+    such as a hood or pendant count. That is different from a soft sketch/render
+    drift: the review failed to assess a named hard requirement at all.
+    """
+    requirements = [str(item).strip() for item in (fidelity_requirements or []) if str(item).strip()]
+    if not requirements:
+        return []
+    observed_text = " ".join(str(item) for item in observed_items if str(item).strip()).lower()
+    blockers: list[str] = []
+    seen_labels: set[str] = set()
+    for requirement in requirements:
+        lowered = requirement.lower()
+        for label, terms in _MAJOR_REQUIREMENT_TERMS:
+            if label in seen_labels:
+                continue
+            if not any(term in lowered for term in terms):
+                continue
+            if any(term in observed_text for term in terms):
+                seen_labels.add(label)
+                break
+            seen_labels.add(label)
+            blockers.append(
+                f"Major inventory silence: {label} requirement was not assessed by vision review: {requirement}"
+            )
+            break
+    return blockers
+
+
+def _assess_vision_payload(
+    vision_payload: dict[str, Any],
+    fidelity_requirements: list[str] | None = None,
+) -> dict[str, Any]:
     text = str(vision_payload.get("comparison") or "").strip()
     data = _extract_json_object(text)
     if data is not None:
@@ -179,6 +233,10 @@ def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
         # New structured fields (hard/soft split)
         hard = _coerce_review_items(data.get("hard_conflicts") or [])
         soft = _coerce_review_items(data.get("soft_conflicts") or [])
+        promoted_hard = [item for item in soft if _classify_conflict(item) == "hard"]
+        if promoted_hard:
+            hard.extend(item for item in promoted_hard if item not in hard)
+            soft = [item for item in soft if item not in promoted_hard]
 
         # Legacy field — classify by keyword if hard/soft not provided
         legacy = _coerce_review_items(data.get("conflicts") or data.get("blocking_conflicts") or [])
@@ -193,6 +251,15 @@ def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
         unknowns = _coerce_review_items(data.get("unknowns") or [])
         matches = _coerce_review_items(data.get("matches") or [])
         corrections = _coerce_review_items(data.get("required_corrections") or data.get("corrections") or [])
+        silence_blockers = _major_requirement_silence_blockers(
+            fidelity_requirements,
+            matches + hard + soft + partials + unknowns + legacy,
+        )
+        if silence_blockers:
+            hard.extend(silence_blockers)
+            corrections.append(
+                "Rerun the review or regenerate with explicit coverage of every hard fidelity requirement."
+            )
 
         # Verdict ladder, with sketch-to-render leniency built in:
         #
@@ -258,6 +325,16 @@ def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
         }
 
     lowered = text.lower()
+    silence_blockers = _major_requirement_silence_blockers(fidelity_requirements, [text])
+    if silence_blockers:
+        return {
+            "verdict": "block",
+            "blockers": silence_blockers,
+            "corrections": [
+                "Rerun the review or regenerate with explicit coverage of every hard fidelity requirement."
+            ],
+            "summary": text[:1600] or json.dumps({"conflicts": silence_blockers}, ensure_ascii=False),
+        }
     block_signals = (
         '"verdict": "block"', '"verdict":"block"',
         '"verdict": "fail"', '"verdict":"fail"',
@@ -275,5 +352,3 @@ def _assess_vision_payload(vision_payload: dict[str, Any]) -> dict[str, Any]:
     if any(signal in lowered for signal in warn_signals):
         return {"verdict": "warn", "blockers": [], "corrections": [], "summary": text[:1600]}
     return {"verdict": "pass", "blockers": [], "corrections": [], "summary": text[:1600] or "Vision review returned no text."}
-
-

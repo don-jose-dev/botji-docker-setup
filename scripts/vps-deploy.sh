@@ -81,16 +81,17 @@ if grep -Eq '^BOTJI_DATA_DIR=/opt/data(/.*)?$' .env; then
   echo "    BOTJI_DATA_DIR normalized to host tenant data path"
 fi
 
-# Apply model overrides from CI if provided; otherwise leave whatever is in .env.
-# Model selection belongs in config.yaml — only override here when CI explicitly sets it.
-if [ -n "${CI_CODEX_IMAGE_CHAT_MODEL:-}" ]; then
-  set_env_var BOTJI_CODEX_IMAGE_CHAT_MODEL "$CI_CODEX_IMAGE_CHAT_MODEL"
-  echo "    BOTJI_CODEX_IMAGE_CHAT_MODEL set from CI: $CI_CODEX_IMAGE_CHAT_MODEL"
-fi
-if [ -n "${CI_VISION_REVIEW_MODEL:-}" ]; then
-  set_env_var BOTJI_VISION_REVIEW_MODEL "$CI_VISION_REVIEW_MODEL"
-  echo "    BOTJI_VISION_REVIEW_MODEL set from CI: $CI_VISION_REVIEW_MODEL"
-fi
+# Normalize model env overrides. VPS_ENV is long-lived and has previously kept
+# BOTJI_* model overrides pinned to gpt-5.5 after config.yaml was moved back to
+# gpt-5.4-mini. That silently puts image turns on the slower path. Use fast,
+# reviewed defaults unless CI deliberately supplies a replacement.
+BOTJI_DEPLOY_IMAGE_MODEL="${CI_IMAGE_MODEL:-gpt-image-2}"
+BOTJI_DEPLOY_CODEX_IMAGE_CHAT_MODEL="${CI_CODEX_IMAGE_CHAT_MODEL:-gpt-5.4-mini}"
+BOTJI_DEPLOY_VISION_REVIEW_MODEL="${CI_VISION_REVIEW_MODEL:-gpt-5.4-mini}"
+set_env_var BOTJI_IMAGE_MODEL "$BOTJI_DEPLOY_IMAGE_MODEL"
+set_env_var BOTJI_CODEX_IMAGE_CHAT_MODEL "$BOTJI_DEPLOY_CODEX_IMAGE_CHAT_MODEL"
+set_env_var BOTJI_VISION_REVIEW_MODEL "$BOTJI_DEPLOY_VISION_REVIEW_MODEL"
+echo "    Botji model env normalized: image=$BOTJI_DEPLOY_IMAGE_MODEL image_chat=$BOTJI_DEPLOY_CODEX_IMAGE_CHAT_MODEL vision_review=$BOTJI_DEPLOY_VISION_REVIEW_MODEL"
 if grep -Eq '^BOTJI_WORKSPACE_DIR=/workspace(/.*)?$' .env; then
   set_env_var BOTJI_WORKSPACE_DIR "./workspace"
   echo "    BOTJI_WORKSPACE_DIR normalized to host workspace path"
@@ -190,10 +191,23 @@ sync_code_components() {
   done
   for plugin_dir in seed/hermes/plugins/botji-*; do
     [ -d "$plugin_dir" ] || continue
+    [ -f "$plugin_dir/plugin.yaml" ] && [ -f "$plugin_dir/__init__.py" ] || continue
     plugin_name="$(basename "$plugin_dir")"
+    valid_plugins="${valid_plugins:-} $plugin_name"
     rm -rf "$DATA_DIR/plugins/$plugin_name"
     cp -R "$plugin_dir" "$DATA_DIR/plugins/"
     echo "    seeded plugin: $plugin_name"
+  done
+  for deployed_plugin in "$DATA_DIR"/plugins/botji-*; do
+    [ -d "$deployed_plugin" ] || continue
+    plugin_name="$(basename "$deployed_plugin")"
+    case " ${valid_plugins:-} " in
+      *" $plugin_name "*) ;;
+      *)
+        rm -rf "$deployed_plugin"
+        echo "    removed stale plugin: $plugin_name"
+        ;;
+    esac
   done
   rm -rf "$DATA_DIR/prompts"
   cp -R seed/hermes/prompts "$DATA_DIR/"
@@ -351,6 +365,14 @@ STATUS=$(docker inspect botji-hermes \
   --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")
 echo "    Status: $STATUS"
 if [ "$STATUS" = "healthy" ]; then
+  if [ -f scripts/vps-postdeploy-smoke.sh ]; then
+    echo "==> Post-deploy smoke"
+    BOTJI_CONTAINER_NAME="botji-hermes" \
+      BOTJI_TENANT_ID="${BOTJI_TENANT_ID:-botji}" \
+      bash scripts/vps-postdeploy-smoke.sh
+  else
+    echo "    WARNING: scripts/vps-postdeploy-smoke.sh missing - skipping post-deploy smoke."
+  fi
   mkdir -p "$DATA_DIR/.botji"
   cat > "$DATA_DIR/.botji/LAST_DEPLOY.json" <<EOF
 {

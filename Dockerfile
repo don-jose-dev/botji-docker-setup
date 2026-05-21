@@ -48,12 +48,7 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
          ezdxf \
          pillow
 
-COPY runtime/bin/botji-codex /usr/local/bin/botji-codex
-COPY runtime/bin/botji-codex-review /usr/local/bin/botji-codex-review
-COPY runtime/bin/botji-validate-review /usr/local/bin/botji-validate-review
-COPY runtime/bin/botji-contract-new /usr/local/bin/botji-contract-new
-COPY runtime/bin/botji-artifact-e2e /usr/local/bin/botji-artifact-e2e
-COPY runtime/bin/botji-artifact-harness /usr/local/bin/botji-artifact-harness
+COPY runtime/bin/ /usr/local/bin/
 
 RUN chmod +x /usr/local/bin/botji-* \
     && mkdir -p /workspace \

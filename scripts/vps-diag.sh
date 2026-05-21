@@ -2,10 +2,49 @@
 # Runs ON the VPS via SSH. Focused diagnostic: message timing, steps, model used.
 set -euo pipefail
 
+redact_stream() {
+  python3 -c '
+import re
+import sys
+
+patterns = [
+    (re.compile(r"(?i)(\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY|AUTH)[A-Z0-9_]*=)[^\s]+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)(\"?(?:access|refresh|id)_token\"?\s*[:=]\s*\")[^\"]+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)(Bearer\s+)[A-Za-z0-9._-]+"), r"\1[REDACTED]"),
+    (re.compile(r"\b(?:bot)?\d{6,12}:[A-Za-z0-9_-]{25,}\b"), "[REDACTED_TELEGRAM_TOKEN]"),
+    (re.compile(r"\b(?:sk|sess)-[A-Za-z0-9_-]{20,}\b"), "[REDACTED_SECRET]"),
+    (re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"), "[REDACTED_JWT]"),
+]
+
+for line in sys.stdin:
+    for pattern, replacement in patterns:
+        line = pattern.sub(replacement, line)
+    sys.stdout.write(line)
+    sys.stdout.flush()
+'
+}
+
+exec > >(redact_stream) 2> >(redact_stream >&2)
+
 EXEC="docker exec botji-hermes bash -c"
 
 echo "=== CONTAINER RECENT LOGS (last 80 lines, timestamped) ==="
 docker logs botji-hermes --tail 80 --timestamps 2>&1
+echo ""
+
+echo "=== VPS + DOCKER SNAPSHOT ==="
+date -u +"utc_now=%Y-%m-%dT%H:%M:%SZ"
+date +"local_now=%Y-%m-%dT%H:%M:%S%z"
+docker inspect botji-hermes --format='name={{.Name}} image={{.Config.Image}} restart_count={{.RestartCount}} started={{.State.StartedAt}} running={{.State.Running}} status={{.State.Status}} oom_killed={{.State.OOMKilled}} exit_code={{.State.ExitCode}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' 2>/dev/null || true
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps 2>/dev/null || docker ps --filter name=botji-hermes
+echo ""
+
+echo "=== RECENT DOCKER EVENTS FOR BOTJI (last 3h) ==="
+docker events --since 3h --until "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" --filter container=botji-hermes 2>/dev/null | tail -80 || echo EVENTS_UNAVAILABLE
+echo ""
+
+echo "=== LAST DEPLOY MARKER ==="
+$EXEC 'cat /opt/data/.botji/LAST_DEPLOY.json 2>/dev/null || echo LAST_DEPLOY_MISSING'
 echo ""
 
 echo "=== GATEWAY LOG — last 150 lines ==="
@@ -109,7 +148,7 @@ $EXEC 'echo TELEGRAM_ALLOWED_USERS_COUNT=$(echo "$TELEGRAM_ALLOWED_USERS" | tr "
 echo ""
 
 echo "=== CONTAINER STATUS ==="
-docker inspect botji-hermes --format='Started: {{.State.StartedAt}}  Health: {{.State.Health.Status}}' 2>/dev/null
+docker inspect botji-hermes --format='Started: {{.State.StartedAt}}  RestartCount: {{.RestartCount}}  Health: {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}  OOMKilled: {{.State.OOMKilled}}  ExitCode: {{.State.ExitCode}}' 2>/dev/null
 echo ""
 
 echo "=== CODEX VERSION + AUTH STATE (redacted) ==="

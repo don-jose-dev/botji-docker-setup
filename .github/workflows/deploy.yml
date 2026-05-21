@@ -194,6 +194,9 @@ jobs:
           TELEGRAM_BOT_USERNAME_SECRET: ${{ secrets.TELEGRAM_BOT_USERNAME }}
           VPS_ENV_SECRET: ${{ secrets.VPS_ENV }}
           CODEX_AUTH_B64_SECRET: ${{ secrets.CODEX_AUTH_B64 }}
+          BOTJI_IMAGE_MODEL_SECRET: ${{ secrets.BOTJI_IMAGE_MODEL }}
+          BOTJI_CODEX_IMAGE_CHAT_MODEL_SECRET: ${{ secrets.BOTJI_CODEX_IMAGE_CHAT_MODEL }}
+          BOTJI_VISION_REVIEW_MODEL_SECRET: ${{ secrets.BOTJI_VISION_REVIEW_MODEL }}
         run: |
           set -euo pipefail
           : > /tmp/ci-vars.env
@@ -210,6 +213,9 @@ jobs:
           write_var GHCR_TOKEN "$GHCR_TOKEN_SECRET"
           write_var CI_TELEGRAM_BOT_TOKEN "$TELEGRAM_BOT_TOKEN_SECRET"
           write_var CI_TELEGRAM_BOT_USERNAME "$TELEGRAM_BOT_USERNAME_SECRET"
+          write_var CI_IMAGE_MODEL "$BOTJI_IMAGE_MODEL_SECRET"
+          write_var CI_CODEX_IMAGE_CHAT_MODEL "$BOTJI_CODEX_IMAGE_CHAT_MODEL_SECRET"
+          write_var CI_VISION_REVIEW_MODEL "$BOTJI_VISION_REVIEW_MODEL_SECRET"
 
           printf '%s' "$VPS_ENV_SECRET" | base64 -w 0 > /tmp/vps-env.b64
           printf '%s' "$CODEX_AUTH_B64_SECRET" > /tmp/codex-auth.b64

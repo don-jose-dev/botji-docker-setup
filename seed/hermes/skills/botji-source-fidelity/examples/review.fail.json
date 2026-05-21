@@ -1,0 +1,140 @@
+{
+  "review_id": "review-example-fail",
+  "contract_id": "prompt-example-kitchen",
+  "reviewed_output_ref": "render-draft-v1",
+  "verdict": "block",
+  "final_claim_level": "reviewed",
+  "axes": [
+    {
+      "axis": "source_coverage",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Source artifact IDs are present and registered.",
+      "claim_level": "reviewed",
+      "evidence_ids": ["ev-example-001", "ev-example-002"]
+    },
+    {
+      "axis": "authority_alignment",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "User-supplied drawing outranks generated assumptions.",
+      "claim_level": "reviewed",
+      "evidence_ids": ["ev-example-001"]
+    },
+    {
+      "axis": "preserve_change",
+      "compare_status": "conflict",
+      "severity": "blocking",
+      "notes": "Upper module boundaries (610/610/610/1219/610/610) do not align with lower module boundaries (610/813/813/813/610/610). The Prompt Contract does not mark this grid difference as intentional or user-approved. Cannot pass without user confirmation that misaligned upper/lower grids are correct.",
+      "claim_level": "reviewed",
+      "evidence_ids": ["ev-example-001", "ev-example-002"]
+    },
+    {
+      "axis": "groundedness",
+      "compare_status": "partial",
+      "severity": "medium",
+      "notes": "Grounding is blocked by the unresolved grid misalignment — cannot confirm layout is correctly grounded in source until alignment intent is confirmed.",
+      "claim_level": "reviewed",
+      "evidence_ids": ["ev-example-001", "ev-example-002"]
+    },
+    {
+      "axis": "uncertainty",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Grid misalignment is explicitly disclosed as a blocking uncertainty.",
+      "claim_level": "reviewed",
+      "evidence_ids": ["ev-example-001"]
+    },
+    {
+      "axis": "safety",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Artifact paths constrained to safe roots. No credential paths used.",
+      "claim_level": "verified",
+      "evidence_ids": ["ev-example-001"]
+    },
+    {
+      "axis": "artifact_lineage",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Source → contract → render lineage is recorded.",
+      "claim_level": "verified",
+      "evidence_ids": ["ev-example-001", "ev-example-002"]
+    },
+    {
+      "axis": "actionability",
+      "compare_status": "missing",
+      "severity": "blocking",
+      "notes": "Render cannot be delivered until user confirms whether upper/lower grid misalignment is intentional or an error in the source drawing.",
+      "claim_level": "reviewed",
+      "evidence_ids": ["ev-example-001"]
+    },
+    {
+      "axis": "adapter_route",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Source-aware artifact route was selected.",
+      "claim_level": "verified",
+      "evidence_ids": ["ev-example-001"]
+    },
+    {
+      "axis": "lineage_integrity",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Parent artifact IDs match the source list.",
+      "claim_level": "verified",
+      "evidence_ids": ["ev-example-001", "ev-example-002"]
+    },
+    {
+      "axis": "content_fidelity",
+      "compare_status": "partial",
+      "severity": "medium",
+      "notes": "Module count and appliance positions match. Grid boundary alignment is the open conflict.",
+      "claim_level": "reviewed",
+      "evidence_ids": ["ev-example-002"]
+    },
+    {
+      "axis": "layout_fidelity",
+      "compare_status": "conflict",
+      "severity": "blocking",
+      "notes": "Upper and lower zone vertical boundaries are misaligned (610/610/610/1219 vs 813/813/813). Vertical seams at upper cabinet edges do not line up with seams at base cabinet edges. This is either an intentional design choice or a source drawing error — user must confirm.",
+      "claim_level": "reviewed",
+      "evidence_ids": ["ev-example-002"]
+    },
+    {
+      "axis": "geometry_fidelity",
+      "compare_status": "partial",
+      "severity": "low",
+      "notes": "Raster image geometry review is visual/reviewed, not a deterministic physical measurement.",
+      "claim_level": "reviewed",
+      "evidence_ids": ["ev-example-001", "ev-example-002"]
+    },
+    {
+      "axis": "unknowns_handling",
+      "compare_status": "match",
+      "severity": "none",
+      "notes": "Grid misalignment is flagged as unknown-intent, not silently accepted.",
+      "claim_level": "reviewed",
+      "evidence_ids": ["ev-example-001"]
+    }
+  ],
+  "blockers": [
+    "Upper/lower cabinet grid misalignment: top zones 610/610/610/1219/610/610 vs bottom zones 610/813/813/813/610/610. Vertical seams do not align. User must confirm this is intentional before the review can pass.",
+    "layout_fidelity: conflict / blocking — grid boundaries differ between upper and lower zones."
+  ],
+  "required_corrections": [
+    "Ask user: 'The upper wall cabinet grid (610/610/610/1219) and the lower base cabinet grid (813/813/813) have different vertical divisions. Is this intentional in your design, or is one of them an error? Please confirm before we finalise the render.'"
+  ],
+  "verification_steps": [
+    "artifact_registry_lookup",
+    "sha256_lineage_check",
+    "artifact_transform_route_check",
+    "upper_lower_grid_alignment_check"
+  ],
+  "reviewer_notes": "Blocked on upper/lower grid misalignment. Cannot pass until user confirms design intent.",
+  "artifact_context": {
+    "source_artifact_ids": ["art-example-source-001"],
+    "output_artifact_id": "render-draft-v1",
+    "evidence_ids": ["ev-example-001", "ev-example-002"]
+  }
+}

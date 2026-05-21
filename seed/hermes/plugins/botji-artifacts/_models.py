@@ -32,18 +32,18 @@ class ArtifactRegisterParams(BaseModel):
 
 
 class ArtifactExtractParams(BaseModel):
-    artifact_id: str
+    artifact_id: str = Field(description="Legacy botji-artifacts art_* ID. Do not pass Hermes-native src_* IDs.")
     detail: Literal["metadata", "preview", "full"] = "metadata"
     intent: str = "review"
     adapter: str = "auto"
 
 
 class ArtifactExtractManifestParams(BaseModel):
-    artifact_id: str = Field(description="ID of an image artifact to analyse.")
+    artifact_id: str = Field(description="Legacy botji-artifacts art_* ID for an image artifact to analyse.")
 
 
 class ArtifactNormalizeParams(BaseModel):
-    artifact_id: str
+    artifact_id: str = Field(description="Legacy botji-artifacts art_* ID. Do not pass Hermes-native src_* IDs.")
     schema_profile: str = Field(
         default="auto",
         description="Domain profile, such as interior_layout, pdf_document, dxf_cad, "
@@ -71,7 +71,10 @@ class ArtifactNormalizeParams(BaseModel):
 
 
 class ArtifactTransformParams(BaseModel):
-    source_artifact_ids: list[str] = Field(min_length=1)
+    source_artifact_ids: list[str] = Field(
+        min_length=1,
+        description="Legacy botji-artifacts art_* source IDs. Do not pass Hermes-native src_* IDs.",
+    )
     contract_id: str = "manual"
     operation: Literal["edit_image", "render_schema", "exact_copy"] = "exact_copy"
     instructions: str = ""
@@ -129,6 +132,11 @@ class ArtifactTransformParams(BaseModel):
         "it is prepended as the first FORBIDDEN constraint so the retry directly targets "
         "the prior failure.",
     )
+    retry_guidance: str = Field(
+        default="",
+        description="retry_guidance text from the previous review verdict. When set, "
+        "it is promoted to a critical hard-preserve correction in the next edit_image brief.",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -142,7 +150,7 @@ class ArtifactTransformParams(BaseModel):
 
     @field_validator(
         "camera_brief", "light_brief", "mood_brief",
-        "instructions", "prior_blocker",
+        "instructions", "prior_blocker", "retry_guidance",
         mode="before",
     )
     @classmethod
@@ -156,8 +164,12 @@ class ArtifactTransformParams(BaseModel):
 
 
 class ArtifactReviewParams(BaseModel):
-    source_artifact_ids: list[str]
-    output_artifact_id: str
+    source_artifact_ids: list[str] = Field(
+        description="Legacy botji-artifacts art_* source IDs. Do not pass Hermes-native src_* IDs."
+    )
+    output_artifact_id: str = Field(
+        description="Legacy botji-artifacts art_* output ID. Do not pass Hermes-native out_* IDs."
+    )
     contract_id: str = "manual"
     evidence_ids: list[str] = Field(default_factory=list)
     fidelity_requirements: list[str] = Field(
@@ -184,4 +196,4 @@ class ArtifactListParams(BaseModel):
 
 
 class ArtifactReadParams(BaseModel):
-    artifact_id: str
+    artifact_id: str = Field(description="Legacy botji-artifacts art_* ID.")

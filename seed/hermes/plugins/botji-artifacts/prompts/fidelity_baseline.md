@@ -10,6 +10,7 @@ The source image is the structural and spatial authority. Every instruction belo
 4. **Adjacent elements are adjacent.** If two elements are listed as directly adjacent, there is zero space, filler strip, or gap between them. Direct contact, no gap.
 5. **Do not extend any element beyond its source boundary.** Zones and objects end where the source shows they end.
 6. **Render what is drawn.** Do not add anything not shown in the source image — no decorative objects, no extra shelving, no added lighting, no people.
+7. **Openings are fixed.** Doors, entries, windows, thresholds, and arches must remain on the same source wall/side with the same position and visible swing/handing.
 
 ## Technical quality
 

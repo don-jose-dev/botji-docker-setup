@@ -29,6 +29,7 @@ services:
       HERMES_HOME: /opt/data
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
+      BOTJI_TENANT_ID: ${BOTJI_TENANT_ID:-botji}
 
       # Telegram long-polling by default. Do not set TELEGRAM_WEBHOOK_URL unless you want inbound HTTPS.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}

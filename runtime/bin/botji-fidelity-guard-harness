@@ -1,0 +1,179 @@
+#!/opt/hermes/.venv/bin/python
+"""Deterministic regression tests for Botji fidelity guardrails."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+
+
+def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+
+
+def write_registry(home: Path, records: list[dict[str, Any]]) -> None:
+    index = home / "artifacts" / "index" / "artifacts.jsonl"
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+
+
+def sha256(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8192), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def base_review(source_id: str) -> dict[str, Any]:
+    return {
+        "review_id": "review_test",
+        "reviewed_output_ref": "art_output",
+        "verdict": "pass",
+        "delivery_gate": "clear",
+        "recommended_action": "deliver",
+        "primary_blocker": None,
+        "retry_guidance": None,
+        "axes": [],
+        "blockers": [],
+        "required_corrections": [],
+        "artifact_context": {
+            "source_artifact_ids": [source_id],
+            "output_artifact_id": "art_output",
+            "evidence_ids": [],
+        },
+        "fidelity_scores": {
+            "transform_contract_fidelity_percent": 100,
+            "preservation_target": "source_constraint_preservation",
+        },
+    }
+
+
+def run_current_turn_guard(plugin_root: Path) -> list[str]:
+    sys.path.insert(0, str(plugin_root))
+    from _guardrails import apply_current_turn_source_guard  # type: ignore
+
+    checks: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="botji-fidelity-guard-") as tmp:
+        home = Path(tmp)
+        os.environ["HERMES_HOME"] = str(home)
+        os.environ["BOTJI_ARTIFACT_ROOT"] = str(home / "artifacts")
+        current = home / "image_cache" / "current.jpg"
+        stale = home / "image_cache" / "stale.jpg"
+        copied = home / "artifacts" / "sources" / "art_stale" / "stale.jpg"
+        current.parent.mkdir(parents=True, exist_ok=True)
+        copied.parent.mkdir(parents=True, exist_ok=True)
+        current.write_bytes(b"current-image")
+        stale.write_bytes(b"stale-image")
+        copied.write_bytes(stale.read_bytes())
+        write_jsonl(
+            home / "sessions" / "session_a.jsonl",
+            [{"role": "user", "content": [{"type": "text", "text": f"Make 3d\n\n[Image attached at: {current}]"}]}],
+        )
+        write_registry(home, [{
+            "artifact_id": "art_stale",
+            "role": "source",
+            "path": str(copied),
+            "original_path": str(stale),
+            "adapter": "image",
+            "sha256": sha256(copied),
+            "parents": [],
+            "evidence_ids": [],
+        }])
+        guarded, changed = apply_current_turn_source_guard(base_review("art_stale"), "session_a")
+        assert changed, "stale source guard did not modify review"
+        assert guarded["delivery_gate"] == "blocked", guarded
+        assert guarded["primary_blocker"].startswith("Current-turn source mismatch"), guarded["primary_blocker"]
+        checks.append("stale_source_blocks")
+
+    with tempfile.TemporaryDirectory(prefix="botji-fidelity-guard-") as tmp:
+        home = Path(tmp)
+        os.environ["HERMES_HOME"] = str(home)
+        os.environ["BOTJI_ARTIFACT_ROOT"] = str(home / "artifacts")
+        current = home / "image_cache" / "current.jpg"
+        duplicate = home / "image_cache" / "duplicate.jpg"
+        copied = home / "artifacts" / "sources" / "art_duplicate" / "duplicate.jpg"
+        current.parent.mkdir(parents=True, exist_ok=True)
+        copied.parent.mkdir(parents=True, exist_ok=True)
+        current.write_bytes(b"same-image")
+        duplicate.write_bytes(b"same-image")
+        copied.write_bytes(b"same-image")
+        write_jsonl(
+            home / "sessions" / "session_b.jsonl",
+            [{"role": "user", "content": [{"type": "text", "text": f"Make 3d\n\n[Image attached at: {current}]"}]}],
+        )
+        write_registry(home, [{
+            "artifact_id": "art_duplicate",
+            "role": "source",
+            "path": str(copied),
+            "original_path": str(duplicate),
+            "adapter": "image",
+            "sha256": sha256(copied),
+            "parents": [],
+            "evidence_ids": [],
+        }])
+        guarded, changed = apply_current_turn_source_guard(base_review("art_duplicate"), "session_b")
+        assert not changed, guarded
+        assert guarded["delivery_gate"] == "clear", guarded
+        checks.append("duplicate_upload_sha_passes")
+    return checks
+
+
+def run_major_inventory_guard(plugin_root: Path) -> list[str]:
+    sys.path.insert(0, str(plugin_root))
+    from _vision import _assess_vision_payload  # type: ignore
+
+    requirements = [
+        "Preserve central extractor hood above cooktop.",
+        "Preserve refrigerator on right side.",
+        "Preserve island with 3 stools.",
+        "Preserve three pendant lights.",
+    ]
+    comparison = json.dumps({
+        "verdict": "warn",
+        "matches": ["Island with 3 stools preserved", "Refrigerator on right side preserved"],
+        "partials": ["Perspective differs"],
+        "hard_conflicts": [],
+        "soft_conflicts": [],
+        "unknowns": [],
+        "required_corrections": [],
+    })
+    assessed = _assess_vision_payload({"comparison": comparison}, requirements)
+    assert assessed["verdict"] == "block", assessed
+    assert any("hood/extractor" in item for item in assessed["blockers"]), assessed
+    assert any("pendant count" in item for item in assessed["blockers"]), assessed
+    return ["major_inventory_silence_blocks"]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--plugin-root",
+        default=str(Path(os.environ.get("HERMES_HOME", "/opt/data")) / "plugins" / "botji-artifacts"),
+    )
+    args = parser.parse_args()
+    plugin_root = Path(args.plugin_root)
+    if not (plugin_root / "__init__.py").is_file():
+        raise SystemExit(f"botji-artifacts plugin not found: {plugin_root}")
+
+    checks = []
+    checks.extend(run_current_turn_guard(plugin_root))
+    checks.extend(run_major_inventory_guard(plugin_root))
+    print(json.dumps({"success": True, "checks": checks}, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(json.dumps({"success": False, "error": str(exc), "error_type": type(exc).__name__}, indent=2), file=sys.stderr)
+        raise SystemExit(2)

@@ -351,12 +351,32 @@ _MANIFEST_JSON_SCHEMA = {
                 "additionalProperties": False,
             },
         },
+        "opening_constraints": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "element_id": {"type": "string"},
+                    "room_or_zone": {"type": "string"},
+                    "opening_type": {"type": "string"},
+                    "wall_or_side": {"type": "string"},
+                    "position_on_wall": {"type": "string"},
+                    "swing_or_handing": {"type": "string"},
+                    "notes": {"type": "string"},
+                },
+                "required": [
+                    "element_id", "room_or_zone", "opening_type", "wall_or_side",
+                    "position_on_wall", "swing_or_handing", "notes",
+                ],
+                "additionalProperties": False,
+            },
+        },
         "layout_hints": {"type": "array", "items": {"type": "string"}},
         "fidelity_requirements": {"type": "array", "items": {"type": "string"}},
     },
     "required": [
         "scene_type", "source_modality", "elements", "element_count",
-        "adjacency_constraints", "layout_hints", "fidelity_requirements",
+        "adjacency_constraints", "opening_constraints", "layout_hints", "fidelity_requirements",
     ],
     "additionalProperties": False,
 }
@@ -497,4 +517,3 @@ def _codex_vision_compare(sources: list[dict[str, Any]], output: dict[str, Any],
         "endpoint": "codex.responses.create",
         "comparison": text,
     }
-

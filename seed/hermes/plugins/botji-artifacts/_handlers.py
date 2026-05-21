@@ -31,6 +31,24 @@ from _codex import _openai_codex_image_generate, _resolve_provider_route, _codex
 from _review import _build_review, _reviews_dir
 
 
+_HERMES_NATIVE_ID_PREFIXES = ("src_", "out_", "rcpt_")
+
+
+def _reject_hermes_native_ids(ids: list[str], tool_name: str) -> None:
+    bad = [str(item) for item in ids if str(item).startswith(_HERMES_NATIVE_ID_PREFIXES)]
+    if not bad:
+        return
+    shown = ", ".join(bad[:3])
+    if len(bad) > 3:
+        shown += f", ... ({len(bad)} total)"
+    raise ValueError(
+        f"{tool_name} expects legacy botji-artifacts art_* IDs, but received Hermes-native ID(s): {shown}. "
+        "Do not pass src_*/out_*/rcpt_* IDs to legacy artifact_* tools. Use source_current, "
+        "artifact_write, receipt_record, and delivery_gate for Hermes-native flow; or call "
+        "artifact_register on the current attachment path and use the returned art_* ID for legacy artifact_* tools."
+    )
+
+
 def _handle_artifact_register(args: dict[str, Any], **_: Any) -> str:
     try:
         params = ArtifactRegisterParams.model_validate(args)
@@ -74,6 +92,7 @@ def _handle_artifact_list(args: dict[str, Any], **_: Any) -> str:
 def _handle_artifact_read(args: dict[str, Any], **_: Any) -> str:
     try:
         params = ArtifactReadParams.model_validate(args)
+        _reject_hermes_native_ids([params.artifact_id], "artifact_read")
         return _json({"success": True, "artifact": _load_artifact(params.artifact_id)})
     except (ValidationError, Exception) as exc:
         return _json({"success": False, "error": str(exc), "error_type": type(exc).__name__})
@@ -82,6 +101,7 @@ def _handle_artifact_read(args: dict[str, Any], **_: Any) -> str:
 def _handle_artifact_extract(args: dict[str, Any], **_: Any) -> str:
     try:
         params = ArtifactExtractParams.model_validate(args)
+        _reject_hermes_native_ids([params.artifact_id], "artifact_extract")
         artifact = _load_artifact(params.artifact_id)
         if params.adapter != "auto" and params.adapter != artifact.get("adapter"):
             raise ValueError(
@@ -103,6 +123,7 @@ def _handle_artifact_extract_manifest(args: dict[str, Any], **_: Any) -> str:
     """
     try:
         params = ArtifactExtractManifestParams.model_validate(args)
+        _reject_hermes_native_ids([params.artifact_id], "artifact_extract_manifest")
         artifact = _load_artifact(params.artifact_id)
         if artifact.get("adapter") != "image":
             raise ValueError(
@@ -140,6 +161,7 @@ def _handle_artifact_extract_manifest(args: dict[str, Any], **_: Any) -> str:
 def _handle_artifact_normalize(args: dict[str, Any], **_: Any) -> str:
     try:
         params = ArtifactNormalizeParams.model_validate(args)
+        _reject_hermes_native_ids([params.artifact_id], "artifact_normalize")
         artifact = _load_artifact(params.artifact_id)
         normalized = _build_normalized_schema(
             artifact,
@@ -168,6 +190,7 @@ def _handle_artifact_normalize(args: dict[str, Any], **_: Any) -> str:
 def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
     try:
         params = ArtifactTransformParams.model_validate(args)
+        _reject_hermes_native_ids(params.source_artifact_ids, "artifact_transform")
         source_artifacts = [_load_artifact(aid) for aid in params.source_artifact_ids]
 
         if params.operation == "exact_copy":
@@ -191,24 +214,7 @@ def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
             return _json({"success": True, **result})
 
         # edit_image: build structured brief, apply retry escalation
-        forbidden = list(params.forbidden_elements)
-        if params.prior_blocker:
-            escalated = f"CRITICAL — prior attempt was blocked for: {params.prior_blocker}. DO NOT repeat this."
-            forbidden = [escalated] + forbidden
-
-        parts: list[str] = []
-        if params.camera_brief:    parts.append(f"CAMERA: {params.camera_brief}")
-        if params.light_brief:     parts.append(f"LIGHT: {params.light_brief}")
-        if params.mood_brief:      parts.append(f"MOOD: {params.mood_brief}")
-        if params.subject_inventory:
-            parts.append("SUBJECT:\n" + "\n".join(f"  - {s}" for s in params.subject_inventory))
-        if params.hard_preserve:
-            parts.append("HARD PRESERVE:\n" + "\n".join(f"  - {s}" for s in params.hard_preserve))
-        if forbidden:
-            parts.append("FORBIDDEN:\n" + "\n".join(f"  - {s}" for s in forbidden))
-
-        structured = "\n".join(parts)
-        prompt = (structured + "\n" + params.instructions).strip() if params.instructions else structured
+        prompt = _build_edit_image_prompt(params)
 
         if not prompt:
             raise ValueError("instructions (or structured brief fields) are required for edit_image")
@@ -233,9 +239,46 @@ def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
         return _json({"success": False, "error": str(exc), "error_type": type(exc).__name__})
 
 
+def _build_edit_image_prompt(params: ArtifactTransformParams) -> str:
+    """Build the final provider prompt for edit_image without making provider calls."""
+    retry_lines: list[str] = []
+    retry_hard_preserve: list[str] = []
+    retry_forbidden: list[str] = []
+    if params.prior_blocker:
+        retry_lines.append(f"Prior blocked review: {params.prior_blocker}")
+        retry_hard_preserve.append(f"Do not repeat prior blocked review failure: {params.prior_blocker}")
+        retry_forbidden.append(f"Do not repeat prior blocked review failure: {params.prior_blocker}")
+    if params.retry_guidance:
+        retry_lines.append(f"Required correction: {params.retry_guidance}")
+        retry_hard_preserve.append(f"Required retry correction: {params.retry_guidance}")
+
+    hard_preserve = retry_hard_preserve + list(params.hard_preserve)
+    forbidden = retry_forbidden + list(params.forbidden_elements)
+
+    parts: list[str] = []
+    if retry_lines:
+        parts.append("CRITICAL RETRY CORRECTION:\n" + "\n".join(f"  - {s}" for s in retry_lines))
+    if params.camera_brief:
+        parts.append(f"CAMERA: {params.camera_brief}")
+    if params.light_brief:
+        parts.append(f"LIGHT: {params.light_brief}")
+    if params.mood_brief:
+        parts.append(f"MOOD: {params.mood_brief}")
+    if params.subject_inventory:
+        parts.append("SUBJECT:\n" + "\n".join(f"  - {s}" for s in params.subject_inventory))
+    if hard_preserve:
+        parts.append("HARD PRESERVE:\n" + "\n".join(f"  - {s}" for s in hard_preserve))
+    if forbidden:
+        parts.append("FORBIDDEN:\n" + "\n".join(f"  - {s}" for s in forbidden))
+
+    structured = "\n".join(parts)
+    return (structured + "\n" + params.instructions).strip() if params.instructions else structured
+
+
 def _handle_artifact_review(args: dict[str, Any], **_: Any) -> str:
     try:
         params = ArtifactReviewParams.model_validate(args)
+        _reject_hermes_native_ids(params.source_artifact_ids + [params.output_artifact_id], "artifact_review")
         sources = [_load_artifact(aid) for aid in params.source_artifact_ids]
         output = _load_artifact(params.output_artifact_id)
         review = _build_review(

@@ -59,6 +59,17 @@ from _truncate import transform as _truncate_transform  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
+def _delivery_notice(delivery_gate: str) -> str:
+    if delivery_gate == "blocked":
+        return (
+            "[DELIVERY GATE: BLOCKED] Do not deliver this artifact. "
+            "Retry with corrections or surface the blocker text to the user."
+        )
+    if delivery_gate == "warned":
+        return "[DELIVERY GATE: WARNED] Deliverable, but mention review caveats to the user."
+    return "[DELIVERY GATE: CLEAR] Artifact passed source-fidelity review."
+
+
 def _on_tool_result(
     tool_name: str,
     args: dict,
@@ -84,6 +95,7 @@ def _on_tool_result(
     session_id by model_tools.handle_function_call — this is where we get it.
     """
     if tool_name == "artifact_review" and session_id:
+        response_override: str | None = None
         try:
             payload = json.loads(result) if isinstance(result, str) else (result or {})
         except (json.JSONDecodeError, TypeError):
@@ -92,13 +104,28 @@ def _on_tool_result(
             review = payload.get("review")
             if isinstance(review, dict):
                 try:
+                    from _guardrails import apply_current_turn_source_guard  # noqa: WPS433
+
+                    review, changed = apply_current_turn_source_guard(review, session_id)
+                    if changed:
+                        payload["review"] = review
+                        for key in (
+                            "verdict",
+                            "delivery_gate",
+                            "recommended_action",
+                            "primary_blocker",
+                            "retry_guidance",
+                        ):
+                            payload[key] = review.get(key)
+                        payload["delivery_gate_notice"] = _delivery_notice(str(review.get("delivery_gate") or ""))
+                        response_override = json.dumps(payload, indent=2, ensure_ascii=False, default=str)
                     _write_verdict_file(
                         session_id=session_id,
-                        verdict=str(payload.get("verdict") or ""),
-                        delivery_gate=str(payload.get("delivery_gate") or ""),
-                        recommended_action=str(payload.get("recommended_action") or ""),
-                        primary_blocker=payload.get("primary_blocker"),
-                        retry_guidance=payload.get("retry_guidance"),
+                        verdict=str(review.get("verdict") or payload.get("verdict") or ""),
+                        delivery_gate=str(review.get("delivery_gate") or payload.get("delivery_gate") or ""),
+                        recommended_action=str(review.get("recommended_action") or payload.get("recommended_action") or ""),
+                        primary_blocker=review.get("primary_blocker", payload.get("primary_blocker")),
+                        retry_guidance=review.get("retry_guidance", payload.get("retry_guidance")),
                         review=review,
                     )
                     logger.info(
@@ -107,7 +134,7 @@ def _on_tool_result(
                     )
                 except Exception:
                     logger.exception("botji-artifacts: failed to write verdict file")
-        return None  # don't truncate review output — agent needs full detail to ship
+        return response_override  # don't truncate review output — agent needs full detail to ship
 
     # Everything else: delegate truncation policy.
     try:

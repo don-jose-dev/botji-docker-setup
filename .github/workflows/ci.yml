@@ -35,6 +35,7 @@ jobs:
             ezdxf \
             python-magic \
             jsonschema \
+            pydantic \
             openai
 
       - name: Compile-check every plugin module
@@ -78,7 +79,7 @@ jobs:
         # The deploy script is single point of failure for production — keep it clean.
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
-          shellcheck -S warning scripts/vps-deploy.sh scripts/smoke-plugin.sh scripts/server-setup.sh
+          shellcheck -S warning scripts/vps-deploy.sh scripts/vps-postdeploy-smoke.sh scripts/smoke-plugin.sh scripts/server-setup.sh
 
       - name: Lint Dockerfile (hadolint)
         # Catches common Dockerfile mistakes before the full Docker build runs in
