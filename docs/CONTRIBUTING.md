@@ -10,7 +10,7 @@ Edit in `seed/`, then sync to `data/botji/` and reload.
 | Agent instructions / tiers | `seed/hermes/SOUL.md` | `cp seed/hermes/SOUL.md data/botji/SOUL.md` |
 | Skills | `seed/hermes/skills/<name>/SKILL.md` | `cp seed/... data/botji/skills/.../SKILL.md` |
 | Config (models, streaming) | `seed/hermes/config.yaml` | `cp seed/hermes/config.yaml data/botji/config.yaml` |
-| Prompt templates | `seed/hermes/prompts/templates/` | `cp seed/... data/botji/prompts/templates/...` |
+| Prompt templates (used by botji-artifacts) | `seed/hermes/plugins/botji-artifacts/prompts/` | rebuilt with the plugin — sync via deploy |
 | Schemas | `seed/hermes/schemas/` | `cp seed/... data/botji/schemas/...` |
 | Plugins | `seed/hermes/plugins/` | rebuild image (`make build`) |
 

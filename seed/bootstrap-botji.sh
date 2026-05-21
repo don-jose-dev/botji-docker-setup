@@ -77,7 +77,11 @@ for _skill_src in "$SEED/hermes/skills"/botji-*/; do
   copy_dir "$_skill_src" "$DATA/skills/$_skill_name"
 done
 copy_file "$SEED/hermes/config.yaml" "$DATA/config.yaml"
-copy_dir "$SEED/hermes/prompts" "$DATA/prompts"
+# seed/hermes/prompts/ is optional. Runtime prompts now live under each plugin
+# (e.g. botji-artifacts/prompts/) and are loaded via _prompts.load_prompt().
+if [ -d "$SEED/hermes/prompts" ]; then
+  copy_dir "$SEED/hermes/prompts" "$DATA/prompts"
+fi
 for _plugin_src in "$SEED/hermes/plugins"/botji-*/; do
   [ -d "$_plugin_src" ] || continue
   [ -f "$_plugin_src/plugin.yaml" ] && [ -f "$_plugin_src/__init__.py" ] || continue
