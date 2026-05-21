@@ -41,7 +41,15 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
 echo "==> Pull latest code"
 git reset --hard HEAD
-git pull origin "$GIT_BRANCH"
+# The VPS checkout can contain previously scp'd/generated release files that
+# later become tracked by the repo. Clean only repo-owned release trees before
+# pulling so git can fast-forward without touching tenant data, .env, or logs.
+git clean -fd -- \
+  runtime/bin \
+  seed/hermes/plugins \
+  seed/hermes/skills \
+  scripts/vps-postdeploy-smoke.sh
+git pull --ff-only origin "$GIT_BRANCH"
 
 echo "==> Write .env"
 if [ -s /tmp/vps-env.b64 ]; then
