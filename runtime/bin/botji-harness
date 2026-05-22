@@ -1164,8 +1164,16 @@ def run_manifest(fixture: dict) -> tuple[bool, str]:
 
     if scenario == "schema_validate":
         from jsonschema import Draft202012Validator  # type: ignore
-        repo_root = Path(__file__).resolve().parents[2]
-        schema_path = repo_root / "seed" / "hermes" / "schemas" / "manifest_v2.schema.json"
+        # Schema is at /opt/data/schemas/ on a deployed tenant (deploy seeds
+        # it there) and at seed/hermes/schemas/ in the dev repo. Probe both,
+        # matching the _plugin_path pattern. Previous hardcoded repo-relative
+        # path failed in-container because __file__ resolves to
+        # /usr/local/bin/botji-harness, giving /usr/seed/... which doesn't
+        # exist.
+        home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
+        schema_path = home / "schemas" / "manifest_v2.schema.json"
+        if not schema_path.is_file():
+            schema_path = Path(__file__).resolve().parents[2] / "seed" / "hermes" / "schemas" / "manifest_v2.schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
         validator = Draft202012Validator(schema)
         errs = list(validator.iter_errors(inputs.get("typed_manifest") or {}))
@@ -1257,10 +1265,27 @@ def _run_suite(suite: str) -> tuple[int, int]:
     passed = 0
     for path, fixture in fixtures:
         fid = fixture.get("id") or path.stem
+        # Snapshot env before each fixture. Several handlers (run_core,
+        # run_audit, run_rate_limit, etc.) set HERMES_HOME / BOTJI_CORE_ROOT /
+        # BOTJI_ARTIFACT_ROOT / BOTJI_RATE_LIMIT_* to per-test values and never
+        # restore. Without isolation, the first env-mutating fixture corrupts
+        # every subsequent suite's _plugin_path() resolution — observed on the
+        # VPS 2026-05-22 when run --suite all reported 46/49 failed but each
+        # suite passed on its own. Per-fixture restore keeps suites
+        # order-independent.
+        env_snapshot = os.environ.copy()
         try:
             ok, detail = handler(fixture)
         except Exception as exc:  # noqa: BLE001 — surface unexpected errors
             ok, detail = False, f"{type(exc).__name__}: {exc}"
+        finally:
+            # Drop keys the handler added; restore values it changed.
+            for k in list(os.environ.keys()):
+                if k not in env_snapshot:
+                    del os.environ[k]
+            for k, v in env_snapshot.items():
+                if os.environ.get(k) != v:
+                    os.environ[k] = v
         print(f"  [{suite}] {fid}: {'pass' if ok else 'FAIL'} ({detail})")
         if ok:
             passed += 1
