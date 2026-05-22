@@ -1,0 +1,45 @@
+id: output_parent_mismatch
+description: receipt source_ids must appear in the output's parents list; mismatch blocks.
+inputs:
+  files:
+    source: source-bytes
+    other: other-bytes
+    output: output-bytes
+  steps:
+    - tool: source_register
+      args:
+        path: $path:source
+        current_turn_id: turn-a
+        role: source
+        declared_type: text
+      save_as: src
+    - tool: source_register
+      args:
+        path: $path:other
+        current_turn_id: turn-a
+        role: source
+        declared_type: text
+      save_as: alt
+    - tool: artifact_write
+      args:
+        path: $path:output
+        parents:
+          - $alt.artifact_id
+        current_turn_id: turn-a
+        claim_level: reviewed
+      save_as: out
+    - tool: receipt_record
+      args:
+        source_ids:
+          - $src.artifact_id
+        output_id: $out.artifact_id
+        route: harness
+        status: pass
+        current_turn_id: turn-a
+      save_as: rcpt
+    - tool: delivery_gate
+      args:
+        receipt_id: $rcpt.receipt_id
+expected:
+  delivery_gate: blocked
+  primary_blocker: output_parent_mismatch

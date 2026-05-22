@@ -1,0 +1,14 @@
+id: bad_json_keeps_previous
+description: corrupt JSON does not open the gate — the previous-good allowlist is preserved.
+inputs:
+  env_allowed: "111,333"
+  initial_file:
+    users:
+      - "222"
+  invalid_file: "{not-json"
+expected:
+  allowed:
+    - "222"
+  rejected:
+    - "111"
+    - "333"

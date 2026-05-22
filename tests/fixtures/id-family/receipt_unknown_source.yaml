@@ -1,0 +1,7 @@
+id: receipt_unknown_source
+description: receipt_record rejects a source_ids entry that points to nothing in the registry — regardless of which ID family is used.
+inputs:
+  scenario: receipt_unknown_source
+  source_id: src_phantom_999
+expected:
+  error_contains: "unknown source"

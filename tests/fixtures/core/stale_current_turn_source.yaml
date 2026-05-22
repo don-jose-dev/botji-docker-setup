@@ -1,0 +1,37 @@
+id: stale_current_turn_source
+description: receipt for turn-B referencing a source registered in turn-A blocks as stale.
+inputs:
+  files:
+    source: source-bytes
+    output: output-bytes
+  steps:
+    - tool: source_register
+      args:
+        path: $path:source
+        current_turn_id: turn-a
+        role: source
+        declared_type: text
+      save_as: src
+    - tool: artifact_write
+      args:
+        path: $path:output
+        parents:
+          - $src.artifact_id
+        current_turn_id: turn-b
+        claim_level: reviewed
+      save_as: out
+    - tool: receipt_record
+      args:
+        source_ids:
+          - $src.artifact_id
+        output_id: $out.artifact_id
+        route: harness
+        status: pass
+        current_turn_id: turn-b
+      save_as: rcpt
+    - tool: delivery_gate
+      args:
+        receipt_id: $rcpt.receipt_id
+expected:
+  delivery_gate: blocked
+  primary_blocker: stale_current_turn_source

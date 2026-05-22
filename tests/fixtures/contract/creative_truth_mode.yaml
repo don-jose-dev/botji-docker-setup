@@ -1,0 +1,9 @@
+id: creative_truth_mode
+description: truth_mode input is passed through to the generated contract verbatim.
+inputs:
+  truth_mode: creative
+expected:
+  truth_mode: creative
+  required_keys:
+    - contract_id
+    - artifact_fidelity

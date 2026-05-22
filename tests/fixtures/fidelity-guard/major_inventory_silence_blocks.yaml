@@ -1,0 +1,25 @@
+id: major_inventory_silence_blocks
+description: when a kitchen-elevation requirement set names hood, fridge, island, pendants but the vision comparison stays silent on hood and pendant count, the assessment must block.
+inputs:
+  guard: vision
+  requirements:
+    - "Preserve central extractor hood above cooktop."
+    - "Preserve refrigerator on right side."
+    - "Preserve island with 3 stools."
+    - "Preserve three pendant lights."
+  comparison:
+    verdict: warn
+    matches:
+      - "Island with 3 stools preserved"
+      - "Refrigerator on right side preserved"
+    partials:
+      - "Perspective differs"
+    hard_conflicts: []
+    soft_conflicts: []
+    unknowns: []
+    required_corrections: []
+expected:
+  verdict: block
+  blockers_contain:
+    - "hood/extractor"
+    - "pendant count"

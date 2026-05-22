@@ -1,0 +1,16 @@
+id: warned_prepends_caveat
+description: a "warned" verdict prepends the minor-caveats notice to the response.
+inputs:
+  verdicts:
+    - session_id: warned
+      payload:
+        delivery_gate: warned
+        axes:
+          content: true
+  calls:
+    - session_id: warned
+      llm_output: deliver
+expected:
+  outputs:
+    - session_id: warned
+      contains: Review noted minor caveats

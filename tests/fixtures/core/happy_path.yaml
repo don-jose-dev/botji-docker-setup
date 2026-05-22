@@ -1,0 +1,43 @@
+id: happy_path
+description: register a source, write an output, record a passing receipt — gate clears.
+inputs:
+  files:
+    source: source-bytes
+    output: output-bytes
+  steps:
+    - tool: source_register
+      args:
+        path: $path:source
+        current_turn_id: turn-a
+        role: source
+        declared_type: text
+      save_as: src
+    - tool: artifact_write
+      args:
+        path: $path:output
+        parents:
+          - $src.artifact_id
+        current_turn_id: turn-a
+        claim_level: reviewed
+        metadata:
+          route: harness
+      save_as: out
+    - tool: receipt_record
+      args:
+        source_ids:
+          - $src.artifact_id
+        output_id: $out.artifact_id
+        route: harness
+        status: pass
+        claim_level: reviewed
+        current_turn_id: turn-a
+        checks:
+          - name: lineage
+            status: pass
+      save_as: rcpt
+    - tool: delivery_gate
+      args:
+        receipt_id: $rcpt.receipt_id
+expected:
+  delivery_gate: clear
+  recommended_action: deliver
