@@ -1,0 +1,13 @@
+id: pre_hook_over_budget
+description: |
+  pre_tool_call hook rejects the third artifact_transform(edit_image) in a
+  single user turn. Canonical cap (2) lives in
+  seed/hermes/skills/botji-render-mode/SKILL.md under "Retry budget". Today
+  three different skills (render-router, 2d-to-3d, codex-engineering) carry
+  retry ceilings of 2/3/3; without the hook, a compacted skill section means
+  the agent can silently burn a third transform.
+inputs:
+  scenario: pre_hook_over_budget
+expected:
+  pre_hook: block
+  message_contains: "Transform budget exhausted"

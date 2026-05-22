@@ -63,13 +63,29 @@ def _load_module(plugin_path: Path, module_name: str) -> Any:
 class _FakeContext:
     def __init__(self) -> None:
         self.tools: dict[str, Any] = {}
+        self.hooks: dict[str, list[Any]] = {}
 
     def register_tool(self, *, name: str, handler: Any, **_: Any) -> None:
         self.tools[name] = handler
 
+    def register_hook(self, hook_name: str, callback: Any) -> None:
+        self.hooks.setdefault(hook_name, []).append(callback)
+
 
 def _call_tool(ctx: _FakeContext, name: str, payload: dict) -> dict:
     return json.loads(ctx.tools[name](payload))
+
+
+def _invoke_pre_tool_call(ctx: _FakeContext, tool_name: str, args: dict, session_id: str = "") -> dict | None:
+    """Replay the Hermes pre_tool_call dispatch: first block wins."""
+    for cb in ctx.hooks.get("pre_tool_call", []):
+        try:
+            result = cb(tool_name=tool_name, args=args, session_id=session_id)
+        except Exception:
+            continue
+        if isinstance(result, dict) and result.get("action") == "block":
+            return result
+    return None
 
 
 def _resolve(value: Any, bindings: dict) -> Any:
@@ -159,6 +175,32 @@ def _check_expected(result: dict, expected: dict) -> tuple[bool, str]:
         if result.get(key) != want:
             return False, f"expected {key}={want!r}, got {result.get(key)!r}"
     return True, "ok"
+
+
+def _check_hook_result(
+    ctx: _FakeContext, fixture: dict, args: dict,
+    tool_name: str = "artifact_review", session_id: str = "session-h",
+) -> tuple[bool, str]:
+    """Invoke pre_tool_call and assert pre_hook expectations.
+
+    expected.pre_hook: "block" or "allow"
+    expected.message_contains: substring required in the block message
+    """
+    expected = fixture.get("expected") or {}
+    result = _invoke_pre_tool_call(ctx, tool_name, args, session_id)
+    want = expected.get("pre_hook")
+    if want == "allow":
+        if result is not None:
+            return False, f"expected allow, got block: {result!r}"
+        return True, "ok"
+    if want == "block":
+        if not (isinstance(result, dict) and result.get("action") == "block"):
+            return False, f"expected block, got {result!r}"
+        needle = expected.get("message_contains")
+        if needle and needle not in str(result.get("message") or ""):
+            return False, f"message missing {needle!r}: {result.get('message')!r}"
+        return True, "ok"
+    return False, f"expected.pre_hook must be 'block' or 'allow', got {want!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -498,6 +540,11 @@ def run_id_family(fixture: dict) -> tuple[bool, str]:
       artifact_write_unknown_parent - unknown parent ID fails artifact_write
       receipt_unknown_source        - receipt_record fails when source_ids is fabricated
       out_id_in_source_slot         - placing out_ in source_ids triggers parent mismatch
+      pre_hook_stale_art            - pre_tool_call hook rejects stale art_ source
+      pre_hook_mixed_family         - pre_tool_call hook rejects art_ + src_ in same call
+      pre_hook_over_budget          - pre_tool_call hook rejects 3rd edit_image in a turn
+      pre_hook_variants_override    - user_authorized_variants bypasses transform cap
+      pre_hook_happy_path           - vanilla call passes all three predicates
     """
     plugin_path = _plugin_path("botji-core")
     with tempfile.TemporaryDirectory(prefix="botji-h-idfam-") as tmp:
@@ -617,6 +664,62 @@ def run_id_family(fixture: dict) -> tuple[bool, str]:
             })
             gate = _call_tool(ctx, "delivery_gate", {"receipt_id": receipt["receipt_id"]})
             return _check_expected(gate, expected)
+
+        if scenario == "pre_hook_stale_art":
+            # Seed a legacy art_ record tagged with an older turn id.
+            idx = home / "artifacts" / "index" / "artifacts.jsonl"
+            idx.parent.mkdir(parents=True, exist_ok=True)
+            idx.write_text(json.dumps({
+                "artifact_id": "art_stale_xyz", "role": "source",
+                "current_turn_id": "turn-old",
+                "path": str(src_file),
+            }) + "\n", encoding="utf-8")
+            return _check_hook_result(ctx, fixture, {
+                "source_ids": ["art_stale_xyz"], "current_turn_id": "turn-new",
+            })
+
+        if scenario == "pre_hook_mixed_family":
+            return _check_hook_result(ctx, fixture, {
+                "source_ids": ["art_legacy_abc", "src_native_def"],
+                "current_turn_id": "turn-z",
+            })
+
+        if scenario == "pre_hook_over_budget":
+            # Reset module-level counter so prior fixtures cannot pollute it.
+            from importlib import import_module
+            hooks_pkg = import_module(module.__name__ + ".hooks.stale_id_block")
+            hooks_pkg._reset_transform_counts()
+            # First two calls fill the budget.
+            for _ in range(2):
+                _invoke_pre_tool_call(ctx, "artifact_transform", {
+                    "operation": "edit_image", "current_turn_id": "turn-b",
+                }, "session-b")
+            return _check_hook_result(
+                ctx, fixture,
+                {"operation": "edit_image", "current_turn_id": "turn-b"},
+                tool_name="artifact_transform", session_id="session-b",
+            )
+
+        if scenario == "pre_hook_variants_override":
+            from importlib import import_module
+            hooks_pkg = import_module(module.__name__ + ".hooks.stale_id_block")
+            hooks_pkg._reset_transform_counts()
+            # Pre-fill the budget so a non-authorized call would block.
+            for _ in range(2):
+                _invoke_pre_tool_call(ctx, "artifact_transform", {
+                    "operation": "edit_image", "current_turn_id": "turn-v",
+                }, "session-v")
+            return _check_hook_result(
+                ctx, fixture,
+                {"operation": "edit_image", "current_turn_id": "turn-v",
+                 "user_authorized_variants": 4},
+                tool_name="artifact_transform", session_id="session-v",
+            )
+
+        if scenario == "pre_hook_happy_path":
+            return _check_hook_result(ctx, fixture, {
+                "source_ids": ["src_alone_abc"], "current_turn_id": "turn-h",
+            })
 
         return False, f"unknown scenario: {scenario!r}"
 
