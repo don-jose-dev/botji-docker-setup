@@ -51,11 +51,25 @@ jobs:
   trivy-image:
     name: trivy (image vulnerability scan)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
     steps:
+      - name: Free disk space on runner
+        # The runner ships with ~14 GB free on /. Our image bundles Chromium,
+        # Codex CLI, the Hermes base, and a full Python venv — together those
+        # exceed the default runner free space when trivy unpacks the
+        # uncompressed layers. Trim the preinstalled tooling we do not need
+        # before building. Tested to reclaim ~30 GB.
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                       /opt/hostedtoolcache/CodeQL "$AGENT_TOOLSDIRECTORY" \
+                       /usr/local/share/boost /usr/share/swift
+          sudo docker system prune -af || true
+          df -h /
+
       - name: Checkout
         uses: actions/checkout@v4
 
