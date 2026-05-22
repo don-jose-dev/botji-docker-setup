@@ -485,6 +485,21 @@ PY
     chown "$tenant_uid:$tenant_gid" "$tenant_kanban" 2>/dev/null || true
   fi
 
+  # Remove stale skills metadata files written by a previous (different) image.
+  # When a tenant transitions from one hermes-agent image to another, the old
+  # image's ~/.hermes/skills/.bundled_manifest is read by the new image's
+  # skills_sync.py at startup and can fail with PermissionError or format
+  # mismatch — observed 2026-05-22 when degain transitioned from
+  # phase0-fidelity-20260520073731 to the GHCR image and crashed in a restart
+  # loop. The bundled_manifest is regenerated on every container start, so it
+  # is safe to drop. .skills_prompt_snapshot.json is similar.
+  for stale in "$tenant_data_abs/skills/.bundled_manifest" "$tenant_data_abs/.skills_prompt_snapshot.json"; do
+    if [ -f "$stale" ]; then
+      rm -f "$stale"
+      echo "    removed stale image-specific metadata: $stale"
+    fi
+  done
+
   # Recreate the additional tenant container with the new image. The additional tenant's compose
   # file resolves container_name from its own .env (BOTJI_TENANT_ID=degain →
   # degain-hermes), so we just need to be in its directory and pass the image
