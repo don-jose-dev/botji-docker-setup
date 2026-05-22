@@ -37,3 +37,12 @@ deterministic_checks:
     min_count: 1
   - kind: no_id_family_mix
   - kind: no_banned_vocabulary
+
+# Tier 2 (advisory LLM-judge): the semantic check this fixture exists
+# for — that the retry's guidance actually addresses the blocker the
+# review identified. Structural shape can be perfect while the prose
+# fixes the wrong problem; that's the regression the judge catches.
+expected_semantic:
+  - The artifact_review's primary_blocker is about manifest alignment (element-count or scene-element mismatch).
+  - The second artifact_transform's retry_guidance explicitly addresses the manifest-alignment blocker identified by the review (e.g. mentions element count, scene elements, or manifest correction).
+  - The second artifact_transform's prior_blocker matches the review's primary_blocker (the retry was actually triggered by that specific failure, not a different one).

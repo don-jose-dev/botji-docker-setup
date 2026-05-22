@@ -1,20 +1,25 @@
-"""Deterministic skill-interaction eval runner — bootstrap.
+"""Deterministic + advisory-judge skill-interaction eval runner.
 
 What this is
 ------------
 A small runner for YAML fixtures that exercise the *interactions* between
 Botji skills (parallel-render × source-current, render-router × 2d-to-3d,
-retry-budget overrun, ...). Two-tier scoring is planned; this bootstrap
-ships the deterministic tier only.
+retry-budget overrun, ...). Two-tier scoring is in place:
 
-Why deterministic-only for now
-------------------------------
-~80% of skill-interaction regressions can be caught by structural assertions
-on the recorded tool-call sequence and lineage graph — no LLM judge needed.
-The judge tier is the follow-up PR. Each fixture carries a ``mock_trace``
-that stands in for a real agent run; when the runner is wired to live agent
-runs, that field is replaced by the recorded trace but the check engine and
-fixtures stay identical.
+- Tier 1 (deterministic): structural assertions on the tool-call
+  sequence. This is the only gate — exit code reflects only this tier.
+- Tier 2 (judge, opt-in via ``--judge``): LLM-based semantic verdicts
+  against each fixture's ``expected_semantic`` block. **Advisory only**
+  in this PR — verdicts are PRINTED but never alter the exit code. See
+  README for promotion-to-blocking criteria.
+
+~80% of skill-interaction regressions can be caught by Tier 1 alone.
+The judge fills the remaining semantic-vs-structural gap (e.g. a
+structurally-valid review whose prose contradicts the source intent).
+Each fixture carries a ``mock_trace`` that stands in for a real agent
+run; when the runner is wired to live agent runs, that field is
+replaced by the recorded trace but the check engine and fixtures stay
+identical.
 
 Inspiration: promptfoo (YAML fixtures + assertion model). Anthropic and
 OpenAI both use promptfoo internally; we mirror its shape but keep the
@@ -22,22 +27,26 @@ runner small enough to maintain solo.
 
 Layout
 ------
-- run_evals.py        — this file: loader + check engine + CLI (no classes;
-                       no function over ~30 lines; not a god file)
+- run_evals.py        — this file: loader + check engine + CLI
+- judge.py            — Tier 2 LLM-judge module (advisory only)
+- judge_prompt.md     — judge system prompt
 - fixtures/*.yaml     — one fixture per scenario
 - README.md           — what each fixture exercises and how to add new ones
 
 Run locally
 -----------
     python evals/skill_interactions/run_evals.py
+    python evals/skill_interactions/run_evals.py --judge   # add Tier 2
     make eval   # if you have GNU make
 
-Exit codes: 0 all pass, 1 any fail, 2 fixture loading error.
+Exit codes: 0 all deterministic checks pass, 1 any deterministic fail,
+2 fixture loading error. **Judge verdicts never affect the exit code.**
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -186,10 +195,83 @@ def run_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _fixture_cap() -> int:
+    """Default 20; override via BOTJI_JUDGE_FIXTURE_CAP env var."""
+    from judge import DEFAULT_FIXTURE_CAP  # local import keeps judge optional
+    raw = os.environ.get("BOTJI_JUDGE_FIXTURE_CAP")
+    if not raw:
+        return DEFAULT_FIXTURE_CAP
+    try:
+        cap = int(raw)
+        return cap if cap > 0 else DEFAULT_FIXTURE_CAP
+    except ValueError:
+        return DEFAULT_FIXTURE_CAP
+
+
+def run_judge_tier(
+    fixtures: list[dict[str, Any]],
+    deterministic_results: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Run the LLM judge against fixtures that have ``expected_semantic``.
+
+    Advisory only — the caller does NOT change exit code based on the
+    returned verdicts. Returns (verdict list, summary dict).
+    """
+    from judge import JUDGE_COST_PER_FIXTURE_USD, JUDGE_MODEL, run_judge
+
+    cap = _fixture_cap()
+    eligible = [f for f in fixtures if f.get("expected_semantic")]
+    selected = eligible[:cap]
+    skipped_no_block = [f["id"] for f in fixtures if not f.get("expected_semantic")]
+    skipped_cap = [f["id"] for f in eligible[cap:]]
+
+    verdicts: list[dict[str, Any]] = []
+    counts = {"pass": 0, "warn": 0, "block": 0, "inconclusive": 0}
+    for fixture in selected:
+        trace = fixture.get("mock_trace") or fixture.get("trace") or []
+        verdict = run_judge(fixture, trace)
+        counts[verdict.verdict] += 1
+        verdicts.append({
+            "id": fixture["id"],
+            "verdict": verdict.verdict,
+            "confidence": verdict.confidence,
+            "reasoning": verdict.reasoning,
+            "aligned_constraints": verdict.aligned_constraints,
+            "violated_constraints": verdict.violated_constraints,
+        })
+
+    estimated_cost = round(len(selected) * JUDGE_COST_PER_FIXTURE_USD, 4)
+    summary = {
+        "model": JUDGE_MODEL,
+        "fixture_cap": cap,
+        "judged": len(selected),
+        "skipped_no_expected_semantic": skipped_no_block,
+        "skipped_cap": skipped_cap,
+        "estimated_cost_usd": estimated_cost,
+        "counts": counts,
+        "advisory_only": True,
+        "exit_code_affected": False,
+        "deterministic_status": "pass" if all(
+            r["status"] == "pass" for r in deterministic_results
+        ) else "fail",
+    }
+    return verdicts, summary
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run deterministic skill-interaction evals.")
+    parser = argparse.ArgumentParser(description="Run deterministic + advisory-judge skill-interaction evals.")
     parser.add_argument("--fixture-dir", default=str(FIXTURE_DIR))
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="Also run the advisory LLM-judge tier. NEVER affects exit code.",
+    )
+    parser.add_argument(
+        "--judge-report",
+        default=None,
+        help="Optional path to write judge verdicts as a JSON report.",
+    )
     args = parser.parse_args()
 
     try:
@@ -201,8 +283,28 @@ def main() -> int:
     results = [run_fixture(f) for f in fixtures]
     overall = "pass" if all(r["status"] == "pass" for r in results) else "fail"
 
+    judge_verdicts: list[dict[str, Any]] = []
+    judge_summary: dict[str, Any] | None = None
+    if args.judge:
+        # Sys.path shim so ``from judge import ...`` works regardless of
+        # how the runner was invoked (module vs script).
+        sys.path.insert(0, str(ROOT))
+        try:
+            judge_verdicts, judge_summary = run_judge_tier(fixtures, results)
+        finally:
+            try:
+                sys.path.remove(str(ROOT))
+            except ValueError:
+                pass
+
     if args.json:
-        print(json.dumps({"status": overall, "results": results}, indent=2))
+        payload: dict[str, Any] = {"status": overall, "results": results}
+        if args.judge:
+            payload["judge"] = {
+                "summary": judge_summary,
+                "verdicts": judge_verdicts,
+            }
+        print(json.dumps(payload, indent=2))
     else:
         for r in results:
             badge = "PASS" if r["status"] == "pass" else "FAIL"
@@ -212,6 +314,38 @@ def main() -> int:
         print()
         print(f"overall: {overall}  ({sum(1 for r in results if r['status']=='pass')}/{len(results)} fixtures)")
 
+        if args.judge and judge_summary is not None:
+            print()
+            print("--- judge tier (ADVISORY — does not affect exit code) ---")
+            print(f"model: {judge_summary['model']}")
+            print(f"judged: {judge_summary['judged']} fixture(s) "
+                  f"(cap {judge_summary['fixture_cap']})")
+            for v in judge_verdicts:
+                tag = v["verdict"].upper()
+                print(f"  [{tag}]  {v['id']}  (conf {v['confidence']:.2f})")
+                print(f"        reasoning: {v['reasoning']}")
+                for vc in v["violated_constraints"]:
+                    print(f"        VIOLATED: {vc}")
+            counts = judge_summary["counts"]
+            print(f"\njudge counts: pass={counts['pass']} warn={counts['warn']} "
+                  f"block={counts['block']} inconclusive={counts['inconclusive']}")
+            print(f"estimated cost: ${judge_summary['estimated_cost_usd']:.4f} USD")
+            if judge_summary["skipped_no_expected_semantic"]:
+                print(f"skipped (no expected_semantic): "
+                      f"{', '.join(judge_summary['skipped_no_expected_semantic'])}")
+            if judge_summary["skipped_cap"]:
+                print(f"skipped (cap): {', '.join(judge_summary['skipped_cap'])}")
+
+    if args.judge_report and judge_summary is not None:
+        report_path = Path(args.judge_report)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps({"summary": judge_summary, "verdicts": judge_verdicts}, indent=2),
+            encoding="utf-8",
+        )
+
+    # Exit code reflects ONLY the deterministic tier. The judge is
+    # advisory — see module docstring and README.
     return 0 if overall == "pass" else 1
 
 

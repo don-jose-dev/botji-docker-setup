@@ -34,3 +34,13 @@ deterministic_checks:
     per_branch: 2
   - kind: no_banned_vocabulary
   - kind: no_id_family_mix
+
+# Tier 2 (advisory LLM-judge): the semantic gap structure can't catch.
+# A sketch is correctly classified, manifest extracted, but the
+# transform's subject_inventory could still introduce fillers that
+# aren't in the manifest. The deterministic tier sees the manifest
+# tool call; only the judge sees whether the prose matches it.
+expected_semantic:
+  - The artifact_transform's subject_inventory lists items that are consistent with a kitchen scene (the manifest's scene_type).
+  - The transform's subject_inventory does not contain more elements than the manifest's element_count (no invented filler subjects).
+  - The mood_brief describes editorial/architectural visualization of a kitchen, matching both the source file path and the extracted manifest scene_type.
