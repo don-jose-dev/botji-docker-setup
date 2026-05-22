@@ -182,26 +182,27 @@ If `delivery_gate == "blocked"` AND the ONLY conflicts are proportion/geometry d
 
 ## Step 5 — Retry strategy (on block)
 
-**Attempt 2:** Add the exact `primary_blocker` text from the review as the FIRST FORBIDDEN entry:
+The canonical budget is **1 attempt + at most 1 retry per turn** — defined in `botji-render-mode` (Retry budget). The retry combines BOTH escalations below into a single call (don't burn the budget on two cosmetic re-runs).
+
+**The retry call:** add the exact `primary_blocker` text from the review as the FIRST FORBIDDEN entry, AND move the adjacency constraint to the very first item in `subject_inventory`. Both moves in one transform:
+
 ```python
 artifact_transform(
     ...
     prior_blocker=review["primary_blocker"],      # verbatim from review verdict
     retry_guidance=review.get("retry_guidance", ""),
     forbidden_elements=[...original list...],
+    subject_inventory=[
+        f"CRITICAL SPATIAL CONSTRAINT (most important): {adjacency_constraint}",
+        # ... rest of subject list
+    ],
 )
 ```
 
-**Attempt 3:** Move the adjacency constraint to the very first item in `subject_inventory`, before camera info:
-```python
-subject_inventory=[
-    f"CRITICAL SPATIAL CONSTRAINT (most important): {adjacency_constraint}",
-    # ... rest of subject list
-]
-```
+**If the retry also blocks on the same constraint, stop and ask:**
+> "I've made 2 attempts. The closest result I could produce conflicts on: [primary_blocker]. gpt-image-2 is having difficulty with this specific constraint. Options: (1) Accept this result with the noted conflict, (2) Adjust the sketch to be less ambiguous about this constraint, (3) Try a different camera angle."
 
-**After 3 blocked attempts on the same constraint:**
-> "I've made [N] attempts. The closest result I could produce conflicts on: [primary_blocker]. gpt-image-2 is having difficulty with this specific constraint. Options: (1) Accept this result with the noted conflict, (2) Adjust the sketch to be less ambiguous about this constraint, (3) Try a different camera angle."
+Never silently run a third transform. If the user explicitly authorises another attempt, disclose the budget burn ("3rd attempt as requested — usual cap is 2") and proceed.
 
 ---
 
