@@ -1,0 +1,33 @@
+# gitleaks config
+#
+# Extends the upstream default ruleset (https://github.com/gitleaks/gitleaks)
+# and layers a project-specific allowlist for values that are known-public and
+# therefore safe to ship in the repo.
+#
+# Anything you add to the allowlist MUST have a comment explaining why it is
+# safe. If a value looks like it might be a real secret, do NOT add it here —
+# rotate the secret first, then expunge it from history. See docs/SECURITY.md.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "global allowlist for known-safe matches"
+
+# Public artifacts we ship in the repo and on the VPS:
+#   - degain_india_bot: the public Telegram bot username for the degain tenant.
+#     This is a username, not a token. Anyone can DM the bot; only holders of
+#     the bot token (kept in the VPS_ENV CI secret) can act as the bot.
+regexes = [
+  '''(?i)degain_india_bot''',
+]
+
+paths = [
+  # Lockfiles and example envs are non-credential by design; we still want them
+  # scanned by ruleset, but globbed allowlist keeps churn manageable.
+  '''(?i).*\.env\.example$''',
+  # gitleaks should never scan itself
+  '''^\.gitleaks\.toml$''',
+  # Generated SBOM/lock artifacts (none today, future-proofing)
+  '''(?i).*\.sbom\.(json|spdx)$''',
+]

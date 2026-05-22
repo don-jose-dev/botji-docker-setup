@@ -1,0 +1,64 @@
+version: 2
+
+# Dependency update automation.
+#
+# Scope notes:
+#   - "pip" and "npm" ecosystems are NOT configured here because this repo
+#     pins Python and Node deps inside the Dockerfile (uv pip install …,
+#     npm install -g @openai/codex@…). Once a requirements.txt / package.json
+#     lands, add the matching ecosystem block.
+#   - "docker" tracks the base image and `--from` stages in the Dockerfile.
+#   - "github-actions" tracks pinned action versions across .github/workflows.
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Amsterdam
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    assignees:
+      - don-jose-dev
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      # One PR per week with every minor/patch bump rolled up.
+      # Major bumps still get their own PR — they tend to break things.
+      actions-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Amsterdam
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - docker
+    assignees:
+      - don-jose-dev
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    # The Hermes base image is consumed via ARG HERMES_IMAGE — dependabot
+    # cannot version-track a moving :main tag, but it can flag pinned digests
+    # when we move to one. Keep this here so the wiring is ready.
+    ignore:
+      - dependency-name: nousresearch/hermes-agent
+        # We currently track :main intentionally (upstream rolling). Revisit
+        # once we pin to a digest.
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+          - version-update:semver-patch
