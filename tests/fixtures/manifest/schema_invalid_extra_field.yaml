@@ -1,0 +1,29 @@
+id: schema_invalid_extra_field
+description: |
+  A v2 typed manifest with an unknown field on Element fails JSON Schema
+  validation. additionalProperties=false catches typos at validation time —
+  this is the safety net we did not have with v1's open-shape elements.
+inputs:
+  scenario: schema_validate
+  typed_manifest:
+    version: v2
+    scene_type: kitchen_interior
+    source_modality: sketch
+    elements:
+      - element_id: countertop_01
+        type: countertop
+        zone: back_wall
+        required: true
+        status: visible
+        evidence: ""
+        position:
+          order_in_zone: 1
+        # Typo: should be 'evidence'. additionalProperties=false rejects.
+        ividence: typo here
+    adjacency_constraints: []
+    opening_constraints: []
+    layout_hints: []
+    fidelity_requirements: []
+expected:
+  schema_valid: false
+  failing_field: ividence

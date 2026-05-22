@@ -93,6 +93,7 @@ copy_file "$SEED/hermes/schemas/prompt_contract.schema.json" "$DATA/schemas/prom
 copy_file "$SEED/hermes/schemas/source_fidelity_review.schema.json" "$DATA/schemas/source_fidelity_review.schema.json"
 copy_file "$SEED/hermes/schemas/artifact_lineage.schema.json" "$DATA/schemas/artifact_lineage.schema.json"
 copy_file "$SEED/hermes/schemas/artifact_schema.schema.json" "$DATA/schemas/artifact_schema.schema.json"
+copy_file "$SEED/hermes/schemas/manifest_v2.schema.json" "$DATA/schemas/manifest_v2.schema.json"
 
 copy_file "$SEED/codex/config.toml" "$DATA/.codex/config.toml"
 chmod 600 "$DATA/.codex/config.toml" 2>/dev/null || true
