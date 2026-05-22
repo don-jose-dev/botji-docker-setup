@@ -49,15 +49,26 @@ docker exec "$CONTAINER_NAME" botji-runtime-harness \
   --require-allowlist
 
 echo "=== postdeploy: consolidated harness (core+gate+allowlist+contract+fidelity-guard+id-family) ==="
-# Ship the deterministic fixtures into the container's /tmp so the runner can
+# Ship the deterministic fixtures into the container so the runner can
 # discover them via BOTJI_HARNESS_FIXTURES — Dockerfile/deploy do not seed them,
 # and we deliberately keep the harness binary stateless of fixture data.
+#
+# The destination MUST NOT be /tmp on this image: /tmp is mounted as tmpfs with
+# noexec (observed 2026-05-22 on the production VPS), which causes `docker cp`
+# to fail silently — exit 0, target dir never created, harness reports
+# "no fixtures found" while smoke claims success. The persistent /opt/data mount
+# is the safe target. The trailing `/.` on SRC tells docker cp to copy the
+# directory's CONTENTS rather than the directory itself, so suite subdirs land
+# at $FIXTURES_DEST/<suite>/ — matching the harness's _fixtures_root() layout.
 FIXTURES_SRC="$(cd "$(dirname "$0")/.." && pwd)/tests/fixtures"
+FIXTURES_DEST="/opt/data/.botji-harness-fixtures"
 if [ -d "$FIXTURES_SRC" ]; then
-  docker exec "$CONTAINER_NAME" rm -rf /tmp/botji-harness-fixtures
-  docker cp "$FIXTURES_SRC" "$CONTAINER_NAME":/tmp/botji-harness-fixtures
-  docker exec -e BOTJI_HARNESS_FIXTURES=/tmp/botji-harness-fixtures \
+  docker exec "$CONTAINER_NAME" rm -rf "$FIXTURES_DEST"
+  docker exec "$CONTAINER_NAME" mkdir -p "$FIXTURES_DEST"
+  docker cp "$FIXTURES_SRC/." "$CONTAINER_NAME:$FIXTURES_DEST"
+  docker exec -e BOTJI_HARNESS_FIXTURES="$FIXTURES_DEST" \
     "$CONTAINER_NAME" botji-harness run --suite all
+  docker exec "$CONTAINER_NAME" rm -rf "$FIXTURES_DEST"
 else
   echo "    WARNING: $FIXTURES_SRC missing — running without fixtures"
   docker exec "$CONTAINER_NAME" botji-harness run --suite all
