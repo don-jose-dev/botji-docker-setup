@@ -817,8 +817,14 @@ def run_cron(fixture: dict) -> tuple[bool, str]:
     rel = inputs.get("cron_file")
     if not rel:
         return False, "inputs.cron_file is required"
-    repo_root = Path(__file__).resolve().parents[2]
-    cron_path = repo_root / rel
+    # Deployed tenants seed cron yamls into $HERMES_HOME/cron/. Probe there
+    # first (filename basename), fall back to repo-relative for dev runs.
+    # Previous repo-only resolution failed in-container because __file__
+    # resolves to /usr/local/bin/botji-harness, giving /usr/cron/... .
+    home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
+    cron_path = home / "cron" / Path(rel).name
+    if not cron_path.is_file():
+        cron_path = Path(__file__).resolve().parents[2] / rel
     if not cron_path.is_file():
         return False, f"cron yaml not found: {cron_path}"
 
@@ -1056,8 +1062,12 @@ def run_render(fixture: dict) -> tuple[bool, str]:
     rel = inputs.get("template_file")
     if not rel:
         return False, "inputs.template_file is required"
-    repo_root = Path(__file__).resolve().parents[2]
-    tpath = repo_root / rel
+    # Deployed tenants seed kanban templates into $HERMES_HOME/kanban/workflows/.
+    # Probe there first by basename, fall back to repo-relative for dev runs.
+    home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
+    tpath = home / "kanban" / "workflows" / Path(rel).name
+    if not tpath.is_file():
+        tpath = Path(__file__).resolve().parents[2] / rel
     if not tpath.is_file():
         return False, f"workflow template not found: {tpath}"
 
