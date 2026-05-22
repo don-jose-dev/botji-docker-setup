@@ -1,0 +1,32 @@
+id: success_writes_record
+description: |
+  A successful substrate tool call produces exactly one JSONL audit line
+  under ${HERMES_HOME}/audit/<tenant>-substrate.jsonl. The record carries
+  the tool name, tenant, session id, an sha256 args_hash, a typed args_kinds
+  payload (so auditors can see what fields were passed without leaking the
+  values), and result_status=success. No raw args, no raw paths.
+inputs:
+  tenant: t-success
+  tool_name: artifact_register
+  tool_call_id: tc-success-1
+  session_id: session-success
+  args:
+    path: /opt/data/incoming/src.txt
+    role: source
+    current_turn_id: turn-success
+  result:
+    success: true
+    source:
+      artifact_id: src_20260522T170000Z_aaaaaaaa
+      role: source
+expected:
+  record_count: 1
+  result_status: success
+  session_id: session-success
+  args_hash_present: true
+  args_kinds:
+    path: str
+    role: str
+    current_turn_id: str
+  summary_excludes:
+    - /opt/data/incoming/src.txt

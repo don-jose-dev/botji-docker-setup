@@ -1,0 +1,31 @@
+id: failure_writes_error_status
+description: |
+  A failed substrate tool call (result has success=false) still produces
+  one JSONL audit line, with result_status="error". Auditors can correlate
+  the count of error-status audit records against the existing
+  botji_tool_error_total counter; the audit log is the per-event truth.
+inputs:
+  tenant: t-fail
+  tool_name: receipt_record
+  tool_call_id: tc-fail-1
+  session_id: session-fail
+  args:
+    source_ids: [src_does_not_exist]
+    output_id: out_x
+    route: edit_image
+    status: pass
+    current_turn_id: turn-fail
+  result:
+    success: false
+    error: "ValueError: unknown source id src_does_not_exist"
+expected:
+  record_count: 1
+  result_status: error
+  session_id: session-fail
+  args_hash_present: true
+  args_kinds:
+    source_ids: list
+    output_id: str
+    route: str
+    status: str
+    current_turn_id: str
