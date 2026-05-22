@@ -68,6 +68,7 @@ sync_code_components() {
 }
 
 rollback_to_previous() {
+  # shellcheck disable=SC2034  # read by the cleanup trap in vps-deploy.sh
   ROLLBACK_DONE=1
   local failed_status="$1"
   echo "==> Rolling back after failed deploy ($failed_status)" >&2

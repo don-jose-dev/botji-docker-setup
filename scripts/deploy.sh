@@ -59,6 +59,7 @@ install_config
 migrate_kanban_db
 bootstrap_workspace
 
+# shellcheck disable=SC2034  # read by the cleanup trap in vps-deploy.sh
 ROLLBACK_ON_ERROR=1
 
 echo "==> Force-update code components (plugin, skills, schemas, prompts)"
@@ -74,6 +75,7 @@ wait_for_primary_health
 if [ "$STATUS" = "healthy" ]; then
   run_primary_smoke
   record_last_deploy "$STATUS"
+  # shellcheck disable=SC2034  # read by the cleanup trap in vps-deploy.sh
   ROLLBACK_ON_ERROR=0
   echo "==> Deploy complete."
 else
