@@ -1,8 +1,20 @@
 # `botji-core` charter
 
-`botji-core` is the **thin substrate** for the Hermes-native Botji runtime. Its
-job is to record durable source/output facts and enforce mechanical delivery
-rules — nothing semantic. Everything else lives in skills.
+## What Botji is
+
+Botji is an **audited-workflow harness on Hermes**. Hermes runs the agent loop,
+tools, skills, plugins, and orchestration. Botji adds the contract that turns
+agent runs into auditable workflows: typed source → evidence → transform →
+review → receipt → delivery, with hard gates and durable records at each step.
+
+The render bot (sketch/brief → image) is one workflow Botji runs today. Other
+workflows can be added as skills without changing the harness substrate.
+
+## What this charter covers
+
+`botji-core` is the **thin mechanical substrate** of the harness. Its job is
+to record durable source/output facts and enforce mechanical delivery rules —
+nothing semantic. Everything semantic lives in skills.
 
 The whole point of [the Hermes-native rewrite](HERMES_NATIVE_REWRITE_PLAN.md) is
 to drain ~5,000 LOC of imperative Python out of `botji-artifacts` into
