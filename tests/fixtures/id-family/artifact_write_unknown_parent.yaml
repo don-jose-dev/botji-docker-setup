@@ -1,0 +1,7 @@
+id: artifact_write_unknown_parent
+description: artifact_write rejects a fabricated src_* parent ID that was never registered.
+inputs:
+  scenario: artifact_write_unknown_parent
+  parent_id: src_does_not_exist_999
+expected:
+  error_contains: "unknown parent"

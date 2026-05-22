@@ -1,0 +1,9 @@
+id: bootstrap_from_env
+description: _bootstrap_file_from_env_if_missing seeds allowed_users.json from the env var when the file is absent.
+inputs:
+  env_allowed: "111,333"
+  delete_file_then_bootstrap: true
+expected:
+  bootstrap_users:
+    - "111"
+    - "333"

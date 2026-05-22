@@ -1,0 +1,16 @@
+id: clear_verdict_passthrough
+description: a "clear" verdict file lets the model output through unchanged.
+inputs:
+  verdicts:
+    - session_id: clear
+      payload:
+        delivery_gate: clear
+        axes:
+          content: true
+  calls:
+    - session_id: clear
+      llm_output: deliver
+expected:
+  outputs:
+    - session_id: clear
+      passthrough: true

@@ -1,0 +1,17 @@
+id: stale_verdict_ignored
+description: verdict files older than _VERDICT_MAX_AGE_SECONDS are ignored — gate falls back to passthrough.
+inputs:
+  verdicts:
+    - session_id: stale
+      payload:
+        delivery_gate: blocked
+        axes:
+          content: false
+      age_seconds: 1200    # > 10 min cap
+  calls:
+    - session_id: stale
+      llm_output: deliver
+expected:
+  outputs:
+    - session_id: stale
+      passthrough: true

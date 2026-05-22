@@ -1,0 +1,10 @@
+id: missing_verdict_passthrough
+description: no verdict file for the session — _transform_llm_output returns None (passthrough).
+inputs:
+  calls:
+    - session_id: missing
+      llm_output: hello
+expected:
+  outputs:
+    - session_id: missing
+      passthrough: true

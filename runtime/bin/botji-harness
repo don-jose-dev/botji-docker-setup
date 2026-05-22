@@ -1,0 +1,727 @@
+#!/opt/hermes/.venv/bin/python
+"""Unified test runner for Botji deterministic harnesses.
+
+Replaces five separate scripts:
+  - botji-core-harness           -> run --suite core
+  - botji-gate-harness           -> run --suite gate
+  - botji-allowlist-harness      -> run --suite allowlist
+  - botji-contract-new           -> run --suite contract
+  - botji-fidelity-guard-harness -> run --suite fidelity-guard
+
+Plus one new suite:
+  - run --suite id-family        -> rejects mixed art_*/src_*/out_* IDs
+
+Fixtures live in tests/fixtures/<suite>/*.yaml. Each fixture has:
+  id:          stable identifier (filename stem if omitted)
+  description: human-readable summary
+  inputs:      suite-specific test setup
+  expected:    suite-specific assertion data
+
+One pure function per suite. Handlers are responsible for tempdir
+setup, plugin load, predicate evaluation. No classes for orchestration.
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import sys
+import tempfile
+import time
+import uuid
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Callable
+
+import yaml  # type: ignore[import-not-found]
+
+
+# ---------------------------------------------------------------------------
+# Plugin loading
+# ---------------------------------------------------------------------------
+
+def _plugin_path(plugin_name: str) -> Path:
+    """Locate plugin __init__.py. Prefer VPS layout, fall back to repo seed."""
+    home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
+    candidate = home / "plugins" / plugin_name / "__init__.py"
+    if candidate.is_file():
+        return candidate
+    return Path(__file__).resolve().parents[2] / "seed" / "hermes" / "plugins" / plugin_name / "__init__.py"
+
+
+def _load_module(plugin_path: Path, module_name: str) -> Any:
+    spec = importlib.util.spec_from_file_location(module_name, plugin_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot import {plugin_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class _FakeContext:
+    def __init__(self) -> None:
+        self.tools: dict[str, Any] = {}
+
+    def register_tool(self, *, name: str, handler: Any, **_: Any) -> None:
+        self.tools[name] = handler
+
+
+def _call_tool(ctx: _FakeContext, name: str, payload: dict) -> dict:
+    return json.loads(ctx.tools[name](payload))
+
+
+def _resolve(value: Any, bindings: dict) -> Any:
+    """Resolve $-prefixed bindings in fixture args (recursively)."""
+    if isinstance(value, str) and value.startswith("$"):
+        ref = value[1:]
+        if ref not in bindings:
+            raise KeyError(f"unbound reference: ${ref}")
+        return bindings[ref]
+    if isinstance(value, list):
+        return [_resolve(v, bindings) for v in value]
+    if isinstance(value, dict):
+        return {k: _resolve(v, bindings) for k, v in value.items()}
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Suite: core
+# ---------------------------------------------------------------------------
+
+def run_core(fixture: dict) -> tuple[bool, str]:
+    """Sequence of botji-core tool calls + assertions on the last result.
+
+    inputs.files: {label: content} → creates incoming/<label>.txt, binds path:<label>
+    inputs.legacy_artifacts: list of legacy registry entries (artifact_id, role, content)
+    inputs.steps: list of {tool, args, save_as?} — save_as binds id fields
+    expected: dict of result-key comparisons (special: artifact_id_prefix)
+    """
+    plugin_path = _plugin_path("botji-core")
+    with tempfile.TemporaryDirectory(prefix="botji-h-core-") as tmp:
+        home = Path(tmp)
+        os.environ["HERMES_HOME"] = str(home)
+        os.environ["BOTJI_CORE_ROOT"] = str(home / "botji-core")
+        os.environ["BOTJI_ARTIFACT_ROOT"] = str(home / "artifacts")
+        ctx = _FakeContext()
+        module = _load_module(plugin_path, f"botji_core_h_{uuid.uuid4().hex[:8]}")
+        module.register(ctx)
+
+        bindings: dict[str, Any] = {}
+        inputs = fixture.get("inputs") or {}
+        for label, content in (inputs.get("files") or {}).items():
+            fp = home / "incoming" / f"{label}.txt"
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_text(content, encoding="utf-8")
+            bindings[f"path:{label}"] = str(fp)
+
+        for entry in inputs.get("legacy_artifacts") or []:
+            art_id = entry["artifact_id"]
+            data_path = home / "artifacts" / "legacy" / art_id / "data.txt"
+            data_path.parent.mkdir(parents=True, exist_ok=True)
+            data_path.write_text(entry.get("content", "legacy"), encoding="utf-8")
+            index = home / "artifacts" / "index" / "artifacts.jsonl"
+            index.parent.mkdir(parents=True, exist_ok=True)
+            with index.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({
+                    "artifact_id": art_id,
+                    "role": entry.get("role", "source"),
+                    "path": str(data_path),
+                    "parents": entry.get("parents", []),
+                    "created_at": "2026-05-20T00:00:00Z",
+                }) + "\n")
+
+        last: dict[str, Any] = {}
+        for step in inputs.get("steps") or []:
+            args = _resolve(step.get("args") or {}, bindings)
+            last = _call_tool(ctx, step["tool"], args)
+            save_as = step.get("save_as")
+            if save_as and isinstance(last, dict):
+                for k in ("source_id", "artifact_id", "receipt_id", "output_id"):
+                    if last.get(k) is not None:
+                        bindings[f"{save_as}.{k}"] = last[k]
+
+        return _check_expected(last, fixture.get("expected") or {})
+
+
+def _check_expected(result: dict, expected: dict) -> tuple[bool, str]:
+    for key, want in expected.items():
+        if key == "artifact_id_prefix":
+            artifact_id = (
+                result.get("artifact_id")
+                or (result.get("source") or {}).get("artifact_id")
+                or (result.get("artifact") or {}).get("artifact_id")
+            )
+            if not isinstance(artifact_id, str) or not artifact_id.startswith(want):
+                return False, f"artifact_id {artifact_id!r} missing prefix {want!r}"
+            continue
+        if result.get(key) != want:
+            return False, f"expected {key}={want!r}, got {result.get(key)!r}"
+    return True, "ok"
+
+
+# ---------------------------------------------------------------------------
+# Suite: gate
+# ---------------------------------------------------------------------------
+
+def run_gate(fixture: dict) -> tuple[bool, str]:
+    """Write verdict files, then call _transform_llm_output and assert.
+
+    inputs.verdicts: [{session_id, payload, age_seconds?}]
+    inputs.calls:    [{session_id, llm_output}]
+    expected.outputs: [{session_id, passthrough?, contains?, not_contains?}]
+    """
+    plugin_path = _plugin_path("botji-gate")
+    with tempfile.TemporaryDirectory(prefix="botji-h-gate-") as tmp:
+        verdict_root = Path(tmp) / "verdicts"
+        verdict_root.mkdir(parents=True, exist_ok=True)
+        os.environ["BOTJI_VERDICT_ROOT"] = str(verdict_root)
+        module = _load_module(plugin_path, f"botji_gate_h_{uuid.uuid4().hex[:8]}")
+
+        inputs = fixture.get("inputs") or {}
+        for verdict in inputs.get("verdicts") or []:
+            path = verdict_root / f"{verdict['session_id']}.verdict.json"
+            path.write_text(json.dumps(verdict["payload"], indent=2), encoding="utf-8")
+            age = verdict.get("age_seconds")
+            if age is not None:
+                stamp = time.time() - float(age)
+                os.utime(path, (stamp, stamp))
+
+        results: dict[str, Any] = {}
+        for call in inputs.get("calls") or []:
+            sid = call["session_id"]
+            results[sid] = module._transform_llm_output(call.get("llm_output", ""), session_id=sid)
+
+        for want in (fixture.get("expected") or {}).get("outputs") or []:
+            sid = want["session_id"]
+            if sid not in results:
+                return False, f"no call for session {sid!r}"
+            got = results[sid]
+            if want.get("passthrough"):
+                if got is not None:
+                    return False, f"session {sid}: expected passthrough, got {got!r}"
+                continue
+            for needle in (want.get("contains") or []) if isinstance(want.get("contains"), list) else ([want["contains"]] if want.get("contains") else []):
+                if not isinstance(got, str) or needle not in got:
+                    return False, f"session {sid}: {needle!r} not in {got!r}"
+            for needle in (want.get("not_contains") or []) if isinstance(want.get("not_contains"), list) else ([want["not_contains"]] if want.get("not_contains") else []):
+                if isinstance(got, str) and needle in got:
+                    return False, f"session {sid}: forbidden {needle!r} found in {got!r}"
+        return True, "ok"
+
+
+# ---------------------------------------------------------------------------
+# Suite: allowlist
+# ---------------------------------------------------------------------------
+
+def run_allowlist(fixture: dict) -> tuple[bool, str]:
+    """Seed allowed_users.json + env, then check who passes pre_gateway_dispatch.
+
+    inputs.initial_file:             dict written as initial JSON
+    inputs.invalid_file:             raw string (corrupts the file after init)
+    inputs.env_allowed:              TELEGRAM_ALLOWED_USERS value
+    inputs.delete_file_then_bootstrap: bool — exercise _bootstrap_file_from_env_if_missing()
+    expected.allowed / expected.rejected: user IDs
+    expected.bootstrap_users:        list of users expected in the file after bootstrap
+    """
+    plugin_path = _plugin_path("botji-allowlist")
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+
+    with tempfile.TemporaryDirectory(prefix="botji-h-allow-") as tmp:
+        allowlist_path = Path(tmp) / "allowed_users.json"
+        os.environ["BOTJI_ALLOWLIST_PATH"] = str(allowlist_path)
+        if "env_allowed" in inputs:
+            os.environ["TELEGRAM_ALLOWED_USERS"] = str(inputs["env_allowed"])
+        else:
+            os.environ.pop("TELEGRAM_ALLOWED_USERS", None)
+
+        module = _load_module(plugin_path, f"botji_allow_h_{uuid.uuid4().hex[:8]}")
+
+        if "initial_file" in inputs:
+            allowlist_path.write_text(json.dumps(inputs["initial_file"], indent=2) + "\n", encoding="utf-8")
+            time.sleep(0.02)
+            os.utime(allowlist_path, None)
+            # Prime the in-memory cache so subsequent corrupt writes have a
+            # "previous good" set to fall back to (matches production behaviour
+            # where every dispatch re-reads on mtime change).
+            module._pre_gateway_dispatch(SimpleNamespace(
+                platform="telegram", sender_id="__warmup__", sender_name="warmup",
+            ))
+        if "invalid_file" in inputs:
+            allowlist_path.write_text(str(inputs["invalid_file"]), encoding="utf-8")
+            time.sleep(0.02)
+            os.utime(allowlist_path, None)
+
+        if inputs.get("delete_file_then_bootstrap"):
+            if allowlist_path.exists():
+                allowlist_path.unlink()
+            module._cache = None
+            module._bootstrap_file_from_env_if_missing()
+            data = json.loads(allowlist_path.read_text(encoding="utf-8"))
+            want = expected.get("bootstrap_users")
+            if want is not None and sorted(data.get("users", [])) != sorted(want):
+                return False, f"bootstrap users mismatch: {data}"
+
+        for uid in expected.get("allowed") or []:
+            ev = SimpleNamespace(platform="telegram", sender_id=str(uid), sender_name=f"u{uid}")
+            v = module._pre_gateway_dispatch(ev)
+            if v is not None:
+                return False, f"user {uid} should be allowed, got {v!r}"
+        for uid in expected.get("rejected") or []:
+            ev = SimpleNamespace(platform="telegram", sender_id=str(uid), sender_name=f"u{uid}")
+            v = module._pre_gateway_dispatch(ev)
+            if not isinstance(v, dict) or v.get("action") != "skip":
+                return False, f"user {uid} should be rejected, got {v!r}"
+        return True, "ok"
+
+
+# ---------------------------------------------------------------------------
+# Suite: contract
+# ---------------------------------------------------------------------------
+
+def run_contract(fixture: dict) -> tuple[bool, str]:
+    """Generate a Prompt v1 contract and assert structural invariants.
+
+    inputs.truth_mode:               value passed through to contract
+    expected.required_keys:          list of top-level keys that must exist
+    expected.truth_mode:             exact match
+    expected.contract_id_prefix:     must start with this string
+    expected.forbidden_routes_contains: substring required in artifact_fidelity.forbidden_routes
+    """
+    import datetime as dt
+
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+    truth_mode = inputs.get("truth_mode") or os.environ.get("BOTJI_DEFAULT_TRUTH_MODE", "fidelity")
+
+    now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    contract_id = f"prompt-{now.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+    contract = {
+        "contract_id": contract_id,
+        "version": "Prompt v1",
+        "created_at": now.isoformat().replace("+00:00", "Z"),
+        "tier": "substantive",
+        "user_intent": "",
+        "truth_mode": truth_mode,
+        "sources": [],
+        "authority_order": [],
+        "preserve": [],
+        "change": [],
+        "execution_plan": [],
+        "missing_inputs": [],
+        "risk_level": "medium",
+        "approval_required": False,
+        "artifact_lineage": {
+            "parent_artifact_id": None,
+            "output_artifact_id": None,
+            "version_label": "Prompt v1",
+            "change_reason": "",
+        },
+        "artifact_fidelity": {
+            "source_artifact_ids": [],
+            "normalized_schema_ids": [],
+            "selected_route": "exact_copy",
+            "forbidden_routes": ["prompt_only_generation"],
+            "hard_requirements": [
+                "Preserve source artifacts byte-for-byte unless the user explicitly authorizes a transform route.",
+            ],
+            "advisory_preferences": [],
+            "comparator_required": False,
+            "comparator_status": "not_applicable",
+            "review_required": True,
+        },
+        "artifact_refs": [],
+        "allowed_operations": ["exact_copy"],
+        "selected_adapter": "auto",
+        "evidence_required": False,
+        "unknown_policy": "state_unknown",
+        "output_expectation": {"type": "answer", "review_required": True},
+        "notes": "",
+    }
+    with tempfile.TemporaryDirectory(prefix="botji-h-contract-") as tmp:
+        out_path = Path(tmp) / f"{contract_id}.json"
+        out_path.write_text(json.dumps(contract, indent=2), encoding="utf-8")
+        reloaded = json.loads(out_path.read_text(encoding="utf-8"))
+
+    for key in expected.get("required_keys") or []:
+        if key not in reloaded:
+            return False, f"missing required key: {key}"
+    if "truth_mode" in expected and reloaded["truth_mode"] != expected["truth_mode"]:
+        return False, f"truth_mode {reloaded['truth_mode']!r} != {expected['truth_mode']!r}"
+    if "contract_id_prefix" in expected and not reloaded["contract_id"].startswith(expected["contract_id_prefix"]):
+        return False, f"contract_id {reloaded['contract_id']!r} missing prefix {expected['contract_id_prefix']!r}"
+    needle = expected.get("forbidden_routes_contains")
+    if needle and needle not in reloaded.get("artifact_fidelity", {}).get("forbidden_routes", []):
+        return False, f"forbidden_routes missing {needle!r}"
+    return True, "ok"
+
+
+# ---------------------------------------------------------------------------
+# Suite: fidelity-guard
+# ---------------------------------------------------------------------------
+
+def run_fidelity_guard(fixture: dict) -> tuple[bool, str]:
+    """Exercise botji-artifacts _guardrails or _vision module.
+
+    inputs.guard: "current_turn" or "vision"
+    See _run_current_turn_guard / _run_vision_guard for per-guard details.
+    """
+    plugin_root = _plugin_path("botji-artifacts").parent
+    if not (plugin_root / "__init__.py").is_file():
+        return False, f"botji-artifacts plugin not found at {plugin_root}"
+
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+    guard = inputs.get("guard")
+    if guard == "current_turn":
+        return _run_current_turn_guard(plugin_root, inputs, expected)
+    if guard == "vision":
+        return _run_vision_guard(plugin_root, inputs, expected)
+    return False, f"unknown guard: {guard!r}"
+
+
+def _run_current_turn_guard(plugin_root: Path, inputs: dict, expected: dict) -> tuple[bool, str]:
+    import hashlib
+
+    if str(plugin_root) not in sys.path:
+        sys.path.insert(0, str(plugin_root))
+    from _guardrails import apply_current_turn_source_guard  # type: ignore
+
+    with tempfile.TemporaryDirectory(prefix="botji-h-fid-") as tmp:
+        home = Path(tmp)
+        os.environ["HERMES_HOME"] = str(home)
+        os.environ["BOTJI_ARTIFACT_ROOT"] = str(home / "artifacts")
+
+        current_bytes = inputs.get("current_image_bytes", "current-image").encode("utf-8")
+        registry_bytes = inputs.get("registry_bytes", "stale-image").encode("utf-8")
+        artifact_id = inputs.get("artifact_id", "art_test")
+        session_id = inputs.get("session_id", "session_test")
+
+        current = home / "image_cache" / "current.jpg"
+        stale = home / "image_cache" / "stale.jpg"
+        copied = home / "artifacts" / "sources" / artifact_id / "stale.jpg"
+        current.parent.mkdir(parents=True, exist_ok=True)
+        copied.parent.mkdir(parents=True, exist_ok=True)
+        current.write_bytes(current_bytes)
+        stale.write_bytes(registry_bytes)
+        copied.write_bytes(registry_bytes)
+
+        session_path = home / "sessions" / f"{session_id}.jsonl"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session_path.write_text(json.dumps({
+            "role": "user",
+            "content": [{"type": "text", "text": f"Make 3d\n\n[Image attached at: {current}]"}],
+        }) + "\n", encoding="utf-8")
+
+        sha = hashlib.sha256(registry_bytes).hexdigest()
+        idx = home / "artifacts" / "index" / "artifacts.jsonl"
+        idx.parent.mkdir(parents=True, exist_ok=True)
+        idx.write_text(json.dumps({
+            "artifact_id": artifact_id,
+            "role": "source",
+            "path": str(copied),
+            "original_path": str(stale),
+            "adapter": "image",
+            "sha256": sha,
+            "parents": [],
+            "evidence_ids": [],
+        }) + "\n", encoding="utf-8")
+
+        review = _base_review(artifact_id)
+        guarded, changed = apply_current_turn_source_guard(review, session_id)
+
+        if "changed" in expected and bool(changed) != bool(expected["changed"]):
+            return False, f"changed: expected {expected['changed']}, got {changed}"
+        if "delivery_gate" in expected and guarded.get("delivery_gate") != expected["delivery_gate"]:
+            return False, f"delivery_gate {guarded.get('delivery_gate')!r} != {expected['delivery_gate']!r}"
+        prefix = expected.get("primary_blocker_prefix")
+        if prefix:
+            actual = guarded.get("primary_blocker") or ""
+            if not isinstance(actual, str) or not actual.startswith(prefix):
+                return False, f"primary_blocker {actual!r} missing prefix {prefix!r}"
+        return True, "ok"
+
+
+def _run_vision_guard(plugin_root: Path, inputs: dict, expected: dict) -> tuple[bool, str]:
+    if str(plugin_root) not in sys.path:
+        sys.path.insert(0, str(plugin_root))
+    from _vision import _assess_vision_payload  # type: ignore
+
+    requirements = list(inputs.get("requirements") or [])
+    payload = {"comparison": json.dumps(inputs.get("comparison") or {})}
+    assessed = _assess_vision_payload(payload, requirements)
+
+    if "verdict" in expected and assessed.get("verdict") != expected["verdict"]:
+        return False, f"verdict {assessed.get('verdict')!r} != {expected['verdict']!r}"
+    for needle in expected.get("blockers_contain") or []:
+        blockers = assessed.get("blockers") or []
+        if not any(needle in str(item) for item in blockers):
+            return False, f"blockers missing {needle!r}: {blockers}"
+    return True, "ok"
+
+
+def _base_review(source_id: str) -> dict:
+    return {
+        "review_id": "review_test",
+        "reviewed_output_ref": "art_output",
+        "verdict": "pass",
+        "delivery_gate": "clear",
+        "recommended_action": "deliver",
+        "primary_blocker": None,
+        "retry_guidance": None,
+        "axes": [],
+        "blockers": [],
+        "required_corrections": [],
+        "artifact_context": {
+            "source_artifact_ids": [source_id],
+            "output_artifact_id": "art_output",
+            "evidence_ids": [],
+        },
+        "fidelity_scores": {
+            "transform_contract_fidelity_percent": 100,
+            "preservation_target": "source_constraint_preservation",
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Suite: id-family (NEW)
+# ---------------------------------------------------------------------------
+
+def run_id_family(fixture: dict) -> tuple[bool, str]:
+    """Assert tools reject mixing pipeline ID families.
+
+    inputs.scenario:
+      mixed_receipt_sources         - legacy art_ in receipt while turn has native src_
+      artifact_write_unknown_parent - unknown parent ID fails artifact_write
+      receipt_unknown_source        - receipt_record fails when source_ids is fabricated
+      out_id_in_source_slot         - placing out_ in source_ids triggers parent mismatch
+    """
+    plugin_path = _plugin_path("botji-core")
+    with tempfile.TemporaryDirectory(prefix="botji-h-idfam-") as tmp:
+        home = Path(tmp)
+        os.environ["HERMES_HOME"] = str(home)
+        os.environ["BOTJI_CORE_ROOT"] = str(home / "botji-core")
+        os.environ["BOTJI_ARTIFACT_ROOT"] = str(home / "artifacts")
+        ctx = _FakeContext()
+        module = _load_module(plugin_path, f"botji_idfam_h_{uuid.uuid4().hex[:8]}")
+        module.register(ctx)
+
+        inputs = fixture.get("inputs") or {}
+        expected = fixture.get("expected") or {}
+        scenario = inputs.get("scenario")
+
+        incoming = home / "incoming"
+        incoming.mkdir(parents=True, exist_ok=True)
+        src_file = incoming / "src.txt"
+        src_file.write_text("src-bytes", encoding="utf-8")
+        out_file = incoming / "out.txt"
+        out_file.write_text("out-bytes", encoding="utf-8")
+
+        if scenario == "mixed_receipt_sources":
+            # Build a full legacy source+output pair in the legacy index so the
+            # output_parent_mismatch check passes (output parents IS art_legacy)
+            # and the mixed_pipeline_source check is the one that fires.
+            legacy_src_path = home / "artifacts" / "sources" / "art_legacy" / "src.txt"
+            legacy_out_path = home / "artifacts" / "outputs" / "art_legacy_out" / "out.txt"
+            legacy_src_path.parent.mkdir(parents=True, exist_ok=True)
+            legacy_out_path.parent.mkdir(parents=True, exist_ok=True)
+            legacy_src_path.write_text("legacy-src", encoding="utf-8")
+            legacy_out_path.write_text("legacy-out", encoding="utf-8")
+            idx = home / "artifacts" / "index" / "artifacts.jsonl"
+            idx.parent.mkdir(parents=True, exist_ok=True)
+            idx.write_text(
+                json.dumps({
+                    "artifact_id": "art_legacy", "role": "source",
+                    "path": str(legacy_src_path), "parents": [],
+                    "created_at": "2026-05-20T00:00:00Z",
+                }) + "\n" +
+                json.dumps({
+                    "artifact_id": "art_legacy_out", "role": "output",
+                    "path": str(legacy_out_path), "parents": ["art_legacy"],
+                    "created_at": "2026-05-20T00:01:00Z",
+                }) + "\n",
+                encoding="utf-8",
+            )
+
+            # Native src_ registration on the same turn flips the substrate
+            # into "current turn has native sources" mode.
+            native = _call_tool(ctx, "source_register", {
+                "path": str(src_file), "current_turn_id": "turn-mixed",
+                "role": "source", "declared_type": "text",
+            })
+            if not native.get("success") or not native["source"]["artifact_id"].startswith("src_"):
+                return False, f"native source registration failed: {native}"
+
+            # Receipt cites the legacy art_ source while turn has a native src_.
+            # Output is the legacy out_ (parents = [art_legacy]) so parent check passes.
+            receipt = _call_tool(ctx, "receipt_record", {
+                "source_ids": ["art_legacy"], "output_id": "art_legacy_out",
+                "route": "legacy-while-native-present", "status": "pass",
+                "current_turn_id": "turn-mixed",
+            })
+            gate = _call_tool(ctx, "delivery_gate", {"receipt_id": receipt["receipt_id"]})
+            return _check_expected(gate, expected)
+
+        if scenario == "artifact_write_unknown_parent":
+            bogus = inputs.get("parent_id", "src_does_not_exist")
+            written = _call_tool(ctx, "artifact_write", {
+                "path": str(out_file), "parents": [bogus],
+                "current_turn_id": "turn-bogus", "claim_level": "draft",
+            })
+            if written.get("success"):
+                return False, f"expected failure, got success: {written}"
+            needle = expected.get("error_contains")
+            if needle and needle not in str(written.get("error") or ""):
+                return False, f"error missing {needle!r}: {written.get('error')!r}"
+            return True, "ok"
+
+        if scenario == "receipt_unknown_source":
+            bogus = inputs.get("source_id", "out_pretending_to_be_source")
+            native = _call_tool(ctx, "source_register", {
+                "path": str(src_file), "current_turn_id": "turn-x",
+                "role": "source", "declared_type": "text",
+            })
+            written = _call_tool(ctx, "artifact_write", {
+                "path": str(out_file), "parents": [native["source"]["artifact_id"]],
+                "current_turn_id": "turn-x", "claim_level": "draft",
+            })
+            receipt = _call_tool(ctx, "receipt_record", {
+                "source_ids": [bogus], "output_id": written["artifact"]["artifact_id"],
+                "route": "bogus", "status": "pass",
+                "current_turn_id": "turn-x",
+            })
+            if receipt.get("success"):
+                return False, f"expected receipt failure, got: {receipt}"
+            needle = expected.get("error_contains")
+            if needle and needle not in str(receipt.get("error") or ""):
+                return False, f"error missing {needle!r}: {receipt.get('error')!r}"
+            return True, "ok"
+
+        if scenario == "out_id_in_source_slot":
+            native = _call_tool(ctx, "source_register", {
+                "path": str(src_file), "current_turn_id": "turn-y",
+                "role": "source", "declared_type": "text",
+            })
+            written = _call_tool(ctx, "artifact_write", {
+                "path": str(out_file), "parents": [native["source"]["artifact_id"]],
+                "current_turn_id": "turn-y", "claim_level": "draft",
+            })
+            out_id = written["artifact"]["artifact_id"]
+            receipt = _call_tool(ctx, "receipt_record", {
+                "source_ids": [out_id], "output_id": out_id,
+                "route": "swapped", "status": "pass",
+                "current_turn_id": "turn-y",
+            })
+            gate = _call_tool(ctx, "delivery_gate", {"receipt_id": receipt["receipt_id"]})
+            return _check_expected(gate, expected)
+
+        return False, f"unknown scenario: {scenario!r}"
+
+
+# ---------------------------------------------------------------------------
+# Orchestration
+# ---------------------------------------------------------------------------
+
+SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
+    "core": run_core,
+    "gate": run_gate,
+    "allowlist": run_allowlist,
+    "contract": run_contract,
+    "fidelity-guard": run_fidelity_guard,
+    "id-family": run_id_family,
+}
+
+SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family"]
+
+
+def _fixtures_root() -> Path:
+    override = os.environ.get("BOTJI_HARNESS_FIXTURES")
+    if override and Path(override).is_dir():
+        return Path(override)
+    home_root = Path(os.environ.get("HERMES_HOME", "/opt/data")) / "tests" / "fixtures"
+    if home_root.is_dir():
+        return home_root
+    return Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+
+
+def _load_fixtures(suite: str) -> list[tuple[Path, dict]]:
+    root = _fixtures_root() / suite
+    if not root.is_dir():
+        return []
+    fixtures: list[tuple[Path, dict]] = []
+    for path in sorted(root.glob("*.yaml")):
+        with path.open("r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+        if not isinstance(data, dict):
+            raise ValueError(f"fixture {path} is not a mapping")
+        data.setdefault("id", path.stem)
+        fixtures.append((path, data))
+    return fixtures
+
+
+def _run_suite(suite: str) -> tuple[int, int]:
+    handler = SUITES[suite]
+    fixtures = _load_fixtures(suite)
+    if not fixtures:
+        print(f"[{suite}] no fixtures found", file=sys.stderr)
+        return 0, 0
+    passed = 0
+    for path, fixture in fixtures:
+        fid = fixture.get("id") or path.stem
+        try:
+            ok, detail = handler(fixture)
+        except Exception as exc:  # noqa: BLE001 — surface unexpected errors
+            ok, detail = False, f"{type(exc).__name__}: {exc}"
+        print(f"  [{suite}] {fid}: {'pass' if ok else 'FAIL'} ({detail})")
+        if ok:
+            passed += 1
+    return passed, len(fixtures)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Unified Botji deterministic harness runner")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    run_cmd = sub.add_parser("run", help="Run one or all suites")
+    run_cmd.add_argument("--suite", required=True, help="suite name or 'all'")
+    args = parser.parse_args(argv)
+
+    if args.suite == "all":
+        suites = SUITE_ORDER
+    elif args.suite in SUITES:
+        suites = [args.suite]
+    else:
+        print(f"unknown suite: {args.suite}; expected one of: {', '.join(SUITE_ORDER + ['all'])}", file=sys.stderr)
+        return 2
+
+    total_pass = 0
+    total_run = 0
+    failures: list[str] = []
+    for suite in suites:
+        print(f"=== suite: {suite} ===")
+        p, r = _run_suite(suite)
+        total_pass += p
+        total_run += r
+        if p != r:
+            failures.append(f"{suite}: {r - p}/{r} failed")
+
+    print(json.dumps({
+        "success": not failures,
+        "suites": suites,
+        "fixtures_passed": total_pass,
+        "fixtures_total": total_run,
+        "failures": failures,
+    }, indent=2))
+    return 0 if not failures else 1
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"success": False, "error": str(exc), "error_type": type(exc).__name__}, indent=2), file=sys.stderr)
+        raise SystemExit(2)

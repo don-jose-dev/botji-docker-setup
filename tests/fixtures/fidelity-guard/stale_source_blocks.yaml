@@ -1,0 +1,12 @@
+id: stale_source_blocks
+description: when the registry source bytes do not match the current-turn image bytes, the guard rewrites the review to blocked.
+inputs:
+  guard: current_turn
+  current_image_bytes: current-image
+  registry_bytes: stale-image
+  artifact_id: art_stale
+  session_id: session_a
+expected:
+  changed: true
+  delivery_gate: blocked
+  primary_blocker_prefix: "Current-turn source mismatch"

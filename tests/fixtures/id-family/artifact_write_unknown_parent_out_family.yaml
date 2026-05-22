@@ -1,0 +1,7 @@
+id: artifact_write_unknown_parent_out_family
+description: artifact_write rejects an out_* parent ID just like a fake src_* — outputs cannot stand in for sources.
+inputs:
+  scenario: artifact_write_unknown_parent
+  parent_id: out_pretending_to_be_source
+expected:
+  error_contains: "unknown parent"

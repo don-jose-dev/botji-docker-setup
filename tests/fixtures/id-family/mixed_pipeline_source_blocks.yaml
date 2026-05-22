@@ -1,0 +1,11 @@
+id: mixed_pipeline_source_blocks
+description: |
+  Once the current turn has a native src_* source registered, a receipt that
+  cites a legacy art_* source on that same turn must be blocked. This catches
+  the 2026-05-20 production failure where the model re-uploaded the same
+  bytes but kept its old art_ ID.
+inputs:
+  scenario: mixed_receipt_sources
+expected:
+  delivery_gate: blocked
+  primary_blocker: mixed_pipeline_source

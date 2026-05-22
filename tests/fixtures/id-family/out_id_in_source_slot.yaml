@@ -1,0 +1,7 @@
+id: out_id_in_source_slot
+description: placing an out_* ID into receipt source_ids — even one that exists in the registry — must fail the gate because the output is not its own parent.
+inputs:
+  scenario: out_id_in_source_slot
+expected:
+  delivery_gate: blocked
+  primary_blocker: output_parent_mismatch

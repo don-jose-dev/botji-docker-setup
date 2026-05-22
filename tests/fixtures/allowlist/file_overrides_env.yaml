@@ -1,0 +1,13 @@
+id: file_overrides_env
+description: an allowed_users.json file takes precedence over the env var and hot-reloads.
+inputs:
+  env_allowed: "111,333"
+  initial_file:
+    users:
+      - "222"
+expected:
+  allowed:
+    - "222"
+  rejected:
+    - "111"
+    - "333"

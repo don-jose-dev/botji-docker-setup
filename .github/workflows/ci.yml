@@ -81,6 +81,15 @@ jobs:
             python -m py_compile "$f" 2>/dev/null || echo "  skip $f (non-Python)"
           done
 
+      - name: Run botji-harness (deterministic test suites)
+        # Replaces the per-binary smoke calls (botji-core-harness,
+        # botji-gate-harness, botji-allowlist-harness,
+        # botji-fidelity-guard-harness) plus a new id-family suite.
+        # Fixtures live under tests/fixtures/<suite>/.
+        run: |
+          python -m pip install --quiet pyyaml
+          python runtime/bin/botji-harness run --suite all
+
   skill-eval:
     name: Skill-interaction evals (deterministic)
     # workflow_dispatch only — fixtures use mock_trace for now, not real agent

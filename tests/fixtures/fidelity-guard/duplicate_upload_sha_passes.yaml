@@ -1,0 +1,11 @@
+id: duplicate_upload_sha_passes
+description: same bytes attached twice (re-upload) — SHA matches the registry entry, guard leaves the clear review alone.
+inputs:
+  guard: current_turn
+  current_image_bytes: same-image
+  registry_bytes: same-image
+  artifact_id: art_duplicate
+  session_id: session_b
+expected:
+  changed: false
+  delivery_gate: clear

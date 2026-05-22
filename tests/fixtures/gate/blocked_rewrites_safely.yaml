@@ -1,0 +1,20 @@
+id: blocked_rewrites_safely
+description: a "blocked" verdict replaces the model output and surfaces the primary blocker; sensitive original text must not leak.
+inputs:
+  verdicts:
+    - session_id: blocked
+      payload:
+        delivery_gate: blocked
+        axes:
+          content_fidelity: false
+          groundedness: true
+        primary_blocker: layout drift
+        retry_guidance: retry with source layout locked
+  calls:
+    - session_id: blocked
+      llm_output: do not leak this final answer
+expected:
+  outputs:
+    - session_id: blocked
+      contains: layout drift
+      not_contains: do not leak

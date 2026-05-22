@@ -1,0 +1,37 @@
+id: legacy_artifact_compat
+description: legacy art_* IDs from the older artifacts plugin remain valid parents/sources.
+inputs:
+  files:
+    output: legacy-output
+  legacy_artifacts:
+    - artifact_id: art_legacy_src
+      role: source
+      content: legacy-source
+    - artifact_id: art_legacy_out
+      role: output
+      parents:
+        - art_legacy_src
+      content: legacy-output
+  steps:
+    - tool: artifact_write
+      args:
+        path: $path:output
+        parents:
+          - art_legacy_src
+        current_turn_id: turn-legacy
+        claim_level: reviewed
+      save_as: out
+    - tool: receipt_record
+      args:
+        source_ids:
+          - art_legacy_src
+        output_id: art_legacy_out
+        route: legacy-compat
+        status: pass
+        current_turn_id: turn-legacy
+      save_as: rcpt
+    - tool: delivery_gate
+      args:
+        receipt_id: $rcpt.receipt_id
+expected:
+  delivery_gate: clear

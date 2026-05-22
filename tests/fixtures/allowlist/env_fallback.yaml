@@ -1,0 +1,10 @@
+id: env_fallback
+description: when no JSON file exists, the plugin falls back to TELEGRAM_ALLOWED_USERS for bootstrap.
+inputs:
+  env_allowed: "111,333"
+expected:
+  allowed:
+    - "111"
+    - "333"
+  rejected:
+    - "222"

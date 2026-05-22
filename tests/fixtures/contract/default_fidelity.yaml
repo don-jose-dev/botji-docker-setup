@@ -1,0 +1,16 @@
+id: default_fidelity
+description: default Prompt v1 contract has required keys, fidelity truth_mode, and forbids prompt_only_generation.
+inputs:
+  truth_mode: fidelity
+expected:
+  required_keys:
+    - contract_id
+    - version
+    - truth_mode
+    - artifact_lineage
+    - artifact_fidelity
+    - allowed_operations
+    - output_expectation
+  truth_mode: fidelity
+  contract_id_prefix: "prompt-"
+  forbidden_routes_contains: prompt_only_generation

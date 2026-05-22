@@ -48,17 +48,20 @@ docker exec "$CONTAINER_NAME" botji-runtime-harness \
   --require-token \
   --require-allowlist
 
-echo "=== postdeploy: allowlist harness ==="
-docker exec "$CONTAINER_NAME" botji-allowlist-harness
-
-echo "=== postdeploy: gate harness ==="
-docker exec "$CONTAINER_NAME" botji-gate-harness
-
-echo "=== postdeploy: core substrate harness ==="
-docker exec "$CONTAINER_NAME" botji-core-harness
-
-echo "=== postdeploy: fidelity guard harness ==="
-docker exec "$CONTAINER_NAME" botji-fidelity-guard-harness
+echo "=== postdeploy: consolidated harness (core+gate+allowlist+contract+fidelity-guard+id-family) ==="
+# Ship the deterministic fixtures into the container's /tmp so the runner can
+# discover them via BOTJI_HARNESS_FIXTURES — Dockerfile/deploy do not seed them,
+# and we deliberately keep the harness binary stateless of fixture data.
+FIXTURES_SRC="$(cd "$(dirname "$0")/.." && pwd)/tests/fixtures"
+if [ -d "$FIXTURES_SRC" ]; then
+  docker exec "$CONTAINER_NAME" rm -rf /tmp/botji-harness-fixtures
+  docker cp "$FIXTURES_SRC" "$CONTAINER_NAME":/tmp/botji-harness-fixtures
+  docker exec -e BOTJI_HARNESS_FIXTURES=/tmp/botji-harness-fixtures \
+    "$CONTAINER_NAME" botji-harness run --suite all
+else
+  echo "    WARNING: $FIXTURES_SRC missing — running without fixtures"
+  docker exec "$CONTAINER_NAME" botji-harness run --suite all
+fi
 
 echo "=== postdeploy: deterministic artifact mini-harness ==="
 docker exec "$CONTAINER_NAME" botji-artifact-harness \
