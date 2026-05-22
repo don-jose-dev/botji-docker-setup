@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from _registry import _load_artifact
+from _registry import _load_artifact, _load_records
 from _utils import _hermes_home, _sha256
 
 
@@ -81,10 +81,49 @@ def _maybe_sha(path: str) -> str | None:
     return None
 
 
+def _record_for_attachment(attachment_path: str, attachment_sha: str | None) -> dict[str, Any] | None:
+    """Find the most recent legacy registry record for an attachment path or sha.
+
+    Walks the index newest-first so a re-uploaded file resolves to its most
+    recent registration. Returns None when the attachment is not yet registered.
+    """
+    for record in reversed(_load_records()):
+        if record.get("original_path") == attachment_path or record.get("path") == attachment_path:
+            return record
+        if attachment_sha and record.get("sha256") == attachment_sha:
+            return record
+    return None
+
+
+def _turns_disagree(source: dict[str, Any], attachment_record: dict[str, Any] | None) -> bool:
+    """Detect when source and attachment are tagged with different turns.
+
+    Both sides must carry a non-empty current_turn_id for disagreement to be
+    actionable; a missing turn on either side is treated as "indeterminate" and
+    falls back to the historical SHA/path behaviour to keep pre-fix records usable.
+    """
+    if attachment_record is None:
+        return False
+    src_turn = str(source.get("current_turn_id") or "").strip()
+    att_turn = str(attachment_record.get("current_turn_id") or "").strip()
+    if not src_turn or not att_turn:
+        return False
+    return src_turn != att_turn
+
+
 def _source_matches_attachment(source: dict[str, Any], attachment_path: str, attachment_sha: str | None) -> bool:
     source_paths = [str(source.get("original_path") or ""), str(source.get("path") or "")]
     if attachment_path in source_paths:
         return True
+
+    # SHA fallback handles re-uploads of identical bytes under new image-cache
+    # paths. Reject the fallback when source and attachment are tagged with
+    # different turns — same bytes from a stale turn must not silently reuse
+    # the prior turn's lineage record (see commit 1bfcd89 backstop).
+    attachment_record = _record_for_attachment(attachment_path, attachment_sha)
+    if _turns_disagree(source, attachment_record):
+        return False
+
     source_sha = str(source.get("sha256") or "")
     if attachment_sha and source_sha == attachment_sha:
         return True
