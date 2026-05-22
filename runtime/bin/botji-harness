@@ -8,9 +8,11 @@ Replaces five separate scripts:
   - botji-contract-new           -> run --suite contract
   - botji-fidelity-guard-harness -> run --suite fidelity-guard
 
-Plus two newer suites:
+Plus three newer suites:
   - run --suite id-family        -> rejects mixed art_*/src_*/out_* IDs
   - run --suite cron             -> validates cron/*.yaml seeds are well-formed
+  - run --suite render           -> validates kanban/workflows/*.yaml templates
+                                    and skill cross-references stay in sync
 
 Fixtures live in tests/fixtures/<suite>/*.yaml. Each fixture has:
   id:          stable identifier (filename stem if omitted)
@@ -782,7 +784,7 @@ def run_cron(fixture: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# Suite: delivery (NEW)
+# Suite: delivery — transform_llm_output enforcement on final reply text
 # ---------------------------------------------------------------------------
 
 def run_delivery(fixture: dict) -> tuple[bool, str]:
@@ -852,6 +854,89 @@ def run_delivery(fixture: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Suite: render — validate Kanban workflow templates + skill cross-references
+# ---------------------------------------------------------------------------
+
+def run_render(fixture: dict) -> tuple[bool, str]:
+    """Validate a Kanban workflow template seed under seed/hermes/kanban/workflows/.
+
+    The fixture points at `inputs.template_file` (path relative to repo root).
+    Asserts the yaml parses as a mapping with required fields (id, steps), each
+    step has a unique `key`, the declared `applies_when` shape is sane, and any
+    `expected.referencing_skills` actually mention the template id and the
+    step keys named under `expected.must_reference_steps`. This catches skill
+    prose silently drifting away from the template — they share a contract,
+    so they break together or not at all.
+    """
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+
+    rel = inputs.get("template_file")
+    if not rel:
+        return False, "inputs.template_file is required"
+    repo_root = Path(__file__).resolve().parents[2]
+    tpath = repo_root / rel
+    if not tpath.is_file():
+        return False, f"workflow template not found: {tpath}"
+
+    try:
+        with tpath.open("r", encoding="utf-8") as fh:
+            spec = yaml.safe_load(fh)
+    except yaml.YAMLError as exc:
+        return False, f"yaml parse error: {exc}"
+    if not isinstance(spec, dict):
+        return False, f"template is not a mapping: got {type(spec).__name__}"
+
+    for key in ("id", "steps"):
+        if key not in spec:
+            return False, f"missing required field: {key!r}"
+    steps = spec.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return False, "steps must be a non-empty list"
+    step_keys: list[str] = []
+    for idx, step in enumerate(steps):
+        if not isinstance(step, dict):
+            return False, f"step[{idx}] is not a mapping"
+        skey = step.get("key")
+        if not isinstance(skey, str) or not skey.strip():
+            return False, f"step[{idx}] missing 'key'"
+        if skey in step_keys:
+            return False, f"duplicate step key: {skey!r}"
+        step_keys.append(skey)
+
+    template_id = spec["id"]
+    exp_id = expected.get("id")
+    if exp_id is not None and template_id != exp_id:
+        return False, f"id {template_id!r} != expected {exp_id!r}"
+    exp_steps = expected.get("step_keys")
+    if exp_steps is not None and step_keys != list(exp_steps):
+        return False, f"step keys {step_keys!r} != expected {list(exp_steps)!r}"
+
+    # Cross-reference check: each named skill file mentions the template
+    # (by filename or id). Catches silent drift between SKILL.md prose and
+    # the template — see docs/OPERATIONS.md "Kanban-backed render retry".
+    # `referencing_skills_with_steps` is the stricter list — those files
+    # must also name every step key under `must_reference_steps`.
+    must_ref_steps = expected.get("must_reference_steps") or []
+    for skill_rel in expected.get("referencing_skills") or []:
+        spath = repo_root / skill_rel
+        if not spath.is_file():
+            return False, f"referencing skill not found: {spath}"
+        body = spath.read_text(encoding="utf-8")
+        if "render_retry.yaml" not in body and template_id not in body:
+            return False, f"{skill_rel} does not reference template id or filename"
+    for skill_rel in expected.get("referencing_skills_with_steps") or []:
+        spath = repo_root / skill_rel
+        if not spath.is_file():
+            return False, f"referencing skill not found: {spath}"
+        body = spath.read_text(encoding="utf-8")
+        for sk in must_ref_steps:
+            if sk not in body:
+                return False, f"{skill_rel} missing step reference: {sk}"
+    return True, "ok"
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -864,9 +949,10 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "id-family": run_id_family,
     "cron": run_cron,
     "delivery": run_delivery,
+    "render": run_render,
 }
 
-SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family", "cron", "delivery"]
+SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family", "cron", "delivery", "render"]
 
 
 def _fixtures_root() -> Path:
