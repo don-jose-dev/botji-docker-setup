@@ -1,0 +1,10 @@
+id: pre_hook_happy_path
+description: |
+  Baseline that proves the hook does not over-block. A vanilla call with a
+  single src_* id and no mixing must pass all three predicates and return
+  None (allow). This is the regression guard for fail-closed behavior in
+  the hook itself.
+inputs:
+  scenario: pre_hook_happy_path
+expected:
+  pre_hook: allow

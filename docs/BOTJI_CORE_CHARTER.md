@@ -27,6 +27,7 @@ small pure utilities they need.
 | `artifact_write` — write an `out_*` artifact from a path | mechanical I/O |
 | `receipt_record` — persist a `rcpt_*` receipt record | mechanical I/O |
 | `delivery_gate` — pass/warn/block on **mechanical** checks on structured data | parent existence, blocked receipt status, missing required fields, safe output paths, current-turn lineage on records that already carry `current_turn_id` |
+| `pre_tool_call` hook (`hooks/stale_id_block.py`) — block bad tool calls before dispatch on three orthogonal mechanical predicates: stale `art_*` turn, mixed `art_*`/`src_*`/`out_*`/`rcpt_*` ID family, and over-budget `artifact_transform(edit_image)` per turn | structural checks on already-typed args — no vision, no classification, no prompt construction. The cap and override flags are forwarded from skills, not inferred. |
 | Path safety helpers (`_resolve_allowed_path`, secret-path detection) | shared substrate, security-critical |
 | Content-addressed hashing, atomic file writes, ID allocation | pure utilities |
 | Index I/O (jsonl read/append, atomic replace) | pure utilities |
@@ -60,11 +61,23 @@ reasoning, the prompt boundaries, and the user-visible failure mode.
 
 ## Current cap
 
-<!-- BOTJI_CORE_LOC_CAP: 650 -->
+<!-- BOTJI_CORE_LOC_CAP: 720 -->
 
 The CI step in `.github/workflows/ci.yml` parses the value from the HTML
 comment above. The cap lives here, not in CI, so raising it always requires a
 visible change to this file.
+
+### Cap history
+
+- **650 → 720** (PR T2, `feat/hooks-stale-id-and-over-budget`): added the
+  `pre_tool_call` hook (`hooks/stale_id_block.py`, ~125 LOC + 6-line
+  `hooks/__init__.py`) that enforces three mechanical safety rules at the
+  substrate layer instead of at the skill layer (the canonical "skills
+  guide; hooks enforce" boundary from the botji-hermes-strategic-position
+  memory). The hook reads already-typed args and a single legacy index
+  lookup — no vision, no classification, no prompt construction. It is the
+  substrate equivalent of `delivery_gate`'s parent-existence check, just at
+  pre-dispatch time instead of post-receipt.
 
 ## Raising the LOC cap
 

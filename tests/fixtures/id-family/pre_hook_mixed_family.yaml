@@ -1,0 +1,12 @@
+id: pre_hook_mixed_family
+description: |
+  pre_tool_call hook rejects a single tool call carrying BOTH a legacy art_*
+  ID AND a Hermes-native src_* ID. Today the per-tool check in
+  botji-artifacts/_handlers.py::_reject_hermes_native_ids only catches the
+  inverse direction (native id in legacy tool). The hook adds a cross-cutting
+  layer; per the charter, both should coexist as defense in depth.
+inputs:
+  scenario: pre_hook_mixed_family
+expected:
+  pre_hook: block
+  message_contains: "Mixed-ID-family"

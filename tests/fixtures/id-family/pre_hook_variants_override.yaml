@@ -1,0 +1,11 @@
+id: pre_hook_variants_override
+description: |
+  Skills must be able to bypass the transform budget when the user
+  explicitly asks for N variants. The hook honours user_authorized_variants
+  (int >= 1) and user_authorized_retry (true) as skill-forwarded overrides;
+  it never infers authorization from the brief text. Without this exception,
+  a multi-variant request would block at the third call.
+inputs:
+  scenario: pre_hook_variants_override
+expected:
+  pre_hook: allow
