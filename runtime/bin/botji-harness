@@ -323,6 +323,77 @@ def run_allowlist(fixture: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Suite: rate-limit
+# ---------------------------------------------------------------------------
+
+def run_rate_limit(fixture: dict) -> tuple[bool, str]:
+    """Exercise botji-rate-limit's sliding-window throttle.
+
+    inputs.per_minute:                  throttle threshold (default 30)
+    inputs.per_hour:                    throttle threshold (default 200)
+    inputs.user_id:                     Telegram sender id used for each call
+    inputs.burst_count:                 number of sequential calls
+    inputs.different_user_id:           optional — sent after the burst to confirm isolation
+    expected.allowed_count:             how many of the burst should be allowed
+    expected.rejected_at_index:         zero-indexed position of first rejection (optional)
+    expected.rejection_reason_contains: substring of the skip reason (optional)
+    expected.different_user_allowed:    bool — must different_user_id pass after burst?
+    """
+    plugin_path = _plugin_path("botji-rate-limit")
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+
+    os.environ["BOTJI_RATE_LIMIT_PER_MIN"] = str(inputs.get("per_minute", 30))
+    os.environ["BOTJI_RATE_LIMIT_PER_HOUR"] = str(inputs.get("per_hour", 200))
+
+    module = _load_module(plugin_path, f"botji_rate_h_{uuid.uuid4().hex[:8]}")
+    # Reset module-level limiter so each fixture builds a fresh limiter from
+    # the env vars set above.
+    if hasattr(module, "_limiter"):
+        module._limiter = None
+
+    user_id = str(inputs.get("user_id", "12345"))
+    burst = int(inputs.get("burst_count", 1))
+
+    allowed = 0
+    first_rejection_index: int | None = None
+    first_rejection_reason: str | None = None
+    for i in range(burst):
+        ev = SimpleNamespace(platform="telegram", sender_id=user_id, sender_name=f"u{user_id}")
+        v = module._pre_gateway_dispatch(ev)
+        if v is None:
+            allowed += 1
+        else:
+            if first_rejection_index is None:
+                first_rejection_index = i
+                first_rejection_reason = v.get("reason") if isinstance(v, dict) else None
+
+    want_allowed = expected.get("allowed_count")
+    if want_allowed is not None and allowed != want_allowed:
+        return False, f"allowed_count mismatch: got {allowed}, want {want_allowed}"
+
+    want_index = expected.get("rejected_at_index")
+    if want_index is not None and first_rejection_index != want_index:
+        return False, f"rejected_at_index mismatch: got {first_rejection_index}, want {want_index}"
+
+    want_reason = expected.get("rejection_reason_contains")
+    if want_reason and (first_rejection_reason is None or want_reason not in first_rejection_reason):
+        return False, f"reason did not contain {want_reason!r}: {first_rejection_reason!r}"
+
+    other_id = inputs.get("different_user_id")
+    if other_id is not None:
+        ev = SimpleNamespace(platform="telegram", sender_id=str(other_id), sender_name=f"u{other_id}")
+        v = module._pre_gateway_dispatch(ev)
+        want_other = expected.get("different_user_allowed")
+        if want_other is True and v is not None:
+            return False, f"different_user {other_id} should pass, got {v!r}"
+        if want_other is False and v is None:
+            return False, f"different_user {other_id} should be blocked, got pass"
+
+    return True, "ok"
+
+
+# ---------------------------------------------------------------------------
 # Suite: contract
 # ---------------------------------------------------------------------------
 
@@ -1138,6 +1209,7 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "core": run_core,
     "gate": run_gate,
     "allowlist": run_allowlist,
+    "rate-limit": run_rate_limit,
     "contract": run_contract,
     "fidelity-guard": run_fidelity_guard,
     "id-family": run_id_family,
@@ -1148,7 +1220,7 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "manifest": run_manifest,
 }
 
-SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family", "cron", "delivery", "audit", "render", "manifest"]
+SUITE_ORDER = ["core", "gate", "allowlist", "rate-limit", "contract", "fidelity-guard", "id-family", "cron", "delivery", "audit", "render", "manifest"]
 
 
 def _fixtures_root() -> Path:

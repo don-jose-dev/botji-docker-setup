@@ -1,0 +1,8 @@
+name: botji-rate-limit
+version: 1.0.0
+description: "Per-user Telegram message throttle via pre_gateway_dispatch. In-memory sliding window. Fail-open."
+author: Botji
+kind: standalone
+requires_env: []
+provides_hooks:
+  - pre_gateway_dispatch
