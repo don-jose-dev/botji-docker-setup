@@ -18,6 +18,23 @@ MAX_SESSION_TOOL_TURNS="${BOTJI_MAX_SESSION_TOOL_TURNS:-14}"
 
 echo "=== postdeploy: container health ==="
 docker inspect "$CONTAINER_NAME" --format='{{.Name}} started={{.State.StartedAt}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'
+STARTED_AT="$(docker inspect "$CONTAINER_NAME" --format='{{.State.StartedAt}}')"
+
+# Cap the budget-check window to the container's current uptime. Without this
+# cap, a fresh deploy is judged by traffic from BEFORE the deploy — including
+# the regressions the deploy was meant to fix — and rolls back its own success.
+# Seen in production 2026-05-22: a pre-deploy session that ran 5 transforms
+# (the exact pattern the canonical retry-cap PR was fixing) rolled back the
+# very deploy that shipped that fix.
+if STARTED_EPOCH="$(date -d "$STARTED_AT" +%s 2>/dev/null)"; then
+  NOW_EPOCH="$(date +%s)"
+  RESTART_AGE_MIN=$(( (NOW_EPOCH - STARTED_EPOCH + 59) / 60 ))
+  [ "$RESTART_AGE_MIN" -lt 1 ] && RESTART_AGE_MIN=1
+  if [ "$RESTART_AGE_MIN" -lt "$SINCE_MINUTES" ]; then
+    echo "    budget window scoped to container age: ${RESTART_AGE_MIN}m (default ${SINCE_MINUTES}m)"
+    SINCE_MINUTES="$RESTART_AGE_MIN"
+  fi
+fi
 
 echo "=== postdeploy: runtime tenant harness ==="
 docker exec "$CONTAINER_NAME" botji-runtime-harness \
