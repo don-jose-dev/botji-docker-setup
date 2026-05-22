@@ -22,6 +22,40 @@
 # WORKSPACE_DIR. Reads from main: IMAGE_REF, PREVIOUS_GIT_HEAD,
 # PREVIOUS_IMAGE, BOTJI_ADDITIONAL_TENANTS.
 
+# Idempotently sync a minimal set of platform-default agent fields into an
+# additional tenant's config.yaml. Most fields in a tenant's config (telegram
+# token, allowlist, codex auth) are tenant-specific and intentionally diverge;
+# this function only touches fields that MUST match the seed to keep the
+# runtime-tenant harness green across all tenants.
+#
+# Why surgical sed instead of a full YAML rewrite: pyyaml drops comments and
+# reorders keys; ruamel.yaml isn't guaranteed on the VPS. Surgical inserts
+# preserve the operator's tenant-specific edits and the explanatory comments
+# below each field.
+#
+# Currently-synced fields:
+#   agent.disabled_toolsets: [skills] — Botji manages skills at the prompt
+#     layer, so the Hermes "skills" toolset must be disabled. Added 2026-05-22
+#     after a degain smoke caught the drift: botji had it, degain didn't.
+sync_tenant_platform_config() {
+  local config_path="$1"
+
+  if [ ! -f "$config_path" ]; then
+    echo "    [tenant config] $config_path missing — skipping platform sync"
+    return 0
+  fi
+
+  if ! grep -q "^  disabled_toolsets:" "$config_path"; then
+    if grep -q "^  reasoning_effort:" "$config_path"; then
+      sed -i "/^  reasoning_effort:/a\\  disabled_toolsets:" "$config_path"
+      sed -i "/^  disabled_toolsets:$/a\\  - skills" "$config_path"
+      echo "    [tenant config] added agent.disabled_toolsets: [skills]"
+    else
+      echo "    [tenant config] WARNING: no reasoning_effort anchor; cannot add disabled_toolsets safely — fix manually"
+    fi
+  fi
+}
+
 sync_code_components() {
   # Code artefacts — always reseed from the checked-out release. The glob-based
   # approach means new plugins/skills ship automatically without editing this script.
@@ -232,6 +266,12 @@ deploy_additional_tenant() {
   HERMES_RUNTIME_UID="$saved_uid"
   HERMES_RUNTIME_GID="$saved_gid"
   echo "    code components synced (plugins, skills, schemas)"
+
+  # Ensure platform-default agent fields stay in sync across tenants. Code
+  # sync above does not touch config.yaml (which is intentionally per-tenant
+  # for tokens/allowlist/codex auth); this surgical step handles only fields
+  # that MUST match the seed for the runtime-tenant harness to pass.
+  sync_tenant_platform_config "$tenant_data_abs/config.yaml"
 
   # Best-effort kanban schema migration on the additional tenant's kanban.db.
   migrate_kanban_db_for_tenant "$tenant_data_abs/kanban.db" "$tenant_uid" "$tenant_gid"
