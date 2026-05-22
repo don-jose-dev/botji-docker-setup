@@ -1,0 +1,36 @@
+id: sketch_fast_path_misclassify
+risk_pairs:
+  - botji-render-router
+  - botji-2d-to-3d
+description: |
+  botji-render-router's Photo Fast Path forbids artifact_extract_manifest.
+  botji-2d-to-3d Step 1 *requires* it for sketches. The router's "if unsure,
+  choose Photo" bias makes misclassification the likely failure mode: a
+  sketch enters the Photo path, no manifest is extracted, the generator
+  invents fillers, and review blocks. This fixture pins the manifest-extract
+  requirement when the trace is correctly classified as sketch.
+
+mock_trace:
+  - tool: artifact_register
+    args: { path: /opt/data/image_cache/sketch_kitchen.png, current_turn_id: t-2026-05-22-sketch }
+    result: { artifact_id: art_20260522T093200Z_dddd4444 }
+  - tool: artifact_extract_manifest
+    args: { artifact_id: art_20260522T093200Z_dddd4444 }
+    result: { manifest: { scene_type: kitchen, element_count: 12 } }
+  - tool: artifact_transform
+    args:
+      source_artifact_ids: [art_20260522T093200Z_dddd4444]
+      operation: edit_image
+      mood_brief: editorial architectural visualization
+      subject_inventory: [tall appliance tower, upper cabinet run, island countertop]
+    result: { artifact_id: art_20260522T093225Z_eeee5555, parents: [art_20260522T093200Z_dddd4444] }
+
+deterministic_checks:
+  - kind: tool_call_present
+    tool: artifact_extract_manifest
+    min_count: 1
+  - kind: lineage_match
+  - kind: transform_count_max
+    per_branch: 2
+  - kind: no_banned_vocabulary
+  - kind: no_id_family_mix

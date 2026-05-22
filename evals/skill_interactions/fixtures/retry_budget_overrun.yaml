@@ -1,0 +1,39 @@
+id: retry_budget_overrun
+risk_pairs:
+  - botji-render-router
+  - botji-2d-to-3d
+  - botji-codex-engineering
+description: |
+  Three different retry ceilings live in three skills (router: 2,
+  2d-to-3d: 3, codex-engineering: 3). Silent over-run on a sketch block is
+  the most likely failure. This fixture exercises the hard upper bound:
+  artifact_transform must not run more than twice in one branch regardless
+  of which skill the agent is currently reading from.
+
+mock_trace:
+  - tool: artifact_register
+    args: { path: /opt/data/image_cache/sketch.png, current_turn_id: t-2026-05-22-retry }
+    result: { artifact_id: art_20260522T093400Z_ffff6666 }
+  - tool: artifact_transform
+    args: { source_artifact_ids: [art_20260522T093400Z_ffff6666], operation: edit_image }
+    result: { artifact_id: art_20260522T093430Z_gggg7777, parents: [art_20260522T093400Z_ffff6666] }
+  - tool: artifact_review
+    args: { source_artifact_ids: [art_20260522T093400Z_ffff6666], output_artifact_id: art_20260522T093430Z_gggg7777 }
+    result: { verdict: block, delivery_gate: blocked, primary_blocker: Manifest alignment failed }
+  - tool: artifact_transform
+    args:
+      source_artifact_ids: [art_20260522T093400Z_ffff6666]
+      operation: edit_image
+      prior_blocker: Manifest alignment failed
+      retry_guidance: Regenerate with explicit element-count enforcement.
+    result: { artifact_id: art_20260522T093500Z_hhhh8888, parents: [art_20260522T093400Z_ffff6666] }
+
+deterministic_checks:
+  - kind: transform_count_max
+    per_branch: 2
+  - kind: lineage_match
+  - kind: tool_call_present
+    tool: artifact_review
+    min_count: 1
+  - kind: no_id_family_mix
+  - kind: no_banned_vocabulary

@@ -1,0 +1,35 @@
+id: parallel_stale_src
+risk_pairs:
+  - botji-parallel-render
+  - botji-source-current
+  - botji-render-router
+description: |
+  Compaction summaries can leave a stale art_* / src_* ID in context that
+  predates the current turn. A parallel-render branch with a reduced context
+  slice is the easiest place for that stale ID to leak through into a
+  source_artifact_ids field. This fixture proves the runner catches
+  no-id-family-mix and lineage_match violations on a synthetic trace.
+
+mock_trace:
+  - tool: artifact_register
+    args: { path: /opt/data/image_cache/img_a.jpg, current_turn_id: t-2026-05-22-make3d }
+    result: { artifact_id: art_20260522T093000Z_aaaa1111 }
+  - tool: artifact_register
+    args: { path: /opt/data/image_cache/img_b.jpg, current_turn_id: t-2026-05-22-make3d }
+    result: { artifact_id: art_20260522T093001Z_bbbb2222 }
+  - tool: artifact_transform
+    args:
+      source_artifact_ids: [art_20260522T093000Z_aaaa1111]
+      operation: edit_image
+      mood_brief: architectural interior render
+    result: { artifact_id: art_20260522T093015Z_cccc3333, parents: [art_20260522T093000Z_aaaa1111] }
+
+deterministic_checks:
+  - kind: tool_call_present
+    tool: artifact_register
+    min_count: 2
+  - kind: lineage_match
+  - kind: no_id_family_mix
+  - kind: transform_count_max
+    per_branch: 2
+  - kind: no_banned_vocabulary
