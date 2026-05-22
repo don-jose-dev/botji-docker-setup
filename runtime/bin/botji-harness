@@ -8,8 +8,9 @@ Replaces five separate scripts:
   - botji-contract-new           -> run --suite contract
   - botji-fidelity-guard-harness -> run --suite fidelity-guard
 
-Plus one new suite:
+Plus two newer suites:
   - run --suite id-family        -> rejects mixed art_*/src_*/out_* IDs
+  - run --suite cron             -> validates cron/*.yaml seeds are well-formed
 
 Fixtures live in tests/fixtures/<suite>/*.yaml. Each fixture has:
   id:          stable identifier (filename stem if omitted)
@@ -725,6 +726,62 @@ def run_id_family(fixture: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Suite: cron — validate cron yaml seeds in cron/*.yaml
+# ---------------------------------------------------------------------------
+
+def run_cron(fixture: dict) -> tuple[bool, str]:
+    """Validate a cron yaml seed at inputs.cron_file (path relative to repo root).
+
+    Asserts the yaml is a mapping with required create_job fields (name,
+    schedule, prompt — mirroring hermes-agent/cron/jobs.py), the schedule
+    is a non-empty string, and when no_agent is set the referenced script
+    exists under cron/scripts/. `expected.{no_agent,name,schedule,script}`
+    are asserted exactly when provided.
+    """
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+
+    rel = inputs.get("cron_file")
+    if not rel:
+        return False, "inputs.cron_file is required"
+    repo_root = Path(__file__).resolve().parents[2]
+    cron_path = repo_root / rel
+    if not cron_path.is_file():
+        return False, f"cron yaml not found: {cron_path}"
+
+    try:
+        with cron_path.open("r", encoding="utf-8") as fh:
+            spec = yaml.safe_load(fh)
+    except yaml.YAMLError as exc:
+        return False, f"yaml parse error: {exc}"
+    if not isinstance(spec, dict):
+        return False, f"cron yaml is not a mapping: got {type(spec).__name__}"
+
+    for key in ("name", "schedule", "prompt"):
+        if key not in spec:
+            return False, f"missing required field: {key!r}"
+    if not isinstance(spec["schedule"], str) or not spec["schedule"].strip():
+        return False, f"schedule must be non-empty string, got {spec['schedule']!r}"
+
+    no_agent = bool(spec.get("no_agent"))
+    if no_agent:
+        script = spec.get("script")
+        if not isinstance(script, str) or not script.strip():
+            return False, "no_agent=true requires a non-empty script"
+        # sync_code_components copies cron/scripts/* into $DATA_DIR/scripts/.
+        if not (repo_root / "cron" / "scripts" / script).is_file():
+            return False, f"script {script!r} not found under cron/scripts/"
+
+    for key in ("no_agent", "name", "schedule", "script"):
+        if key not in expected:
+            continue
+        got = no_agent if key == "no_agent" else spec.get(key)
+        if got != expected[key]:
+            return False, f"{key} {got!r} != expected {expected[key]!r}"
+    return True, "ok"
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -735,9 +792,10 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "contract": run_contract,
     "fidelity-guard": run_fidelity_guard,
     "id-family": run_id_family,
+    "cron": run_cron,
 }
 
-SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family"]
+SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family", "cron"]
 
 
 def _fixtures_root() -> Path:

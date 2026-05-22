@@ -1,0 +1,11 @@
+id: nightly_regression
+description: |
+  cron/nightly_regression.yaml must be yaml-parseable, declare the canonical
+  no_agent shape, and point at a script that exists under cron/scripts/.
+inputs:
+  cron_file: cron/nightly_regression.yaml
+expected:
+  no_agent: true
+  name: botji-nightly-regression
+  schedule: "30 3 * * *"
+  script: botji-nightly-regression.sh

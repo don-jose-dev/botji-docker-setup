@@ -81,6 +81,59 @@ docker exec botji-hermes bash /tmp/smoke.sh
 
 ---
 
+## Nightly regression cron
+
+A Hermes cron job runs the full deterministic harness suite every
+night at **03:30 local on the VPS** via the upstream `no_agent=True`
+primitive — no LLM, no tokens. It shells out to `botji-harness run
+--suite all` and only delivers output on failure.
+
+| Property | Value |
+|---|---|
+| Job name | `botji-nightly-regression` |
+| Schedule | `30 3 * * *` |
+| Mode | `no_agent: true` |
+| Spec / script | `cron/nightly_regression.yaml`, `cron/scripts/botji-nightly-regression.sh` (both seeded per-tenant by `sync_code_components`) |
+| Persistent log | `/opt/data/logs/botji-harness/nightly-<UTC>.log` (one file per run, full stdout+stderr) |
+| Scheduler output | `~/.hermes/cron/output/<job_id>/<UTC>.md` (only on failure; happy path emits empty stdout = silent tick) |
+| Tenants | Both `/opt/botji` and `/opt/botji-degain` run their own copy under their own `HERMES_HOME` |
+
+`--suite all` picks up every suite registered in
+`runtime/bin/botji-harness::SUITE_ORDER`, so new deterministic checks
+ship by adding a fixture / suite — no edit to the cron job needed. To
+add a suite: add `run_<suite>` to the harness, register it in `SUITES`
+and `SUITE_ORDER`, and drop fixtures under `tests/fixtures/<suite>/`.
+
+### Reading the output
+
+Happy path: silent. Triage on failure starts at the persistent log:
+
+```sh
+ssh -i ~/.ssh/botji_deploy root@<vps>
+ls -lt /opt/data/logs/botji-harness/ | head
+tail -100 /opt/data/logs/botji-harness/nightly-<UTC>.log
+```
+
+### Disabling the cron
+
+Rename the yaml seed to add `.disabled`:
+
+```sh
+git mv cron/nightly_regression.yaml cron/nightly_regression.yaml.disabled
+```
+
+The next deploy skips seeding it. The yaml seed and the live
+`~/.hermes/cron/jobs.json` are decoupled — if the job is already
+registered, also pause it on the VPS:
+
+```sh
+docker exec botji-hermes hermes cron pause botji-nightly-regression
+```
+
+Field mapping for `cron/*.yaml`: see `cron/README.md`.
+
+---
+
 ## Log locations
 
 | Stream | Path | Notes |
@@ -90,6 +143,7 @@ docker exec botji-hermes bash /tmp/smoke.sh
 | Agent turns | `/opt/data/logs/agent.log` | Per-turn tool calls + Codex API timings |
 | Errors | `/opt/data/logs/errors.log` | WARNING and above only |
 | Caddy access | `/var/log/caddy/access.log` (host) | Dashboard reverse proxy hits |
+| Nightly regression | `/opt/data/logs/botji-harness/nightly-<UTC>.log` | One file per cron tick (see "Nightly regression cron") |
 
 Docker logs are bounded: `json-file` driver, 5 × 50 MB files (set in
 `docker-compose.prod.yml`). Older logs rotate out automatically.

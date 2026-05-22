@@ -1,0 +1,19 @@
+# Botji nightly deterministic regression — Hermes cron seed.
+#
+# Fields mirror hermes-agent/cron/jobs.py::create_job. The on-VPS
+# registration step translates this yaml into a record in
+# ~/.hermes/cron/jobs.json. See cron/README.md for field semantics and
+# docs/OPERATIONS.md "Nightly regression cron" for the operational
+# runbook. Upstream no_agent docs:
+# hermes-agent/website/docs/user-guide/features/cron.md (No-agent mode).
+
+name: botji-nightly-regression
+# 03:30 local — avoids US/EU business hours and the snapshot window.
+schedule: "30 3 * * *"
+no_agent: true
+# Path resolved against $HERMES_HOME/scripts/ by the scheduler.
+script: botji-nightly-regression.sh
+# Save to disk only; chat-platform pager wiring is a Week 2 deliverable.
+deliver: local
+# Required by create_job(); ignored for no_agent.
+prompt: ""

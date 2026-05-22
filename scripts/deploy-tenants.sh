@@ -61,8 +61,32 @@ sync_code_components() {
     cp -R seed/hermes/prompts "$DATA_DIR/"
   fi
   cp seed/hermes/schemas/*.json "$DATA_DIR/schemas/" 2>/dev/null || true
+  # cron/ — declarative Hermes cron seeds (see cron/README.md). Job yaml
+  # lands in $DATA_DIR/cron/ and the matching scripts in $DATA_DIR/scripts/
+  # because Hermes resolves cron `script:` paths against $HERMES_HOME/scripts/.
+  # Files matching *.disabled are intentionally skipped so an operator can
+  # disable a job by renaming its yaml without editing the repo.
+  if [ -d cron ]; then
+    mkdir -p "$DATA_DIR/cron" "$DATA_DIR/scripts"
+    rm -f "$DATA_DIR"/cron/*.yaml 2>/dev/null || true
+    for cron_yaml in cron/*.yaml; do
+      [ -f "$cron_yaml" ] || continue
+      case "$cron_yaml" in *.disabled.yaml|*.yaml.disabled) continue ;; esac
+      cp "$cron_yaml" "$DATA_DIR/cron/"
+      echo "    seeded cron: $(basename "$cron_yaml")"
+    done
+    if [ -d cron/scripts ]; then
+      for cron_script in cron/scripts/*; do
+        [ -f "$cron_script" ] || continue
+        cp "$cron_script" "$DATA_DIR/scripts/"
+        chmod +x "$DATA_DIR/scripts/$(basename "$cron_script")" 2>/dev/null || true
+      done
+    fi
+  fi
   chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" \
     "$DATA_DIR/plugins" "$DATA_DIR/skills" "$DATA_DIR/prompts" "$DATA_DIR/schemas" 2>/dev/null || true
+  [ -d "$DATA_DIR/cron" ] && chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/cron" 2>/dev/null || true
+  [ -d "$DATA_DIR/scripts" ] && chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/scripts" 2>/dev/null || true
   mkdir -p "$DATA_DIR/verdicts"
   chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/verdicts" 2>/dev/null || true
 }
