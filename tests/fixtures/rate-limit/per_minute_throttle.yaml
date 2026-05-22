@@ -1,0 +1,11 @@
+id: per_minute_throttle
+description: 5/min limiter blocks the 6th message in the same 60s window from one user.
+inputs:
+  per_minute: 5
+  per_hour: 100
+  user_id: "12345"
+  burst_count: 6
+expected:
+  allowed_count: 5
+  rejected_at_index: 5
+  rejection_reason_contains: "per_minute"

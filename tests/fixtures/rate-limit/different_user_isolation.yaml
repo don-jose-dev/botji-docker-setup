@@ -1,0 +1,11 @@
+id: different_user_isolation
+description: hitting the per-minute limit for one user does not block a different user.
+inputs:
+  per_minute: 3
+  per_hour: 100
+  user_id: "111"
+  burst_count: 4
+  different_user_id: "222"
+expected:
+  allowed_count: 3
+  different_user_allowed: true
