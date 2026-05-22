@@ -64,6 +64,34 @@ jobs:
             python -m py_compile "$f" 2>/dev/null || echo "  skip $f (non-Python)"
           done
 
+  skill-eval:
+    name: Skill-interaction evals (deterministic)
+    # workflow_dispatch only — fixtures use mock_trace for now, not real agent
+    # runs, so this is a hand-triggered check rather than an auto-blocking gate.
+    # Becomes auto when the LLM-judge tier lands and traces come from real runs.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install harness deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml
+
+      - name: Run deterministic skill-interaction evals
+        run: |
+          python evals/skill_interactions/run_evals.py
+
   shell-lint:
     name: Shell scripts shellcheck
     runs-on: ubuntu-latest

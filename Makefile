@@ -3,7 +3,7 @@ COMPOSE := docker compose --env-file .env
 export HERMES_UID ?= $(shell id -u)
 export HERMES_GID ?= $(shell id -g)
 
-.PHONY: init bootstrap build pull up down restart reload logs status shell setup-hermes codex-login codex-status smoke-local smoke-agent snapshot backup-cloud restore clean
+.PHONY: init bootstrap build pull up down restart reload logs status shell setup-hermes codex-login codex-status smoke-local smoke-agent snapshot backup-cloud restore clean eval
 
 init:
 	@if [ ! -f .env ]; then cp .env.example .env; echo "Created .env"; fi
@@ -80,3 +80,6 @@ restore:
 
 clean:
 	$(COMPOSE) down --remove-orphans
+
+eval:
+	@python evals/skill_interactions/run_evals.py
