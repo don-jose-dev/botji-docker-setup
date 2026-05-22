@@ -500,12 +500,16 @@ PY
     fi
   done
 
-  # Ensure skills/ and plugins/ dirs are traversable by the hermes UID inside
-  # the container. Restrictive umasks during prior deploys have left dirs as
-  # 0700 — in theory still traversable by the matching owner UID, but the
-  # PR #20 deploy showed at least one path where the container still crashed
-  # with PermissionError. ugo+rX expands the bits without granting write to
-  # group/others (capital X only sets x where x already exists OR on dirs).
+  # Ensure the tenant data tree is traversable by the hermes UID inside the
+  # container. Restrictive umasks during prior deploys leave dirs as 0700 —
+  # in theory still traversable by the matching owner UID, but PRs #20 and
+  # #21 both showed degain crash-looping on PermissionError stat'ing
+  # /opt/data/skills/.bundled_manifest until the data root was widened to
+  # 755. Chmod the data root itself (non-recursive) and skills/plugins
+  # subtrees (-R). go+rX expands directory traversal without granting write,
+  # and capital X only sets x where it already exists or on dirs — so
+  # secrets (.env at 0600, .codex/auth.json at 0600) stay 0600.
+  chmod u+rwX,go+rX "$tenant_data_abs" 2>/dev/null || true
   chmod -R u+rwX,go+rX \
     "$tenant_data_abs/skills" \
     "$tenant_data_abs/plugins" 2>/dev/null || true
