@@ -1,6 +1,6 @@
 name: botji-core
-version: 0.1.0
-description: "Thin Hermes-native Botji source, artifact, receipt, and delivery gate substrate."
+version: 0.2.0
+description: "Thin Hermes-native Botji source, artifact, receipt, and delivery gate substrate. Exposes Prometheus metrics."
 author: Botji
 kind: standalone
 requires_env: []
@@ -10,3 +10,6 @@ provides_tools:
   - artifact_write
   - receipt_record
   - delivery_gate
+provides_hooks:
+  - pre_tool_call
+  - post_tool_call

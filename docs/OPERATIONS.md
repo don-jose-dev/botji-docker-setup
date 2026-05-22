@@ -2,7 +2,8 @@
 
 This document is the day-2 reference for running the botji-hermes deployment.
 For first-time setup see [DEPLOYMENT.md](DEPLOYMENT.md); for the product overview
-see [BOTJI_V1.md](BOTJI_V1.md).
+see [BOTJI_V1.md](BOTJI_V1.md); for the Prometheus metrics + Grafana dashboard
+see [OBSERVABILITY.md](OBSERVABILITY.md).
 
 ---
 

@@ -575,3 +575,12 @@ def register(ctx) -> None:
         ctx.register_hook("pre_tool_call", _pre_tool_call)
     _core_root().mkdir(parents=True, exist_ok=True)
     logger.info("botji-core: registered Hermes-native source/artifact/receipt tools (root=%s)", _core_root())
+
+    # Mechanical observability — see docs/OBSERVABILITY.md. Fail-open: if the
+    # exporter or hook registration trips, the plugin still serves tools.
+    try:
+        from .metrics import register_hooks, start_exporter
+        if start_exporter():
+            register_hooks(ctx)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("botji-core: metrics init skipped (%s) — tools still serve", exc)

@@ -44,6 +44,7 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
          python-magic \
          jsonschema \
          pydantic \
+         prometheus-client \
     && uv pip install --system --break-system-packages \
          ezdxf \
          pillow
