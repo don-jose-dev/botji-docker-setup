@@ -76,15 +76,14 @@ Image generation goes through the Codex Responses API with the `image_generation
 3. Codex returns the generated image; the plugin registers it as an output artifact.
 4. `artifact_review` compares the output against the source artifact and hard requirements.
 
-### 3-attempt mutation strategy
+### 2-attempt mutation strategy (1 + 1 retry, canonical)
 
-On failed or low-fidelity generations, the plugin retries with progressively tighter constraints — not looser ones. Quality degrades gracefully:
+The canonical cap is in `botji-render-mode` (Retry budget): max 2 transforms per turn. On a failed or low-fidelity generation, the plugin retries once with progressively tighter constraints — not looser ones. Quality degrades gracefully:
 
 - Attempt 1: full brief with preferred camera/mood.
-- Attempt 2: add/expand FORBIDDEN list based on what the first attempt hallucinated.
-- Attempt 3: simplify scene — strip non-essential elements, harden object count rules.
+- Attempt 2 (retry, on block): both expand the FORBIDDEN list with what the first attempt hallucinated AND simplify the scene (strip non-essential elements, harden object count rules) — combine both moves into the single retry, don't burn another slot.
 
-After 3 failed attempts, stop and report. Do not silently accept a low-fidelity output.
+After the retry, if still blocked, stop and report. Do not silently accept a low-fidelity output and do not run a third transform without explicit user authorisation.
 
 ### user_id passthrough
 

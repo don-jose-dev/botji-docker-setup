@@ -121,8 +121,7 @@ Retries are a user-experience budget, not a provider loop.
 | Second block on the same issue | Stop and ask user: accept, retry, or adjust source/brief |
 | Provider/auth/tool error | Stop and report the failed route; no silent fallback |
 
-Never run more than two `artifact_transform(operation="edit_image")` calls in one
-user turn unless the user explicitly asked for multiple variants.
+The hard ceiling — *maximum 2 `artifact_transform(operation="edit_image")` calls per turn* — is canonical in `botji-render-mode` (Retry budget). The table above expands it for routing decisions; the cap itself lives there so every skill references one number.
 
 ## Kitchen / Elevation Hard Blocks
 

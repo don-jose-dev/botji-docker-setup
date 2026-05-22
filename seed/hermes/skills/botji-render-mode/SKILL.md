@@ -15,6 +15,19 @@ Use this skill whenever the user has supplied a source artifact (photo, sketch, 
 
 Prerequisites: `artifact_register` for the source must already have been called (see `botji-artifact-fidelity` for the generic loop).
 
+## Retry budget — canonical
+
+**Maximum 2 `artifact_transform(operation="edit_image")` calls per user turn.** This is the canonical cap. It applies regardless of which skill the agent is reading (`botji-render-router`, `botji-2d-to-3d`, `botji-codex-engineering`) — when they reference a retry, they reference *this* number.
+
+The shape is always *1 attempt + at most 1 retry*. If the retry also blocks, stop and ask the user (accept, adjust source, or try a different camera angle). Never silently run a third transform.
+
+Exceptions, both explicit:
+
+- The user asked for N variants in this turn — then N transforms are allowed (one per variant; no retries inside a variant slot).
+- The user explicitly asked to retry past the cap. Disclose the budget burn.
+
+Why 2 and not 3: a single `edit_image` is ~60–90 s. Three burns the Telegram-UX speed budget and rarely converges on the same block twice.
+
 ## Choose the right mode
 
 | Source type | Mode | Steps | Where the pipeline lives |
