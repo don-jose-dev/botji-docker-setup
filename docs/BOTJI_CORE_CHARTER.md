@@ -31,6 +31,7 @@ small pure utilities they need.
 | Path safety helpers (`_resolve_allowed_path`, secret-path detection) | shared substrate, security-critical |
 | Content-addressed hashing, atomic file writes, ID allocation | pure utilities |
 | Index I/O (jsonl read/append, atomic replace) | pure utilities |
+| Prometheus metrics export (`metrics/`): counter/histogram/info on tool calls + verdicts | mechanical observation — only tool name, operation arg, duration, verdict string. No semantic interpretation. Fail-open. |
 
 ## Not allowed in `botji-core`
 
@@ -61,23 +62,17 @@ reasoning, the prompt boundaries, and the user-visible failure mode.
 
 ## Current cap
 
-<!-- BOTJI_CORE_LOC_CAP: 720 -->
+<!-- BOTJI_CORE_LOC_CAP: 1000 -->
 
 The CI step in `.github/workflows/ci.yml` parses the value from the HTML
 comment above. The cap lives here, not in CI, so raising it always requires a
 visible change to this file.
 
-### Cap history
+## Cap history
 
-- **650 → 720** (PR T2, `feat/hooks-stale-id-and-over-budget`): added the
-  `pre_tool_call` hook (`hooks/stale_id_block.py`, ~125 LOC + 6-line
-  `hooks/__init__.py`) that enforces three mechanical safety rules at the
-  substrate layer instead of at the skill layer (the canonical "skills
-  guide; hooks enforce" boundary from the botji-hermes-strategic-position
-  memory). The hook reads already-typed args and a single legacy index
-  lookup — no vision, no classification, no prompt construction. It is the
-  substrate equivalent of `delivery_gate`'s parent-existence check, just at
-  pre-dispatch time instead of post-receipt.
+| Date | Cap | Why |
+|---|---|---|
+| 2026-05-22 | 650 → 1000 | Two mechanical additions to the substrate landed together: (1) `hooks/stale_id_block.py` (~131 LOC) — `pre_tool_call` enforces three structural safety rules (stale `art_*`, mixed ID family, over-budget transforms) on already-typed args; (2) `metrics/{__init__,exporter,hooks}.py` (~185 LOC) — Prometheus counters and histograms over tool names, verdict strings, and durations. Both fail open. Both are pure mechanical reads — no vision, no classification, no prompt construction. Cap set to 1000 to accommodate both without artificial pressure to collapse the metrics shape; future bumps must justify against the same "Allowed in `botji-core`" table. |
 
 ## Raising the LOC cap
 
@@ -87,6 +82,8 @@ visible change to this file.
      which row of the "Allowed" table it falls under), or
    - **Why the table needs to grow** (a new mechanical primitive that wasn't
      anticipated).
+3. Add a row to the "Cap history" table above with the date, old → new cap,
+   and a one-paragraph rationale.
 
 When in doubt: write a skill. Skills are the cheap thing to add, the substrate
 is the expensive thing to add.
