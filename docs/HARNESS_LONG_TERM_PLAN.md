@@ -157,11 +157,32 @@ What changes for the actual end-user of each phase:
 | 6 — External authors | A second customer segment exists (only if you pursue this) |
 | 7 — Self-test | "How do I know it's healthy?" gets a one-word answer: deploy passed |
 
-## Open decisions (user-side, not blocking immediate work)
+## Locked decisions
 
-- **Phase 3 — which second workflow** demonstrates the language? Picks the proof point and the second customer.
-- **Phase 6 — pursue or skip?** Determines whether harness becomes a developer product or stays as the substrate beneath your own workflows.
-- **Phase 4 — alert channel.** Telegram self-ping vs. webhook vs. email. Open-source-in-compose works for any of them.
+### Phase 3 second workflow = floor-plan / spatial-extraction
+**Decision date:** 2026-05-23.
+
+**Rationale:** Same customer segment as the render bot (interior design / renovation buyers — a $153B market growing 4.4–5.8% annually with consumer AI pricing $10–$80/mo). Different modality — PDF / photo of floor plan — exercises the V1R adapter protocol on non-image-render content. Different review axes (spatial consistency: room labels, openings sane, dimensions plausible) exercise V1R PR 8's declarative-axes-in-YAML mechanism. Creates a commercial funnel where extracted floor plans feed into render-bot briefs: two-step product, one customer, one harness.
+
+**Considered and rejected:** AI code review. The AI code review market is $400M–$2B and already won by CodeRabbit (2M repos, 13M PRs reviewed, most-installed AI app on both GitHub and GitLab), Greptile (full-codebase indexing differentiator), and Graphite's Diamond (selective low-noise positioning). Entering would fragment the customer base, fight an established 2-million-repo distribution moat, and require developer-marketing overhead a solo product owner cannot sustain.
+
+### Phase 6 external author surface = SKIP, quarterly review
+**Decision date:** 2026-05-23.
+
+**Rationale:** The "auditable agent harness as developer SDK" space is already won by LangGraph (production standard for stateful auditable workflows with built-in checkpointing), Mastra (production at Replit's Agent 3, improving task success 80% → 96% across thousands of daily sessions), CrewAI (fastest-prototyping), and OpenAI Agents SDK (lowest-friction OpenAI-only). A solo founder cannot out-build LangChain on the same axis. Pursuing an SDK now would slow the B2C ramp the render bot already has live traction on. Solo-founder monetization research is unambiguous: B2C SaaS with hybrid pricing is the proven path (HeadshotPro $300K/mo, TypingMind multi-million ARR).
+
+**What stays preserved:** Botji source remains source-available (BUSL 1.1 default per `LAUNCH_READINESS.md`). External devs who find the repo can fork/learn without an SDK team. Phases 4–5 build the same primitives an SDK would need, for internal use first.
+
+**Quarterly reconsideration triggers** (next check Aug 2026, then Nov 2026, etc.). Re-evaluate Phase 6 if any are true:
+- 3+ unsolicited "can I build my own workflow on this?" inquiries
+- A paying customer asks for the SDK as a contract requirement
+- Two workflows are shipped on the harness and a third party offers to build a fourth
+
+If none of those triggers fire by a quarterly check, the SKIP decision auto-reaffirms.
+
+## Still-open decisions (user-side, not blocking)
+
+- **Phase 4 — alert channel.** Telegram self-ping vs. webhook vs. email. Open-source-in-compose works for any. Decision deferable to start of Phase 4.
 
 ## How this doc is enforced
 
