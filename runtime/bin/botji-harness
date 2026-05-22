@@ -937,6 +937,89 @@ def run_render(fixture: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Suite: manifest — typed manifest v2 schema + back-compat converter tests
+# ---------------------------------------------------------------------------
+
+def run_manifest(fixture: dict) -> tuple[bool, str]:
+    """Validate the typed manifest v2 scaffold (Phase C1).
+
+    inputs.scenario:
+      roundtrip        - v1 prose → typed → v1 prose; assert structural fields
+      schema_validate  - directly-written typed manifest against JSON Schema
+      pydantic_validate - directly-written typed manifest through Pydantic
+    See tests/fixtures/manifest/*.yaml for per-scenario inputs/expected.
+    """
+    plugin_root = _plugin_path("botji-artifacts").parent
+    if str(plugin_root) not in sys.path:
+        sys.path.insert(0, str(plugin_root))
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+    scenario = inputs.get("scenario")
+
+    if scenario == "roundtrip":
+        from _manifest_v2_compat import prose_to_typed, typed_to_prose  # type: ignore
+        v1 = inputs.get("v1_manifest") or {}
+        typed = prose_to_typed(v1)
+        back = typed_to_prose(typed)
+        if expected.get("element_count_preserved") and back["element_count"] != v1.get("element_count"):
+            return False, f"element_count {back['element_count']} != v1 {v1.get('element_count')}"
+        if expected.get("layout_hints_preserved") and list(back["layout_hints"]) != list(v1.get("layout_hints") or []):
+            return False, f"layout_hints drift: {back['layout_hints']} vs {v1.get('layout_hints')}"
+        if expected.get("fidelity_requirements_preserved") and list(back["fidelity_requirements"]) != list(v1.get("fidelity_requirements") or []):
+            return False, "fidelity_requirements drift"
+        if expected.get("adjacency_count_preserved") and len(back["adjacency_constraints"]) != len(v1.get("adjacency_constraints") or []):
+            return False, "adjacency_constraints count drift"
+        if expected.get("opening_count_preserved") and len(back["opening_constraints"]) != len(v1.get("opening_constraints") or []):
+            return False, "opening_constraints count drift"
+        if expected.get("zones_preserved"):
+            for v1_el, v2_el in zip(v1.get("elements") or [], back["elements"]):
+                # The typed pipeline normalizes zone strings; check it survives
+                # round-trip when the v1 zone was already a canonical Zone enum.
+                if v1_el.get("wall_or_zone") in {"left_wall", "right_wall", "back_wall", "front_wall", "floor", "ceiling", "center", "island"}:
+                    if v2_el["wall_or_zone"] != v1_el["wall_or_zone"]:
+                        return False, f"zone drift: {v2_el['wall_or_zone']} != {v1_el['wall_or_zone']}"
+        return True, "ok"
+
+    if scenario == "schema_validate":
+        from jsonschema import Draft202012Validator  # type: ignore
+        repo_root = Path(__file__).resolve().parents[2]
+        schema_path = repo_root / "seed" / "hermes" / "schemas" / "manifest_v2.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        validator = Draft202012Validator(schema)
+        errs = list(validator.iter_errors(inputs.get("typed_manifest") or {}))
+        valid = not errs
+        want = expected.get("schema_valid")
+        if want is True and not valid:
+            return False, f"expected valid, got errors: {[e.message for e in errs[:3]]}"
+        if want is False and valid:
+            return False, "expected schema_valid=false, but passed"
+        needle = expected.get("failing_field")
+        if needle and not any(needle in e.message or needle in str(list(e.absolute_path)) for e in errs):
+            return False, f"errors do not mention {needle!r}: {[e.message for e in errs[:3]]}"
+        return True, "ok"
+
+    if scenario == "pydantic_validate":
+        from pydantic import ValidationError as _VE  # type: ignore
+        from _manifest_v2 import Manifest  # type: ignore
+        try:
+            Manifest.model_validate(inputs.get("typed_manifest") or {})
+            valid, err_text = True, ""
+        except _VE as exc:
+            valid, err_text = False, str(exc)
+        want = expected.get("pydantic_valid")
+        if want is True and not valid:
+            return False, f"expected valid, got: {err_text[:200]}"
+        if want is False and valid:
+            return False, "expected pydantic_valid=false, but passed"
+        needle = expected.get("failing_field_contains")
+        if needle and needle not in err_text:
+            return False, f"error does not mention {needle!r}: {err_text[:200]}"
+        return True, "ok"
+
+    return False, f"unknown scenario: {scenario!r}"
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -950,9 +1033,10 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "cron": run_cron,
     "delivery": run_delivery,
     "render": run_render,
+    "manifest": run_manifest,
 }
 
-SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family", "cron", "delivery", "render"]
+SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family", "cron", "delivery", "render", "manifest"]
 
 
 def _fixtures_root() -> Path:

@@ -82,6 +82,8 @@ fidelity_reqs = manifest_result["fidelity_requirements"]
 
 If `artifact_extract_manifest` fails (Codex unavailable), fall back to writing the manifest manually as shown in Step 0.
 
+> **Future shape (Phase C2 onward — not yet emitted).** A typed v2 manifest schema is now scaffolded at `seed/hermes/schemas/manifest_v2.schema.json` with Pydantic models alongside. v2 will replace prose labels with controlled-vocab `type` + `zone` fields so review compares typed rows by `(element_id, type, zone)` instead of fuzzy-matching prose. The pipeline still emits v1 today — **do not hand-write v2 manifests in this skill yet**. See [`docs/MANIFEST_V2.md`](../../../../docs/MANIFEST_V2.md) for the migration plan.
+
 ---
 
 ## Step 2 — Build the manifest-driven prompt

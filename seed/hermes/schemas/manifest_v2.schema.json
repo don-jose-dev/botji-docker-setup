@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://botji.local/schemas/manifest_v2.schema.json",
+  "title": "Botji Spatial Manifest v2 (typed)",
+  "description": "Typed manifest used for typed-certainty review. Elements carry typed (type, zone) controlled-vocab fields instead of prose labels, so review compares row-by-row by element_id+type, not by lexical match against a label string. v2 is a strict superset of v1: nothing the v1 manifest captures is lost.",
+  "type": "object",
+  "required": ["version", "scene_type", "source_modality", "elements"],
+  "properties": {
+    "version": {
+      "const": "v2",
+      "description": "Schema version. v2 is typed; v1 was prose-labels."
+    },
+    "scene_type": {
+      "type": "string",
+      "enum": [
+        "kitchen_interior", "wardrobe_interior", "living_room", "bathroom",
+        "bedroom", "office", "retail", "exterior", "product",
+        "generic_interior", "unknown"
+      ]
+    },
+    "source_modality": {
+      "type": "string",
+      "enum": ["sketch", "floor_plan", "photo", "render", "schematic"]
+    },
+    "elements": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/Element"}
+    },
+    "adjacency_constraints": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/AdjacencyConstraint"}
+    },
+    "opening_constraints": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/OpeningConstraint"}
+    },
+    "layout_hints": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "fidelity_requirements": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Pre-built review strings ready for artifact_review(fidelity_requirements=[...]). Carried through from v1 for review back-compat."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ElementType": {
+      "type": "string",
+      "description": "Controlled vocab for element type. Domains: kitchen, wardrobe, living room. Use 'other' when nothing fits; the original v1 label is preserved in `evidence`.",
+      "enum": [
+        "base_cabinet", "wall_cabinet", "tall_cabinet", "larder", "pantry",
+        "countertop", "backsplash", "sink", "tap", "hob", "cooktop", "oven",
+        "oven_stack", "microwave", "extractor", "hood", "fridge", "freezer",
+        "dishwasher", "appliance_tower", "island", "peninsula", "breakfast_bar",
+        "bar_stool", "shelf", "open_shelf", "drawer_unit", "filler_panel",
+        "plinth", "kickboard", "cornice", "valance",
+        "wardrobe_unit", "hanging_rail", "shoe_rack", "drawer_module",
+        "door_module", "mirror_panel", "internal_drawer", "shelf_module",
+        "sofa", "armchair", "coffee_table", "side_table", "tv_unit",
+        "media_console", "bookshelf", "rug", "floor_lamp", "pendant_light",
+        "ceiling_light", "wall_sconce", "artwork", "plant",
+        "door", "doorway", "entry_opening", "window", "arch", "threshold",
+        "wall", "floor", "ceiling",
+        "other"
+      ]
+    },
+    "Zone": {
+      "type": "string",
+      "description": "Controlled vocab for spatial zone. Maps from v1 wall_or_zone strings.",
+      "enum": [
+        "left_wall", "right_wall", "back_wall", "front_wall",
+        "floor", "ceiling", "center", "island"
+      ]
+    },
+    "Status": {
+      "type": "string",
+      "enum": ["visible", "inferred", "absent"],
+      "description": "visible = drawn explicitly; inferred = parsed from prose with low confidence; absent = required but missing."
+    },
+    "Position": {
+      "type": "object",
+      "properties": {
+        "order_in_zone": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based position index within the zone, left to right (or front to back for floor/ceiling)."
+        }
+      },
+      "required": ["order_in_zone"],
+      "additionalProperties": false
+    },
+    "Element": {
+      "type": "object",
+      "required": ["element_id", "type", "zone", "required", "status"],
+      "properties": {
+        "element_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*[0-9a-z]$",
+          "minLength": 2,
+          "maxLength": 64,
+          "description": "Stable kebab-style id, e.g. countertop_01."
+        },
+        "type": {"$ref": "#/$defs/ElementType"},
+        "zone": {"$ref": "#/$defs/Zone"},
+        "required": {
+          "type": "boolean",
+          "description": "true when the element must be present in any faithful render."
+        },
+        "status": {"$ref": "#/$defs/Status"},
+        "evidence": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Brief reason for inclusion. Holds the original v1 prose label when status=inferred."
+        },
+        "position": {"$ref": "#/$defs/Position"}
+      },
+      "additionalProperties": false
+    },
+    "AdjacencyConstraint": {
+      "type": "object",
+      "required": ["elem_a", "elem_b", "relation", "zone"],
+      "properties": {
+        "elem_a": {"type": "string"},
+        "elem_b": {"type": "string"},
+        "relation": {
+          "type": "string",
+          "enum": ["directly_adjacent", "separated_by_gap", "overlapping"]
+        },
+        "zone": {"$ref": "#/$defs/Zone"}
+      },
+      "additionalProperties": false
+    },
+    "OpeningConstraint": {
+      "type": "object",
+      "required": [
+        "element_id", "room_or_zone", "opening_type",
+        "zone", "position_on_wall", "swing_or_handing"
+      ],
+      "properties": {
+        "element_id": {"type": "string"},
+        "room_or_zone": {"type": "string"},
+        "opening_type": {
+          "type": "string",
+          "enum": ["door", "entry", "window", "arch", "unknown"]
+        },
+        "zone": {"$ref": "#/$defs/Zone"},
+        "position_on_wall": {
+          "type": "string",
+          "enum": ["left", "center", "right", "near_corner", "unknown"]
+        },
+        "swing_or_handing": {"type": "string"},
+        "notes": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

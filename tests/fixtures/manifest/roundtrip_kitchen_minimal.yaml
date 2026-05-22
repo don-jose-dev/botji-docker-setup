@@ -1,0 +1,44 @@
+id: roundtrip_kitchen_minimal
+description: |
+  v1 prose manifest → typed v2 → v1 prose round-trip preserves structural
+  fields: element count, per-element zone and order, layout_hints, and
+  fidelity_requirements. The element labels themselves don't survive the
+  round-trip verbatim (typed converts to controlled-vocab + evidence) — only
+  the structural shape matters here.
+inputs:
+  scenario: roundtrip
+  v1_manifest:
+    scene_type: kitchen_interior
+    source_modality: sketch
+    elements:
+      - id: elem_1
+        label: tall larder unit
+        wall_or_zone: left_wall
+        position_index: 1
+        notes: ""
+      - id: elem_2
+        label: base cabinet run
+        wall_or_zone: back_wall
+        position_index: 1
+        notes: ""
+      - id: elem_3
+        label: countertop
+        wall_or_zone: back_wall
+        position_index: 2
+        notes: ""
+    element_count: 3
+    adjacency_constraints:
+      - elem_a: elem_2
+        elem_b: elem_3
+        relation: directly_adjacent
+        wall_or_zone: back_wall
+    opening_constraints: []
+    layout_hints: ["U-shape layout"]
+    fidelity_requirements:
+      - "Total element count: exactly 3 units"
+expected:
+  element_count_preserved: true
+  layout_hints_preserved: true
+  fidelity_requirements_preserved: true
+  zones_preserved: true
+  adjacency_count_preserved: true

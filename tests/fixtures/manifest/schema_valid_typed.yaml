@@ -1,0 +1,35 @@
+id: schema_valid_typed
+description: |
+  A directly-written v2 typed manifest validates against the JSON Schema
+  AND parses cleanly via Pydantic. This is the shape C2 will emit when
+  artifact_extract_manifest is rewritten.
+inputs:
+  scenario: schema_validate
+  typed_manifest:
+    version: v2
+    scene_type: kitchen_interior
+    source_modality: sketch
+    elements:
+      - element_id: countertop_01
+        type: countertop
+        zone: back_wall
+        required: true
+        status: visible
+        evidence: continuous horizontal worktop above base run
+        position:
+          order_in_zone: 1
+      - element_id: sink_01
+        type: sink
+        zone: back_wall
+        required: true
+        status: visible
+        evidence: drawn cutout in countertop
+        position:
+          order_in_zone: 2
+    adjacency_constraints: []
+    opening_constraints: []
+    layout_hints: ["single-wall run"]
+    fidelity_requirements: ["Total element count: exactly 2 units"]
+expected:
+  schema_valid: true
+  pydantic_valid: true

@@ -34,6 +34,19 @@ from _review import _build_review, _reviews_dir
 _HERMES_NATIVE_ID_PREFIXES = ("src_", "out_", "rcpt_")
 
 
+_MANIFEST_V2_VALIDATOR: Any = None
+
+
+def _manifest_v2_validator() -> Any:
+    """Draft 2020-12 validator for v2 typed manifest. Defensive wiring for C2."""
+    global _MANIFEST_V2_VALIDATOR
+    if _MANIFEST_V2_VALIDATOR is None:
+        from jsonschema import Draft202012Validator  # type: ignore[import-not-found]
+        path = Path(__file__).resolve().parents[2] / "schemas" / "manifest_v2.schema.json"
+        _MANIFEST_V2_VALIDATOR = Draft202012Validator(json.loads(path.read_text(encoding="utf-8")))
+    return _MANIFEST_V2_VALIDATOR
+
+
 def _reject_hermes_native_ids(ids: list[str], tool_name: str) -> None:
     bad = [str(item) for item in ids if str(item).startswith(_HERMES_NATIVE_ID_PREFIXES)]
     if not bad:
