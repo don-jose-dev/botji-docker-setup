@@ -155,19 +155,31 @@ def lineage_turn_isolation_check(module: Any) -> None:
     match, so each turn gets a fresh art_*; same-turn re-uploads still dedup
     (no needless churn); legacy callers without a turn ID get no-dedup (safe
     default rather than cross-turn collision).
-    """
-    fixture = fixture_dir() / "lineage-turn-isolation.txt"
-    fixture.write_text("lineage turn isolation regression\n", encoding="utf-8")
 
-    turn_a = "harness:lineage:turn-a"
-    turn_b = "harness:lineage:turn-b"
+    The turn IDs are stamped with a per-invocation unique suffix so re-running
+    the harness against an existing artifacts index does not collide with the
+    previous run's records — the check must be idempotent across deploys.
+
+    Uses a unique fixture path (and ``copy_into_registry=False``) so the bytes
+    are never copied into the registry sources bucket. Index pollution is the
+    only side effect, and the registration role is "reference" so it can't be
+    mistaken for a real user-supplied source.
+    """
+    import time as _time
+
+    run_id = f"{int(_time.time() * 1000)}-{os.getpid()}"
+    fixture = fixture_dir() / f"lineage-turn-isolation-{run_id}.txt"
+    fixture.write_text(f"lineage turn isolation regression {run_id}\n", encoding="utf-8")
+
+    turn_a = f"harness:lineage:{run_id}:turn-a"
+    turn_b = f"harness:lineage:{run_id}:turn-b"
 
     reg_a = call_tool(module, "artifact_register", {
-        "path": str(fixture), "role": "source",
+        "path": str(fixture), "role": "reference", "copy_into_registry": False,
         "user_intent": "turn-a upload", "current_turn_id": turn_a,
     })
     reg_b = call_tool(module, "artifact_register", {
-        "path": str(fixture), "role": "source",
+        "path": str(fixture), "role": "reference", "copy_into_registry": False,
         "user_intent": "turn-b upload", "current_turn_id": turn_b,
     })
     id_a = reg_a["artifact"]["artifact_id"]
@@ -178,7 +190,7 @@ def lineage_turn_isolation_check(module: Any) -> None:
         raise RuntimeError("turn-b registration was marked deduplicated against turn-a — salt missing")
 
     reg_a2 = call_tool(module, "artifact_register", {
-        "path": str(fixture), "role": "source",
+        "path": str(fixture), "role": "reference", "copy_into_registry": False,
         "user_intent": "turn-a upload again", "current_turn_id": turn_a,
     })
     if reg_a2["artifact"]["artifact_id"] != id_a:
@@ -187,7 +199,7 @@ def lineage_turn_isolation_check(module: Any) -> None:
         raise RuntimeError("same-turn same-bytes registered fresh — dedup hit was expected")
 
     reg_legacy = call_tool(module, "artifact_register", {
-        "path": str(fixture), "role": "source",
+        "path": str(fixture), "role": "reference", "copy_into_registry": False,
         "user_intent": "no-turn legacy",
     })
     if reg_legacy.get("deduplicated"):
