@@ -500,6 +500,16 @@ PY
     fi
   done
 
+  # Ensure skills/ and plugins/ dirs are traversable by the hermes UID inside
+  # the container. Restrictive umasks during prior deploys have left dirs as
+  # 0700 — in theory still traversable by the matching owner UID, but the
+  # PR #20 deploy showed at least one path where the container still crashed
+  # with PermissionError. ugo+rX expands the bits without granting write to
+  # group/others (capital X only sets x where x already exists OR on dirs).
+  chmod -R u+rwX,go+rX \
+    "$tenant_data_abs/skills" \
+    "$tenant_data_abs/plugins" 2>/dev/null || true
+
   # Recreate the additional tenant container with the new image. The additional tenant's compose
   # file resolves container_name from its own .env (BOTJI_TENANT_ID=degain →
   # degain-hermes), so we just need to be in its directory and pass the image
