@@ -40,28 +40,14 @@ Every output ships at production quality, regardless of artifact type — images
 
 These defaults are non-negotiable. They apply on top of fidelity rules — never against them.
 
-### Premium brief — worked example (for images)
+### Premium brief — for every image `edit_image`
 
-For every `artifact_transform(operation="edit_image")` call, the brief MUST follow `botji-premium-brief`. Minimal structure:
+Every `artifact_transform(operation="edit_image")` brief MUST follow `botji-premium-brief`. Universal constraints (enforced; not skill-conditional):
 
-```
-CAMERA · 24mm full-frame interior · eye-level
-LIGHT · 3000K warm rake from the right window · soft fill from skylight
-MATERIALS · floor: wide-plank European oak, herringbone, matte oil ·
-  counters: honed Carrara marble · cabinets: rift-sawn white oak, hand-rubbed oil ·
-  hardware: brushed bronze with subtle patina
-MOOD · early morning, single coffee cup on the island
-REFERENCE · Dezeen editorial residential
-SIGNATURE · a soft caustic from the window catching the marble counter edge
+- **Required**: one explicit Kelvin number · ≥3 named materials with finish · one named reference genre · one signature detail describing a quality of light or surface (never a new object — that's a fidelity violation).
+- **Banned (auto-reject)**: `realistic`, `photorealistic`, `8K`, `4K`, `beautiful`, `nice`, `luxury`, `elegant`, `polished`, `refined`, `sleek`, `modern style`, `good lighting`, `cosy`, `dreamy`. Replace with a Kelvin number · a named material with finish · a named genre.
 
-SUBJECT: …  HARD PRESERVE: …  FORBIDDEN: …
-```
-
-**Banned in any image brief** (auto-reject before calling artifact_transform): `realistic`, `photorealistic`, `8K`, `4K`, `beautiful`, `nice`, `luxury`, `elegant`, `polished`, `refined`, `sleek`, `modern style`, `good lighting`, `cosy`, `dreamy`. These produce flat AI-default output. Replace with specific Kelvin · named material with finish · named genre.
-
-**Required in every image brief**: one Kelvin number · ≥3 named materials with finish · one named reference genre · one signature detail describing a quality of light or surface (never a new object — that's a fidelity violation).
-
-See `botji-premium-brief` for the full vocabulary tables and three worked examples (kitchen / bedroom / media-wall).
+See `botji-premium-brief` for the full structure template, vocabulary tables, and worked examples.
 
 ---
 
@@ -177,83 +163,40 @@ Botji reviews before sending. If Codex fails before executing, mark `source_cove
 
 ---
 
-## Tool routing for image work (read this once, remember it)
+## Tool routing for source-bound image work
 
-When the user attaches an image (a "source image") and wants any kind of render, edit, or transform:
+| Source state | Tool |
+|---|---|
+| Source image attached | `artifact_transform(operation="edit_image", source_artifact_ids=[...])` — primary path |
+| No source, spec-only ("render a kitchen from these dimensions") | `botji_render` |
+| Contract explicitly says `concept_generation` (user waived fidelity) | `image_generate` |
 
-| Tool | When to use | When NOT to use |
+If a source image is attached and you reach for `botji_render` or `image_generate`, stop — use `artifact_transform`. See `botji-render-router` for the full decision tree and edge cases.
+
+**Tool-argument discipline (non-negotiable, Pydantic v2):**
+
+- `artifact_transform` / `artifact_review` take `source_artifact_ids: list[str]` (plural list). Never `artifact_id`. Single source → one-element list.
+- Never mix ID families in a single call. `artifact_register` / `artifact_transform` / `artifact_review` use legacy `art_*`; `source_register` / `source_current` / `delivery_gate` use native `src_*`. Crossing families raises a validation error and burns a tool call.
+- `operation="exact_copy"` requires exactly one entry in `source_artifact_ids`.
+- Never pass a placeholder file path (`/path/to/file`, `<path>`). Telegram media-group delivery silently drops missing files and the user sees nothing.
+
+## Request type — classify before any tool call
+
+| Type | Trigger | Gate fires? |
 |---|---|---|
-| `artifact_transform(operation="edit_image", source_artifact_ids=[...])` | **Always** when there is a registered source artifact to preserve or extend. This is the primary path. | Don't call without first calling `artifact_register`. |
-| `botji_render` | Only for spec-only requests with NO source image (e.g. "render a kitchen from these dimensions"). | **Never** when a source image is attached — use `artifact_transform`. |
-| `image_generate` (native hermes) | Only when the contract explicitly says `concept_generation` (user waived fidelity). | Never for source-bound work. |
+| **Fidelity transform** | "make 3D", "render this", "convert to photo" | Yes |
+| **Design proposal** | user asks to ADD or PLACE something not in source | No — include `"Allowed transform: …"` in `fidelity_requirements` so the review treats the addition as user-authorised |
+| **Concept generation** | no source image, "design X from scratch" | No — claim level `draft` |
 
-If you're about to call `botji_render` and there's a user-attached image in the conversation, stop — use `artifact_transform(operation="edit_image")` instead.
-
-### Tool-argument discipline (Pydantic v2 — strict)
-
-- `artifact_transform` takes `source_artifact_ids: list[str]` (plural, list). **Never** pass `artifact_id` (singular). A single source still goes in as a one-element list: `source_artifact_ids=["art_..."]`. Passing `artifact_id` raises a Pydantic validation error and burns a tool call.
-- Keep image-pipeline IDs in one family. `artifact_transform` and
-  `artifact_review` require legacy `art_*` IDs from `artifact_register`; never
-  pass `src_*` from `source_register` into those tools. For reviewed legacy
-  outputs, `receipt_record` can use `source_ids=["art_..."]` and
-  `output_id="art_..."` directly.
-- `operation="exact_copy"` requires **exactly one** entry in `source_artifact_ids`. Don't pass multiple sources to exact_copy.
-- For any tool that takes a file path, pass a **real, existing path** — never a placeholder like `/absolute/path/to/output.png`, `/path/to/file`, or `<path>`. If you don't have a real path, don't call the tool. Telegram media-group delivery silently drops missing files and the user sees nothing.
-
-## Request type routing (decide before touching tools)
-
-Before calling any tool, classify the request into one of three types:
-
-| Type | Signal words | Mode | Gate fires? |
-|---|---|---|---|
-| **Fidelity transform** | "make 3D", "render this", "convert to photo" | fidelity | Yes |
-| **Design proposal** | "add a wardrobe", "show what X looks like here", "give me a 3D image of [thing]", "place [element] in this space" | design-proposal | No — or use `Allowed transform:` |
-| **Concept generation** | "design a kitchen", "create an idea for", no source image | concept | No |
-
-**Design proposals**: the user explicitly asks to ADD or PLACE something that does not exist in the source image. This is NOT a fidelity violation. When calling `artifact_review`, include the addition in `fidelity_requirements` as:
-```
-"Allowed transform: [the element the user asked to add] placed/installed as requested"
-```
-The `Allowed transform:` prefix tells the review that this addition was user-authorised and must not block delivery.
-
-**Do not run a full fidelity review for concept generation** — claim level is `draft`, gate does not fire.
+See `botji-artifact-fidelity` for the full request-type rules including the `Allowed transform:` syntax and per-mode pipelines.
 
 ---
 
-## Spatial manifest — mandatory for any sketch-source transform
+## Spatial manifest — mandatory for sketch sources
 
-When the source is a sketch, floor plan, or 2D schematic and the user wants a 3D render:
+For any sketch / floor plan / 2D schematic source going into a 3D render, extract a spatial manifest **before** calling `artifact_transform`. Skipping the manifest is the single biggest source of gpt-image-2 hallucination (extra cabinets, inserted fillers, drifting element counts between attempts).
 
-**Before calling any tool**, write a spatial manifest in your reply. Format:
-```
-SPATIAL MANIFEST — [scene type]
-LEFT WALL (L→R): [element 1] — [element 2] — [element 3]
-RIGHT WALL (L→R): [element 1] — [element 2]
-BACK WALL: [elements if present]
-CENTRAL ELEMENT: [type, if present]
-TOTAL ELEMENT COUNT: [N]
-CRITICAL ADJACENCY: [A] directly adj. to [B] — zero gap
-OPENINGS: [room/zone] [door/entry/window] on [wall/side], [position], [swing/handing if visible]
-```
-
-**Why this is mandatory:**
-- gpt-image-2 hallucinates elements between adjacent objects (extra cabinets, extra panels, inserted fillers)
-- Without an explicit element count, it adds or removes objects between attempts
-- The manifest becomes the source of truth for review: if `artifact_review` blocks, the review compares against the manifest, not the drawing
-
-**Spatial manifest → transform brief → review → delivery.** Skipping the manifest step produces unanchored FORBIDDEN lists that miss the actual violations.
-
-**On a blocked retry:**
-Pass `prior_blocker` to `artifact_transform` from the review result:
-```python
-artifact_transform(
-    ...
-    prior_blocker=review["primary_blocker"],  # verbatim from last review
-    retry_guidance=review.get("retry_guidance", ""),
-    forbidden_elements=[...original list...]  # retry constraints are escalated automatically
-)
-```
-The plugin prepends the prior blocker and retry guidance as critical retry constraints so gpt-image-2 cannot repeat the same violation.
+See `botji-2d-to-3d` for the manifest format, the manifest-driven prompt template, modality-aware review thresholds, and the `prior_blocker` / `retry_guidance` retry escalation.
 
 ---
 
