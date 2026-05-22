@@ -1,0 +1,14 @@
+id: casual_passthrough
+description: |
+  Baseline regression for false positives: a plain chat reply with no
+  delivery markers and no art_/out_ IDs MUST pass through unchanged
+  (hook returns None). This protects greetings, clarifications, and the
+  "I'm thinking..." style of message from being rewritten.
+inputs:
+  response_text: |
+    Hi! Sure, I can help with that — could you share the source image you
+    want me to start from?
+  receipts: []
+  sources: []
+expected:
+  passthrough: true

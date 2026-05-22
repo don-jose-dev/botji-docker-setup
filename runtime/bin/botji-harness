@@ -782,6 +782,76 @@ def run_cron(fixture: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Suite: delivery (NEW)
+# ---------------------------------------------------------------------------
+
+def run_delivery(fixture: dict) -> tuple[bool, str]:
+    """Seed receipts/sources/legacy index, call transform_llm_output, assert.
+
+    inputs.receipts:         records appended to botji-core/index/receipts.jsonl
+    inputs.sources:          records appended to botji-core/index/sources.jsonl
+    inputs.legacy_artifacts: legacy art_* records (artifact_id,
+                             current_turn_id, role, content)
+    inputs.response_text:    text passed to the hook
+    expected.passthrough:    when true, hook MUST return None
+    expected.contains:       substring required in the rewritten string
+    expected.not_contains:   substring forbidden in the rewritten string
+    """
+    from importlib import import_module
+    plugin_path = _plugin_path("botji-core")
+    with tempfile.TemporaryDirectory(prefix="botji-h-deliv-") as tmp:
+        home = Path(tmp)
+        os.environ["HERMES_HOME"] = str(home)
+        os.environ["BOTJI_CORE_ROOT"] = str(home / "botji-core")
+        os.environ["BOTJI_ARTIFACT_ROOT"] = str(home / "artifacts")
+        ctx = _FakeContext()
+        module = _load_module(plugin_path, f"botji_deliv_h_{uuid.uuid4().hex[:8]}")
+        module.register(ctx)
+
+        inputs = fixture.get("inputs") or {}
+        expected = fixture.get("expected") or {}
+        core_idx = home / "botji-core" / "index"
+        core_idx.mkdir(parents=True, exist_ok=True)
+        for kind in ("receipts", "sources"):
+            for record in (inputs.get(kind) or []):
+                with (core_idx / f"{kind}.jsonl").open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(record) + "\n")
+        for entry in (inputs.get("legacy_artifacts") or []):
+            art_id = entry["artifact_id"]
+            data_path = home / "artifacts" / "legacy" / art_id / "data.txt"
+            data_path.parent.mkdir(parents=True, exist_ok=True)
+            data_path.write_text(entry.get("content", "legacy"), encoding="utf-8")
+            legacy_idx = home / "artifacts" / "index" / "artifacts.jsonl"
+            legacy_idx.parent.mkdir(parents=True, exist_ok=True)
+            with legacy_idx.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({
+                    "artifact_id": art_id,
+                    "role": entry.get("role", "source"),
+                    "current_turn_id": entry.get("current_turn_id"),
+                    "path": str(data_path),
+                    "parents": entry.get("parents", []),
+                    "created_at": entry.get("created_at", "2026-05-20T00:00:00Z"),
+                }) + "\n")
+
+        hooks_pkg = import_module(module.__name__ + ".hooks.delivery_check")
+        got = hooks_pkg.transform_llm_output(
+            response_text=inputs.get("response_text", ""),
+            session_id=inputs.get("session_id", "session-d"),
+        )
+        if expected.get("passthrough"):
+            return (True, "ok") if got is None else (False, f"expected passthrough, got {got!r}")
+        if not isinstance(got, str):
+            return False, f"expected rewrite string, got {got!r}"
+        needle = expected.get("contains")
+        if needle and needle not in got:
+            return False, f"{needle!r} not in {got!r}"
+        forbidden = expected.get("not_contains")
+        if forbidden and forbidden in got:
+            return False, f"forbidden {forbidden!r} found in {got!r}"
+        return True, "ok"
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -793,9 +863,10 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "fidelity-guard": run_fidelity_guard,
     "id-family": run_id_family,
     "cron": run_cron,
+    "delivery": run_delivery,
 }
 
-SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family", "cron"]
+SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family", "cron", "delivery"]
 
 
 def _fixtures_root() -> Path:

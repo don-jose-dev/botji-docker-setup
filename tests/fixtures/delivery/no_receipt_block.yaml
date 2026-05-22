@@ -1,0 +1,19 @@
+id: no_receipt_block
+description: |
+  Failure mode 1: a delivery-looking reply names an out_* artifact but the
+  receipts index has no matching receipt_record. The hook MUST replace the
+  reply with the missing-receipt failure message and MUST NOT leak any of
+  the original delivery text.
+inputs:
+  response_text: |
+    3D render · route: edit_image · claim: reviewed · out_20260522T120000Z_aabbccdd
+  receipts: []
+  sources:
+    - artifact_id: src_20260522T115500Z_11111111
+      current_turn_id: turn-current
+      kind: source
+      role: source
+      created_at: "2026-05-22T11:55:00Z"
+expected:
+  contains: source-bound output missing receipt
+  not_contains: "claim: reviewed"
