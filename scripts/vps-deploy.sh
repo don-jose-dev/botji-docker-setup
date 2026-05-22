@@ -518,12 +518,29 @@ PY
   # file resolves container_name from its own .env (BOTJI_TENANT_ID=degain →
   # degain-hermes), so we just need to be in its directory and pass the image
   # via BOTJI_PROD_IMAGE.
+  #
+  # CRITICAL: the parent shell exported BOTJI_DATA_DIR / BOTJI_WORKSPACE_DIR
+  # from the PRIMARY deploy block (line 119-120 sets them from /opt/botji's
+  # .env). Compose treats shell env as higher priority than the per-tenant
+  # .env file, so without an explicit override the additional tenant's
+  # compose would silently mount /opt/<tenant>/data/botji/ instead of
+  # /opt/<tenant>/data/<tenant>/. Docker auto-creates the missing source dir
+  # as root:root, the container sees an empty /opt/data, hermes user can't
+  # traverse, and skills_sync.py crashes with PermissionError stat'ing
+  # /opt/data/skills/.bundled_manifest. The PR #20 / #21 / #22 chmods were
+  # widening permissions on the WRONG (real) dir all along — observed
+  # 2026-05-22 when degain restart-looped through four deploys.
   (
     cd "$tenant_path"
     export BOTJI_PROD_IMAGE="$IMAGE_REF"
     export HERMES_UID="$tenant_uid"
     export HERMES_GID="$tenant_gid"
     export BOTJI_TENANT_ID="$tenant_id"
+    export BOTJI_DATA_DIR="$tenant_data_dir"
+    # BOTJI_WORKSPACE_DIR stays per-tenant (degain has its own ./workspace).
+    local tenant_workspace
+    tenant_workspace="$(grep -E '^BOTJI_WORKSPACE_DIR=' .env 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'\"")"
+    export BOTJI_WORKSPACE_DIR="${tenant_workspace:-./workspace}"
     if docker inspect "$tenant_container" >/dev/null 2>&1; then
       docker rm -f "$tenant_container" >/dev/null 2>&1 || true
     fi
