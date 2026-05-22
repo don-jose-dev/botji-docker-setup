@@ -30,7 +30,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 RUN if command -v apt-get >/dev/null 2>&1; then \
       apt-get update \
       && apt-get install -y --no-install-recommends \
-           libmagic1 python3 python3-venv \
+           libmagic1 file python3 python3-venv \
            chromium chromium-driver \
       && rm -rf /var/lib/apt/lists/*; \
     fi \
@@ -63,7 +63,7 @@ ENV BOTJI_CONTRACT_SCHEMA=/opt/data/schemas/prompt_contract.schema.json
 ENV BOTJI_REVIEW_SCHEMA=/opt/data/schemas/source_fidelity_review.schema.json
 ENV BOTJI_ARTIFACT_SCHEMA=/opt/data/schemas/artifact_schema.schema.json
 ENV BOTJI_ARTIFACT_ROOT=/opt/data/artifacts
-ENV PATH="/opt/data/.local/bin:${PATH}"
+ENV PATH="/opt/data/.local/bin:/opt/hermes/.venv/bin:${PATH}"
 
 # Do not set USER here. The official entrypoint starts as root, fixes runtime UID/GID,
 # then drops to the hermes user before starting the gateway.
