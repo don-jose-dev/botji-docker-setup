@@ -847,8 +847,14 @@ def run_cron(fixture: dict) -> tuple[bool, str]:
         script = spec.get("script")
         if not isinstance(script, str) or not script.strip():
             return False, "no_agent=true requires a non-empty script"
-        # sync_code_components copies cron/scripts/* into $DATA_DIR/scripts/.
-        if not (repo_root / "cron" / "scripts" / script).is_file():
+        # sync_code_components copies cron/scripts/* into $DATA_DIR/scripts/
+        # (flat, not under cron/scripts/). Probe deployed layout first, then
+        # repo layout. PR #49 dropped the repo_root local but missed this
+        # follow-up reference, causing NameError on the deployed VPS.
+        script_path = home / "scripts" / Path(script).name
+        if not script_path.is_file():
+            script_path = Path(__file__).resolve().parents[2] / "cron" / "scripts" / script
+        if not script_path.is_file():
             return False, f"script {script!r} not found under cron/scripts/"
 
     for key in ("no_agent", "name", "schedule", "script"):
@@ -1109,16 +1115,29 @@ def run_render(fixture: dict) -> tuple[bool, str]:
     # the template — see docs/OPERATIONS.md "Kanban-backed render retry".
     # `referencing_skills_with_steps` is the stricter list — those files
     # must also name every step key under `must_reference_steps`.
+    # Skill files on a deployed tenant live under $HERMES_HOME/skills/<name>/.
+    # Fixture skill_rel is repo-relative like "seed/hermes/skills/X/SKILL.md";
+    # strip the "seed/hermes/" prefix to map onto the deployed layout. PR #49
+    # dropped the repo_root local but missed this follow-up reference, causing
+    # NameError on the deployed VPS.
+    def _resolve_skill_path(skill_rel: str) -> Path:
+        parts = Path(skill_rel).parts
+        if len(parts) >= 3 and parts[0] == "seed" and parts[1] == "hermes":
+            candidate = home / Path(*parts[2:])
+            if candidate.is_file():
+                return candidate
+        return Path(__file__).resolve().parents[2] / skill_rel
+
     must_ref_steps = expected.get("must_reference_steps") or []
     for skill_rel in expected.get("referencing_skills") or []:
-        spath = repo_root / skill_rel
+        spath = _resolve_skill_path(skill_rel)
         if not spath.is_file():
             return False, f"referencing skill not found: {spath}"
         body = spath.read_text(encoding="utf-8")
         if "render_retry.yaml" not in body and template_id not in body:
             return False, f"{skill_rel} does not reference template id or filename"
     for skill_rel in expected.get("referencing_skills_with_steps") or []:
-        spath = repo_root / skill_rel
+        spath = _resolve_skill_path(skill_rel)
         if not spath.is_file():
             return False, f"referencing skill not found: {spath}"
         body = spath.read_text(encoding="utf-8")
