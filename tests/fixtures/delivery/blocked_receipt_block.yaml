@@ -1,0 +1,26 @@
+id: blocked_receipt_block
+description: |
+  Failure mode 2: the most recent receipt for the mentioned out_* has
+  status=block. The hook MUST replace the reply with a message that names
+  the receipt's primary_blocker and MUST NOT leak the original text.
+inputs:
+  response_text: |
+    Photo mode · route: edit_image · claim: reviewed · out_20260522T120100Z_22223344
+  receipts:
+    - receipt_id: rcpt_20260522T120030Z_99887766
+      output_id: out_20260522T120100Z_22223344
+      source_ids: [src_20260522T115500Z_11111111]
+      route: edit_image
+      status: block
+      primary_blocker: layout_drift
+      current_turn_id: turn-current
+      created_at: "2026-05-22T12:00:30Z"
+  sources:
+    - artifact_id: src_20260522T115500Z_11111111
+      current_turn_id: turn-current
+      kind: source
+      role: source
+      created_at: "2026-05-22T11:55:00Z"
+expected:
+  contains: layout_drift
+  not_contains: "claim: reviewed"

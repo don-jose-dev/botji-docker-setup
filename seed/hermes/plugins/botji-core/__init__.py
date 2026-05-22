@@ -569,10 +569,11 @@ def register(ctx) -> None:
         handler=_handle_delivery_gate,
         description=DELIVERY_GATE_SCHEMA["description"],
     )
-    # Cross-cutting pre_tool_call hook — see hooks/stale_id_block.py.
+    # Cross-cutting hooks — see hooks/stale_id_block.py + hooks/delivery_check.py.
     if hasattr(ctx, "register_hook"):
-        from .hooks import pre_tool_call as _pre_tool_call
+        from .hooks import pre_tool_call as _pre_tool_call, transform_llm_output as _xform
         ctx.register_hook("pre_tool_call", _pre_tool_call)
+        ctx.register_hook("transform_llm_output", _xform)
     _core_root().mkdir(parents=True, exist_ok=True)
     logger.info("botji-core: registered Hermes-native source/artifact/receipt tools (root=%s)", _core_root())
 
