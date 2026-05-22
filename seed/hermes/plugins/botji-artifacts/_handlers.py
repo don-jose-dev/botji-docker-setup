@@ -62,6 +62,7 @@ def _handle_artifact_register(args: dict[str, Any], **_: Any) -> str:
             copy_into_registry=params.copy_into_registry,
             parents=params.parents,
             user_intent=params.user_intent,
+            current_turn_id=params.current_turn_id,
             extra=extra,
         )
         # Lift dedup metadata from the record dict to the top level of the response

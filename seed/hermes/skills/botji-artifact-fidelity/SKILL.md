@@ -34,7 +34,7 @@ The default transformation policy is exact preservation: if the user provided a 
 
 ## Required loop
 
-1. Call `artifact_register` for every source file path.
+1. Call `artifact_register` for every source file path. Pass `current_turn_id` set to the same value you would use for `source_register` / `source_current` so the dedup short-circuit cannot return a stale lineage record from an earlier turn when the user re-sends identical bytes.
 2. Call `artifact_extract` before making claims about file contents, dimensions, text, pages, layers, tables, or visible structure.
 3. Call `artifact_normalize` to create a `botji.artifact_schema.v1` contract before transformation.
    This applies to every file type: image, PDF, text, DXF/CAD, DOCX, XLSX, HTML, SVG, STEP, IFC, ZIP, audio, video, or binary fallback.

@@ -23,6 +23,13 @@ class ArtifactRegisterParams(BaseModel):
     copy_into_registry: bool = True
     parents: list[str] = Field(default_factory=list)
     user_intent: str = ""
+    current_turn_id: str = Field(
+        default="",
+        description="Stable ID for the current user request/turn — same value used by "
+        "botji-core source_register. When set, dedup only hits records from the same "
+        "turn, preventing stale art_* reuse when a user re-uploads identical bytes in a "
+        "later turn. When empty, dedup is disabled (safer default for legacy callers).",
+    )
     route: str = Field(
         default="",
         description="Declared transform route for provider-generated outputs "
