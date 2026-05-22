@@ -32,6 +32,7 @@ small pure utilities they need.
 | Content-addressed hashing, atomic file writes, ID allocation | pure utilities |
 | Index I/O (jsonl read/append, atomic replace) | pure utilities |
 | Prometheus metrics export (`metrics/`): counter/histogram/info on tool calls + verdicts | mechanical observation — only tool name, operation arg, duration, verdict string. No semantic interpretation. Fail-open. |
+| Append-only audit log (`metrics/hooks.py:_audit_*`): JSONL line per substrate tool call with timestamp, tool, tenant, session_id, args_hash, args_kinds, result_status, redacted result_summary, duration_ms | mechanical observation — no raw args, no raw results, secrets regex-redacted before write. Same fail-open contract as metrics. |
 
 ## Not allowed in `botji-core`
 
@@ -62,7 +63,7 @@ reasoning, the prompt boundaries, and the user-visible failure mode.
 
 ## Current cap
 
-<!-- BOTJI_CORE_LOC_CAP: 1000 -->
+<!-- BOTJI_CORE_LOC_CAP: 1100 -->
 
 The CI step in `.github/workflows/ci.yml` parses the value from the HTML
 comment above. The cap lives here, not in CI, so raising it always requires a
@@ -73,6 +74,7 @@ visible change to this file.
 | Date | Cap | Why |
 |---|---|---|
 | 2026-05-22 | 650 → 1000 | Two mechanical additions to the substrate landed together: (1) `hooks/stale_id_block.py` (~131 LOC) — `pre_tool_call` enforces three structural safety rules (stale `art_*`, mixed ID family, over-budget transforms) on already-typed args; (2) `metrics/{__init__,exporter,hooks}.py` (~185 LOC) — Prometheus counters and histograms over tool names, verdict strings, and durations. Both fail open. Both are pure mechanical reads — no vision, no classification, no prompt construction. Cap set to 1000 to accommodate both without artificial pressure to collapse the metrics shape; future bumps must justify against the same "Allowed in `botji-core`" table. |
+| 2026-05-22 | 1000 → 1100 | Append-only audit log added as an extension of `metrics/hooks.py` (the existing `post_tool_call` hook). One JSONL line per substrate tool call records timestamp, tool, tenant, session id, args hash + per-field type, success/error status, ≤200-char redacted result summary, and wall-clock duration. No raw args, no raw results, no file contents — secrets matching conservative regex patterns (`tok_*`, `sk_*`, `Bearer *`, JWT `eyJ*`) are stripped before write. Same fail-open contract as the metrics export: any error in the audit path is swallowed and the underlying tool call is unaffected. Mechanical observation, no semantic interpretation. Bump (+100) reserves headroom for the redaction patterns + JSONL serializer + four new audit fixtures' supporting helpers; the actual delta inside `botji-core/` is ~60 LOC. |
 
 ## Raising the LOC cap
 

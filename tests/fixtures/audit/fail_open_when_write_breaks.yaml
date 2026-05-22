@@ -1,0 +1,25 @@
+id: fail_open_when_write_breaks
+description: |
+  Audit write is observational, not enforcing. If the audit path can't be
+  opened (disk full, parent is a file not a directory, permission denied,
+  etc.), the hook MUST swallow the exception so the underlying tool call
+  result reaches the caller unchanged. We simulate this by pointing
+  HERMES_HOME at a regular file — the mkdir(parents=True) for the audit
+  directory will fail, and the hook must absorb it.
+
+  Expected outcome: zero audit records (write was attempted but failed)
+  AND the hook returned cleanly (no exception bubbled up — the harness
+  would surface that as a FAIL otherwise).
+inputs:
+  tenant: t-failopen
+  tool_name: delivery_gate
+  tool_call_id: tc-failopen-1
+  session_id: session-failopen
+  break_audit: true
+  args:
+    receipt_id: rcpt_001
+  result:
+    success: true
+    delivery_gate: clear
+expected:
+  record_count: 0

@@ -854,6 +854,117 @@ def run_delivery(fixture: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Suite: audit — append-only audit log written by metrics/hooks.py
+# ---------------------------------------------------------------------------
+
+def run_audit(fixture: dict) -> tuple[bool, str]:
+    """Invoke metrics.hooks.on_post_tool_call directly and assert JSONL audit
+    output. Bypasses the Prometheus exporter (which would need a real port
+    bind and prometheus_client dep) by stubbing `_started=True` and replacing
+    the metric singletons with no-op objects. Audit logic in `_audit_write`
+    is independent of metrics emission, so this validates the audit path.
+
+    inputs.tenant:          BOTJI_TENANT_ID; default "test-tenant"
+    inputs.tool_name:       tool name to audit
+    inputs.args:            args dict passed to hook
+    inputs.result:          tool result dict or string
+    inputs.session_id:      session id passed to hook
+    inputs.tool_call_id:    tool call id
+    inputs.break_audit:     when true, point HERMES_HOME at an unwritable
+                            sentinel so _audit_write must fail; the hook
+                            must still swallow the exception (fail-open).
+    expected.record_count:  expected number of audit lines
+    expected.result_status: "success" or "error"
+    expected.session_id:    expected session_id in the record
+    expected.args_hash_present: bool
+    expected.args_kinds:    dict; expected args_kinds payload (exact match)
+    expected.summary_excludes: list[str] of substrings forbidden in result_summary
+    expected.summary_includes_redaction: bool — at least one <redacted:secret>
+    """
+    from importlib import import_module
+    plugin_path = _plugin_path("botji-core")
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+    with tempfile.TemporaryDirectory(prefix="botji-h-audit-") as tmp:
+        home = Path(tmp)
+        os.environ["HERMES_HOME"] = str(home)
+        os.environ["BOTJI_TENANT_ID"] = inputs.get("tenant", "test-tenant")
+        os.environ["BOTJI_CORE_ROOT"] = str(home / "botji-core")
+        ctx = _FakeContext()
+        module = _load_module(plugin_path, f"botji_audit_h_{uuid.uuid4().hex[:8]}")
+        module.register(ctx)
+
+        mod_metrics = import_module(module.__name__ + ".metrics")
+        hooks_mod = import_module(module.__name__ + ".metrics.hooks")
+        exp_mod = import_module(module.__name__ + ".metrics.exporter")
+
+        class _NoopLabel:
+            def inc(self, *_a, **_k): pass
+            def observe(self, *_a, **_k): pass
+            def set(self, *_a, **_k): pass
+        class _NoopMetric:
+            def labels(self, **_k): return _NoopLabel()
+        for attr in ("delivery_gate_total", "artifact_transform_total",
+                     "artifact_transform_duration_seconds", "receipt_record_total",
+                     "tool_error_total", "container_info"):
+            setattr(exp_mod, attr, _NoopMetric())
+        exp_mod._started = True
+        exp_mod.TENANT = inputs.get("tenant", "test-tenant")
+        hooks_mod._AUDIT_DONE.clear()
+
+        if inputs.get("break_audit"):
+            # Replace HERMES_HOME with a file path so mkdir fails.
+            broken = home / "not_a_dir"
+            broken.write_text("blocker", encoding="utf-8")
+            os.environ["HERMES_HOME"] = str(broken)
+
+        tool_name = inputs.get("tool_name", "artifact_register")
+        args = inputs.get("args") or {}
+        result = inputs.get("result")
+        tool_call_id = inputs.get("tool_call_id", "tc-audit-1")
+        session_id = inputs.get("session_id", "session-audit")
+
+        # Run the real hook end-to-end so we exercise the same code path as
+        # production (pre + post). Any audit error must be swallowed.
+        hooks_mod.on_pre_tool_call(tool_name=tool_name, tool_call_id=tool_call_id)
+        hooks_mod.on_post_tool_call(
+            tool_name=tool_name, args=args, result=result,
+            tool_call_id=tool_call_id, session_id=session_id)
+
+        audit_path = home / "audit" / f"{exp_mod.TENANT}-substrate.jsonl"
+        lines: list[dict] = []
+        if audit_path.is_file():
+            for raw in audit_path.read_text(encoding="utf-8").splitlines():
+                if raw.strip():
+                    lines.append(json.loads(raw))
+
+        want_count = expected.get("record_count")
+        if want_count is not None and len(lines) != want_count:
+            return False, f"expected {want_count} records, got {len(lines)}: {lines!r}"
+
+        if not lines:
+            return True, "ok"
+        rec = lines[0]
+        if expected.get("result_status") and rec.get("result_status") != expected["result_status"]:
+            return False, f"result_status {rec.get('result_status')!r} != {expected['result_status']!r}"
+        if expected.get("session_id") is not None and rec.get("session_id") != expected["session_id"]:
+            return False, f"session_id {rec.get('session_id')!r} != {expected['session_id']!r}"
+        if expected.get("args_hash_present") and not isinstance(rec.get("args_hash"), str):
+            return False, f"args_hash missing or not a string: {rec.get('args_hash')!r}"
+        if expected.get("args_kinds") is not None and rec.get("args_kinds") != expected["args_kinds"]:
+            return False, f"args_kinds {rec.get('args_kinds')!r} != {expected['args_kinds']!r}"
+        for needle in expected.get("summary_excludes") or []:
+            if needle in (rec.get("result_summary") or ""):
+                return False, f"summary leaks forbidden {needle!r}: {rec.get('result_summary')!r}"
+        if expected.get("summary_includes_redaction") and "<redacted:" not in (rec.get("result_summary") or ""):
+            return False, f"summary missing redaction marker: {rec.get('result_summary')!r}"
+        for key in ("timestamp", "tool", "tenant", "duration_ms"):
+            if key not in rec:
+                return False, f"record missing required field {key!r}: {rec!r}"
+        return True, "ok"
+
+
+# ---------------------------------------------------------------------------
 # Suite: render — validate Kanban workflow templates + skill cross-references
 # ---------------------------------------------------------------------------
 
@@ -1032,11 +1143,12 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "id-family": run_id_family,
     "cron": run_cron,
     "delivery": run_delivery,
+    "audit": run_audit,
     "render": run_render,
     "manifest": run_manifest,
 }
 
-SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family", "cron", "delivery", "render", "manifest"]
+SUITE_ORDER = ["core", "gate", "allowlist", "contract", "fidelity-guard", "id-family", "cron", "delivery", "audit", "render", "manifest"]
 
 
 def _fixtures_root() -> Path:

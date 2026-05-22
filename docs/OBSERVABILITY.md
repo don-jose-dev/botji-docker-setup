@@ -152,3 +152,167 @@ To add one:
 3. Add a row to the metrics table above.
 4. If the cap is breached, edit `docs/BOTJI_CORE_CHARTER.md` per the
    "Raising the LOC cap" procedure.
+
+## Audit log
+
+Prometheus counters are aggregate. Auditors need a **per-event** record
+of every substrate tool call: who, when, what tool, what shape of args,
+what outcome. The audit log is the answer.
+
+The same `post_tool_call` hook that updates counters also appends one
+JSONL line to a per-tenant append-only file. Audit failures are
+swallowed — the underlying tool call is unaffected (same fail-open
+contract as the metrics export).
+
+### Tools audited
+
+| Tool | Why |
+|---|---|
+| `artifact_register` | new artifact in the index |
+| `source_register` | new `src_*` artifact tied to a turn |
+| `artifact_write` | new `out_*` artifact written from a path |
+| `receipt_record` | new `rcpt_*` receipt persisted |
+| `delivery_gate` | mechanical verdict on a receipt |
+| `artifact_transform` | edit/copy/render operation, often expensive |
+| `artifact_review` | review action that affects downstream delivery |
+
+This list lives in `_AUDIT_TOOLS` at the top of
+`seed/hermes/plugins/botji-core/metrics/hooks.py`. Adding a new substrate
+tool here means adding its name there too.
+
+### Record schema
+
+One JSONL line per call. Fields:
+
+| Field | Type | What it means |
+|---|---|---|
+| `timestamp` | ISO-8601 string, UTC, `Z` suffix | Wall-clock at hook fire (post-tool) |
+| `tool` | string | The tool name, e.g. `artifact_register` |
+| `tenant` | string | `BOTJI_TENANT_ID` at plugin load |
+| `session_id` | string | Hermes session id; empty when not supplied |
+| `args_hash` | hex sha256 (64 chars) | Hash of the args dict (sorted keys, `default=str`). Lets auditors detect re-runs of identical calls without storing the args themselves. |
+| `args_kinds` | object `{name: type-name}` | Per-field type of every arg. Auditors see *what* was passed without leaking *values*. |
+| `result_status` | `"success"` or `"error"` | Derived from `parsed.get("success")` |
+| `result_summary` | string ≤ 200 chars | Redacted JSON-serialized result, truncated. See "Redaction" below. |
+| `duration_ms` | non-negative int | Wall-clock pre→post duration. `0` when pre-hook didn't run (e.g. unit-test direct invocations of the post hook). |
+
+Example line (one JSON object per line, no pretty-printing):
+
+```json
+{"timestamp":"2026-05-22T17:00:00Z","tool":"artifact_register","tenant":"botji","session_id":"sess-abc","args_hash":"7f0b...","args_kinds":{"path":"str","role":"str","current_turn_id":"str"},"result_status":"success","result_summary":"{\"success\": true, \"source\": {\"artifact_id\": \"src_...\"}}","duration_ms":12}
+```
+
+### File location
+
+```
+${HERMES_HOME}/audit/<tenant>-substrate.jsonl
+```
+
+`HERMES_HOME` defaults to `/opt/data`, so on a stock VPS deploy the path
+is `/opt/data/audit/botji-substrate.jsonl` (and `/opt/data/audit/botji-degain-substrate.jsonl` for the second tenant). Each container runs in its own tenant directory, so the
+`<tenant>-` prefix is mostly cosmetic — but it makes accidental shared
+storage configs visible at a glance.
+
+Mode: `O_APPEND | O_CREAT`. Idempotency is enforced inside the process
+via an in-memory `(tool_call_id, tool_name)` set, so re-firing the hook
+on the same call (which Hermes shouldn't do) will not double-write.
+
+### Redaction
+
+The `result_summary` is built from the JSON-serialized result, capped at
+200 characters, with the following regex patterns stripped before write:
+
+| Pattern | Replacement | Why |
+|---|---|---|
+| `tok_[A-Za-z0-9_-]+` | `<redacted:secret>` | API-style opaque tokens |
+| `sk_[A-Za-z0-9_-]+` | `<redacted:secret>` | OpenAI / Stripe-style secret keys |
+| `Bearer\s+[A-Za-z0-9._-]+` | `<redacted:secret>` | HTTP Authorization headers |
+| `eyJ[A-Za-z0-9._-]+` | `<redacted:secret>` | JWT prefix (`{"alg":...` base64url) |
+
+Patterns live in `_SECRET_RE` at the top of `metrics/hooks.py`. The list
+is intentionally conservative; when in doubt the redactor drops the
+substring. The audit log must never become a secret-exfil channel.
+
+`args` are *never* serialized into the record — only `args_hash` and the
+per-field type via `args_kinds`. That means a `path` arg pointing to
+`/tmp/incoming/customer-photo.jpg` produces `args_kinds.path = "str"`
+and contributes to the hash, but the path string itself never lands on
+disk in the audit log.
+
+### Retention
+
+The audit writer does **not** rotate the file. That's the host's job —
+specifically, `logrotate` on the VPS (or whichever log-rotation mechanism
+the host uses). The expected configuration on a Debian/Ubuntu VPS:
+
+```
+/opt/data/audit/*-substrate.jsonl {
+    daily
+    rotate 90
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+```
+
+`copytruncate` is the important bit: the Hermes process holds the file
+descriptor open with `O_APPEND`, so a `rename`-based rotation would
+silently send appends to a freed inode. `copytruncate` copies the file
+aside, then truncates the original in place, so the open fd continues
+to append at offset 0 in the rotated tail.
+
+90-day retention is a reasonable starting point — long enough to debug
+incidents that span weeks, short enough that storage doesn't grow without
+bound. The audit JSONL averages ≤ 1 KB / call; even at 10k calls/day
+per tenant that's ~900 MB per quarter compressed. Adjust as warranted.
+
+If the file grows past ~100 MB before a daily rotation fires, that's a
+signal to either (a) rotate hourly, or (b) audit fewer tools (drop one
+of the `_AUDIT_TOOLS` entries). Don't quietly raise the file-size limit
+without revisiting the retention model.
+
+### Querying
+
+The file is JSON Lines: one valid JSON object per line. Standard tools
+work directly:
+
+```sh
+# Count successful delivery_gate calls in the last 24h
+grep '"tool":"delivery_gate"' /opt/data/audit/botji-substrate.jsonl \
+  | grep '"result_status":"success"' | wc -l
+
+# All errors for a given session, with full record:
+grep '"session_id":"session-abc"' /opt/data/audit/botji-substrate.jsonl \
+  | jq 'select(.result_status == "error")'
+
+# args_hash uniqueness — detect re-runs:
+jq -r '"\(.tool) \(.args_hash)"' /opt/data/audit/botji-substrate.jsonl \
+  | sort | uniq -c | sort -rn | head -20
+
+# All tool calls slower than 5 seconds:
+jq 'select(.duration_ms > 5000)' /opt/data/audit/botji-substrate.jsonl
+```
+
+The `args_hash` is reproducible: two identical calls produce the same
+hash, so you can fingerprint a re-run without seeing the args.
+
+### Fail-open caveat
+
+The audit hook lives inside `metrics/hooks.py:on_post_tool_call`, which
+is only registered when the Prometheus exporter starts (see
+`__init__.py`). If `prometheus_client` is unavailable in the runtime,
+both metrics and audit are dark — the substrate continues to serve tools
+without observability. Production containers install
+`prometheus-client` (see `Dockerfile`); CI installs it before running
+the harness or stubs the metric singletons in the `audit` test suite.
+
+Within the hook, any error in the audit path (open failure, JSON
+encode failure, full disk) is caught and logged at DEBUG level. The
+tool's own result reaches the caller unchanged. The `audit` harness
+suite includes a `fail_open_when_write_breaks` fixture that points
+`HERMES_HOME` at a non-directory and asserts the hook still returns
+cleanly.
+
+
