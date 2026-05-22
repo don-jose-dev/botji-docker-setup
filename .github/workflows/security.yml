@@ -115,7 +115,7 @@ jobs:
         # Surfaces findings in the repo's Security tab. Runs even on failure so
         # blocked PRs still report the offending CVE list.
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy-image
@@ -158,7 +158,7 @@ jobs:
 
       - name: Upload trivy fs results to GitHub Security
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-fs-results.sarif
           category: trivy-fs
