@@ -407,6 +407,129 @@ else
   exit 1
 fi
 
+# ----------------------------------------------------------------------------
+# Additional tenants on the same box
+# ----------------------------------------------------------------------------
+# /opt/botji is the CI-tracked tenant deployed above (it owns the git checkout
+# and runs the auth/.env writes from CI secrets). Other tenants (degain, etc.)
+# are siblings — same GHCR image, same skills/plugins, but their own .env,
+# config.yaml, .codex/auth.json, Telegram bot, and allowlist. We sync code
+# components (plugins/skills/schemas) from /opt/botji's checkout into each
+# additional tenant's data dir and restart their containers with the new image.
+# We do NOT touch their .env, config.yaml, or .codex/auth.json — those are
+# tenant-specific and intentionally diverge.
+#
+# Failures in an additional tenant are logged as warnings but do NOT fail the
+# overall deploy: /opt/botji is already healthy at this point and the workflow
+# should not roll back a healthy primary because a sibling tenant had trouble.
+deploy_additional_tenant() {
+  local tenant_path="$1"
+  if [ ! -d "$tenant_path" ]; then
+    echo "==> Additional tenant $tenant_path: directory missing, skipping"
+    return 0
+  fi
+  if [ ! -f "$tenant_path/.env" ]; then
+    echo "==> Additional tenant $tenant_path: .env missing, skipping"
+    return 0
+  fi
+
+  echo "==> Additional tenant deploy: $tenant_path"
+
+  local tenant_data_dir tenant_id tenant_uid tenant_gid
+  tenant_data_dir="$(grep -E '^BOTJI_DATA_DIR=' "$tenant_path/.env" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'\"")"
+  tenant_id="$(grep -E '^BOTJI_TENANT_ID=' "$tenant_path/.env" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'\"")"
+  tenant_uid="$(grep -E '^HERMES_UID=' "$tenant_path/.env" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'\"")"
+  tenant_gid="$(grep -E '^HERMES_GID=' "$tenant_path/.env" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d "'\"")"
+  tenant_data_dir="${tenant_data_dir:-./data/$tenant_id}"
+  tenant_uid="${tenant_uid:-10000}"
+  tenant_gid="${tenant_gid:-$tenant_uid}"
+  local tenant_container="${tenant_id}-hermes"
+  local tenant_data_abs="$tenant_path/${tenant_data_dir#./}"
+
+  echo "    tenant=$tenant_id container=$tenant_container data=$tenant_data_abs"
+
+  # Sync plugins / skills / schemas from the primary's checkout into the
+  # additional tenant's data dir. Reuses sync_code_components by overriding DATA_DIR
+  # + HERMES_RUNTIME_UID/GID, then restoring the primary values.
+  local saved_data_dir="$DATA_DIR"
+  local saved_uid="$HERMES_RUNTIME_UID"
+  local saved_gid="$HERMES_RUNTIME_GID"
+  DATA_DIR="$tenant_data_abs"
+  HERMES_RUNTIME_UID="$tenant_uid"
+  HERMES_RUNTIME_GID="$tenant_gid"
+  sync_code_components || echo "    WARNING: additional tenant code sync had non-fatal errors"
+  DATA_DIR="$saved_data_dir"
+  HERMES_RUNTIME_UID="$saved_uid"
+  HERMES_RUNTIME_GID="$saved_gid"
+  echo "    code components synced (plugins, skills, schemas)"
+
+  # Best-effort kanban schema migration on the additional tenant's kanban.db.
+  local tenant_kanban="$tenant_data_abs/kanban.db"
+  if [ -f "$tenant_kanban" ]; then
+    python3 - "$tenant_kanban" <<'PY' || echo "    WARNING: additional tenant kanban migration failed"
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+added = []
+existing = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+for table in ("tasks", "task_runs", "task_events", "kanban_notify_subs"):
+    if table not in existing:
+        continue
+    cols = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+    if "session_id" not in cols:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN session_id TEXT")
+        added.append(table)
+db.commit()
+db.close()
+print("    additional tenant kanban: added session_id to " + ", ".join(added) if added else "    additional tenant kanban: schema already up to date")
+PY
+    chown "$tenant_uid:$tenant_gid" "$tenant_kanban" 2>/dev/null || true
+  fi
+
+  # Recreate the additional tenant container with the new image. The additional tenant's compose
+  # file resolves container_name from its own .env (BOTJI_TENANT_ID=degain →
+  # degain-hermes), so we just need to be in its directory and pass the image
+  # via BOTJI_PROD_IMAGE.
+  (
+    cd "$tenant_path"
+    export BOTJI_PROD_IMAGE="$IMAGE_REF"
+    export HERMES_UID="$tenant_uid"
+    export HERMES_GID="$tenant_gid"
+    export BOTJI_TENANT_ID="$tenant_id"
+    if docker inspect "$tenant_container" >/dev/null 2>&1; then
+      docker rm -f "$tenant_container" >/dev/null 2>&1 || true
+    fi
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+      up -d --force-recreate --no-build --remove-orphans
+  ) || { echo "    WARNING: additional tenant compose up failed — additional tenant left unchanged"; return 0; }
+
+  # Wait for healthy, warn on failure but do NOT fail the primary deploy.
+  local tenant_status="not_found"
+  for _ in $(seq 1 15); do
+    tenant_status="$(docker inspect "$tenant_container" --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")"
+    [ "$tenant_status" = "healthy" ] && break
+    sleep 4
+  done
+  if [ "$tenant_status" = "healthy" ]; then
+    echo "    additional tenant $tenant_container healthy"
+    if [ -f scripts/vps-postdeploy-smoke.sh ]; then
+      BOTJI_CONTAINER_NAME="$tenant_container" \
+        BOTJI_TENANT_ID="$tenant_id" \
+        bash scripts/vps-postdeploy-smoke.sh \
+        || echo "    WARNING: $tenant_container post-deploy smoke failed (non-fatal — /opt/botji already shipped)"
+    fi
+  else
+    echo "    WARNING: $tenant_container unhealthy ($tenant_status) — /opt/botji deploy already succeeded"
+    docker logs "$tenant_container" --tail 30 2>&1 | sed 's/^/      | /' || true
+  fi
+}
+
+# Run additional-tenant deploys as a non-fatal post-step. List tenants here
+# (whitespace-separated under BOTJI_ADDITIONAL_TENANTS, default = degain).
+BOTJI_ADDITIONAL_TENANTS="${BOTJI_ADDITIONAL_TENANTS:-/opt/botji-degain}"
+for tenant_path in $BOTJI_ADDITIONAL_TENANTS; do
+  deploy_additional_tenant "$tenant_path" || true
+done
+
 # Prune images not used by any running container. Prevents the ~30 GB disk
 # accumulation seen after each CI deploy (old sha-* images pile up as <none>).
 echo "==> Pruning unused images"
