@@ -71,6 +71,34 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
 
+      - name: Extract SBOM from pushed image
+        # buildx attaches the SBOM as an OCI referrer to the image (sbom: true
+        # above). `imagetools inspect --format` pulls the SPDX attestation out
+        # so we can persist it as a workflow artifact for auditors and the
+        # 90-day retention window required by supply-chain policy.
+        id: sbom
+        run: |
+          set -euo pipefail
+          image="${REGISTRY}/${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
+          mkdir -p sbom
+          # The SBOM attestation is keyed by platform; this repo only ships
+          # linux/amd64 so a single extraction is enough.
+          docker buildx imagetools inspect \
+            "$image" \
+            --format '{{ json (index .SBOM "linux/amd64").SPDX }}' \
+            > sbom/botji-hermes.spdx.json
+          # Sanity-check: SPDX docs always have an spdxVersion field.
+          grep -q '"spdxVersion"' sbom/botji-hermes.spdx.json
+          echo "sbom-path=sbom/botji-hermes.spdx.json" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ steps.meta.outputs.version }}
+          path: sbom/botji-hermes.spdx.json
+          retention-days: 90
+          if-no-files-found: error
+
   logs:
     name: Fetch container logs
     runs-on: ubuntu-latest

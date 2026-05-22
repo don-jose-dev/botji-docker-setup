@@ -1,0 +1,15 @@
+# trivy CVE waivers
+#
+# One CVE per line. Every entry MUST have a comment on the line above
+# explaining:
+#   1. Why the CVE does not apply (or risk is acceptable)
+#   2. Who waived it and when
+#   3. When to revisit (date or "next image base bump")
+#
+# Example:
+#   # 2026-05-22 / @don-jose-dev / chromium pulls libxml2 transitively but we
+#   # never parse untrusted XML; revisit on next base image bump.
+#   CVE-2026-12345
+#
+# Empty waiver list is the desired steady state — every CVE here is technical
+# debt. Prefer base image bumps over waivers.
