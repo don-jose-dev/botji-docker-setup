@@ -84,44 +84,9 @@ For tool-backed work or generated artifacts, persist a review JSON when file too
 - If the review cannot be persisted or validated, disclose that and set `final_claim_level` no higher than `reviewed`.
 - Never claim a persisted review exists unless the file was actually written.
 
-## Generic artifact fidelity loop
+## Pipeline
 
-Use this for files, images, PDFs, text, DXF/CAD, diagrams, screenshots, slides, layout transformations, and design mockups.
-
-When `artifact_*` tools are available, use them for the loop: `artifact_register` -> `artifact_extract` -> `artifact_normalize` -> `artifact_transform` -> `artifact_review`. Direct generation tools are allowed only when there is no source artifact to preserve or the artifact plugin is unavailable.
-
-1. Source inventory
-   - Identify parent artifact path/id.
-   - Extract adapter constraints: dimensions/text, labels, ordering, line spans, table/page structure, layers/entities, layout relationships, required objects, forbidden changes.
-
-2. Assumption boundary
-   - Separate source facts from creative assumptions.
-   - Materials, colors, lighting, camera angle, decor, semantic summaries, OCR, and surrounding context are assumptions unless the source or parser evidence specifies them.
-
-3. Normalize and transform
-   - Create `botji.artifact_schema.v1` with hard requirements and advisory preferences.
-   - Default to `exact_copy`; use it whenever the required output is byte-for-byte preservation or the change list is not explicit.
-   - Use `render_schema` before styled output when structure matters.
-   - Use provider/image edit routes only after an explicit change list exists; include source constraints and forbidden changes in any provider prompt.
-   - Request the smallest creative interpretation that satisfies the contract.
-   - Do not ask the model to invent missing dimensions as facts.
-   - For source-image fidelity, confirm that the selected route is `exact_copy`, `image_edit`, or `schema_render`; prompt-only `image_generate` is a conflict unless the contract says `visual_mode: concept_generation`.
-
-4. Output capture
-   - Record output artifact path/id and version label, e.g. `Render v1`.
-
-5. Post-generation comparison
-   - Inspect the generated artifact when tools allow.
-   - Compare against the source inventory.
-   - Confirm that source artifacts were registered, normalized, and passed through a source-aware transform route.
-   - Confirm that source images were passed as image inputs when the contract selected `image_edit`.
-   - List matches, partials, conflicts, and assumptions.
-   - If major source facts drift, regenerate or ask the user before calling it final.
-
-6. Final claim
-   - Use `reviewed` if compared by Botji.
-   - Use `verified` only if an explicit verification step was performed against sources/tests/schemas.
-   - If no comparison was possible, use `draft` or `unverified`.
+The procedural loop (`artifact_register` → `artifact_extract` → `artifact_normalize` → `artifact_transform` → `artifact_review`) is owned by `botji-artifact-fidelity` — see that skill for the full step list. This skill owns only the **review contract**: which axes are required, what each `compare_status` means, which conditions block delivery, how the receipt JSON is shaped, and the persisted-review rule above.
 
 ## Review JSON
 
