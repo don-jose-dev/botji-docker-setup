@@ -255,8 +255,18 @@ jobs:
           HOST="${VPS_USER}@${VPS_HOST}"
 
           retry 8 15 ssh "${SSH_OPTS[@]}" "$HOST" "echo ssh-ok"
+          # vps-deploy.sh is a thin wrapper that sources sibling deploy*.sh
+          # modules from the same directory (resolved via BASH_SOURCE). The
+          # whole set must land in /tmp/ together — shipping vps-deploy.sh
+          # alone would leave it unable to source deploy.sh.
           retry 5 15 scp "${SSH_OPTS[@]}" \
-            scripts/vps-deploy.sh /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 \
+            scripts/vps-deploy.sh \
+            scripts/deploy.sh \
+            scripts/deploy-env.sh \
+            scripts/deploy-config.sh \
+            scripts/deploy-tenants.sh \
+            scripts/deploy-smoke.sh \
+            /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 \
             "$HOST:/tmp/"
           retry 3 30 ssh "${SSH_OPTS[@]}" "$HOST" \
             "chmod +x /tmp/vps-deploy.sh && bash /tmp/vps-deploy.sh"
