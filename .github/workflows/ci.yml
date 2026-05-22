@@ -43,6 +43,23 @@ jobs:
         run: |
           python -m compileall -q seed/hermes/plugins/
 
+      - name: Enforce botji-core LOC cap
+        # botji-core is the "thin substrate" promised by docs/HERMES_NATIVE_REWRITE_PLAN.md.
+        # The LOC cap lives in docs/BOTJI_CORE_CHARTER.md (single source of truth), so
+        # raising it always shows up as a charter edit in the PR diff — making the
+        # "mechanical vs semantic" tradeoff visible at review time.
+        run: |
+          charter=docs/BOTJI_CORE_CHARTER.md
+          [ -f "$charter" ] || { echo "::error::$charter is missing — restore it before merging"; exit 1; }
+          cap=$(sed -n 's/.*BOTJI_CORE_LOC_CAP:\s*\([0-9]\+\).*/\1/p' "$charter" | head -n1)
+          [ -n "$cap" ] || { echo "::error::could not parse BOTJI_CORE_LOC_CAP from $charter"; exit 1; }
+          loc=$(find seed/hermes/plugins/botji-core -name '*.py' -not -path '*/__pycache__/*' -exec cat {} + | wc -l)
+          echo "botji-core LOC: $loc / cap: $cap"
+          if [ "$loc" -gt "$cap" ]; then
+            echo "::error::botji-core LOC ($loc) exceeds cap ($cap). Raise BOTJI_CORE_LOC_CAP in $charter and document why — see the charter."
+            exit 1
+          fi
+
       - name: Run plugin smoke test
         # Imports every submodule of every botji-* plugin, exercises each plugin
         # entry point, verifies public symbols.  Same script + contract that runs
