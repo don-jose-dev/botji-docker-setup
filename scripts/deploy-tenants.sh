@@ -61,6 +61,17 @@ sync_code_components() {
     cp -R seed/hermes/prompts "$DATA_DIR/"
   fi
   cp seed/hermes/schemas/*.json "$DATA_DIR/schemas/" 2>/dev/null || true
+  # kanban/workflows/ — declarative Kanban workflow templates (see
+  # seed/hermes/kanban/README.md). The v1 kernel writes
+  # workflow_template_id + current_step_key as forward-compat columns; the
+  # skill-following agent reads these files today as the canonical
+  # multi-step shape for durable retries. Lands at $DATA_DIR/kanban/.
+  if [ -d seed/hermes/kanban ]; then
+    rm -rf "$DATA_DIR/kanban"
+    mkdir -p "$DATA_DIR/kanban"
+    cp -R seed/hermes/kanban/. "$DATA_DIR/kanban/"
+    echo "    seeded kanban workflows: $(find "$DATA_DIR/kanban/workflows" -name '*.yaml' 2>/dev/null | wc -l) template(s)"
+  fi
   # cron/ — declarative Hermes cron seeds (see cron/README.md). Job yaml
   # lands in $DATA_DIR/cron/ and the matching scripts in $DATA_DIR/scripts/
   # because Hermes resolves cron `script:` paths against $HERMES_HOME/scripts/.
@@ -85,6 +96,7 @@ sync_code_components() {
   fi
   chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" \
     "$DATA_DIR/plugins" "$DATA_DIR/skills" "$DATA_DIR/prompts" "$DATA_DIR/schemas" 2>/dev/null || true
+  [ -d "$DATA_DIR/kanban" ] && chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/kanban" 2>/dev/null || true
   [ -d "$DATA_DIR/cron" ] && chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/cron" 2>/dev/null || true
   [ -d "$DATA_DIR/scripts" ] && chown -R "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/scripts" 2>/dev/null || true
   mkdir -p "$DATA_DIR/verdicts"

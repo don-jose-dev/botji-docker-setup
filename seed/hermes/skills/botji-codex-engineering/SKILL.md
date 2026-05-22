@@ -85,6 +85,8 @@ The canonical cap is in `botji-render-mode` (Retry budget): max 2 transforms per
 
 After the retry, if still blocked, stop and report. Do not silently accept a low-fidelity output and do not run a third transform without explicit user authorisation.
 
+For **source-bound** flows (a source artifact was registered before the transform), the durable orchestration lives at `kanban/workflows/render_retry.yaml` — see `botji-2d-to-3d` Step 5 for the full template walk-through. Prefer the Kanban template when it is seeded into `$HERMES_HOME/kanban/workflows/` and `kanban.dispatch_in_gateway` is on; this prose is the inline fallback. Spec-mode and concept-mode renders (no source, no manifest) always run inline — no Kanban template applies to them.
+
 ### user_id passthrough
 
 Every `artifact_transform`, `botji_render`, and `image_generate` call must pass `user_id` through to the plugin. This is required for fair-share queueing — the plugin rate-limits per user. Omitting `user_id` breaks queue fairness and may cause incorrect billing attribution.

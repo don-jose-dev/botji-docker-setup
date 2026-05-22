@@ -134,6 +134,92 @@ Field mapping for `cron/*.yaml`: see `cron/README.md`.
 
 ---
 
+## Kanban-backed render retry
+
+Source-bound renders (sketch / floor plan / photo → 3D) carry a manifest and
+must survive a blocked review with at most one retry. The orchestration shape
+— manifest extract → transform → review → retry → review → deliver | escalate
+— is encoded as a Hermes Kanban workflow template at
+`seed/hermes/kanban/workflows/render_retry.yaml`, seeded into
+`$DATA_DIR/kanban/workflows/` on every deploy. Each step writes
+`current_step_key` on the kanban task row, so a chain that was mid-retry when
+the container restarted resumes from where it stopped instead of being lost.
+
+The matching skill prose lives in `botji-2d-to-3d` SKILL.md Step 5 and
+references the template by name. The skill stays the source of truth for *what
+the retry should do* (manifest-driven brief, adjacency-first
+`subject_inventory`, `prior_blocker` verbatim) — the template stays the source
+of truth for *which steps run in what order and how to resume*.
+
+### Inspecting a stuck retry chain
+
+A retry chain that hasn't reached `step_deliver` or `step_ask_user` shows up
+as a kanban task with `workflow_template_id = "render_retry_v1"` and a
+non-null `current_step_key`.
+
+```sh
+# All in-flight render-retry tasks
+docker exec botji-hermes hermes kanban list \
+  --workflow-template-id render_retry_v1 \
+  --status running
+
+# Detailed view of one task, including its run history
+docker exec botji-hermes hermes kanban show <task-id>
+
+# Or filter to a specific step
+docker exec botji-hermes hermes kanban list \
+  --workflow-template-id render_retry_v1 \
+  --current-step-key step_retry_transform
+```
+
+`hermes kanban show` prints the task header, the current `step_key`, and the
+list of run rows (each transform / review attempt — see `task_runs` in the
+v1 spec). Step transitions and review verdicts appear as `task_events`.
+
+### Manually advancing or cancelling a chain
+
+A chain that's truly stuck (network blip, Codex hung mid-run, etc.) can be
+nudged or cancelled:
+
+```sh
+# Push a stuck task back to 'ready' so the dispatcher reclaims it on the next tick
+docker exec botji-hermes hermes kanban status <task-id> ready
+
+# Force-block with a structured reason — gateway notifier will relay to the user
+docker exec botji-hermes hermes kanban block <task-id> \
+  --reason "manually cancelled by operator: <why>"
+
+# Archive a completed-but-noisy chain
+docker exec botji-hermes hermes kanban archive <task-id>
+```
+
+If multiple chains piled up because the dispatcher was down, `hermes kanban
+list --workflow-template-id render_retry_v1 --status ready` shows the queue
+depth.
+
+### Failure mode: Kanban unreachable → inline fallback
+
+If `kanban.dispatch_in_gateway` is `false` in `config.yaml`, or the kanban
+SQLite DB is unavailable, the skill-following agent falls back to running the
+same `1 + 1` retry inline — see the prose in `botji-2d-to-3d` SKILL.md Step 5.
+Semantics are identical (same retry call, same prompt on double-block); the
+only thing lost is durability across container restarts.
+
+This fallback is intentional: it means the deploy can ship the template ahead
+of the v2 dispatcher routing without any tenant outage if Kanban is
+misconfigured. To verify the active mode for a tenant:
+
+```sh
+docker exec botji-hermes hermes config get kanban.dispatch_in_gateway
+docker exec botji-hermes ls -la /opt/data/kanban/workflows/
+```
+
+If both are present and on, the agent prefers the template. If either is
+missing, the agent silently runs inline — no error, no degradation in user
+experience.
+
+---
+
 ## Log locations
 
 | Stream | Path | Notes |

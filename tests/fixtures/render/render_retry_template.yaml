@@ -1,0 +1,32 @@
+id: render_retry_template
+description: |
+  seed/hermes/kanban/workflows/render_retry.yaml must parse, encode the
+  canonical 7-step shape (extract → transform → review → retry → review →
+  deliver | ask_user), and stay cross-referenced from the two skills that
+  consume it. If a skill silently drops the template reference (or renames
+  a step without updating the template) this fixture fails — that's the
+  point: the prose contract and the template contract live or die together.
+inputs:
+  template_file: seed/hermes/kanban/workflows/render_retry.yaml
+expected:
+  id: render_retry_v1
+  step_keys:
+    - step_extract_manifest
+    - step_transform_initial
+    - step_review_initial
+    - step_retry_transform
+    - step_review_retry
+    - step_deliver
+    - step_ask_user
+  must_reference_steps:
+    - step_retry_transform
+    - step_ask_user
+  # Every listed skill must at least name the template (filename or id).
+  referencing_skills:
+    - seed/hermes/skills/botji-2d-to-3d/SKILL.md
+    - seed/hermes/skills/botji-codex-engineering/SKILL.md
+  # The 2d-to-3d skill is the canonical step walk-through, so it must name
+  # every step key under `must_reference_steps`. codex-engineering only
+  # cross-links — no need to repeat step keys there.
+  referencing_skills_with_steps:
+    - seed/hermes/skills/botji-2d-to-3d/SKILL.md

@@ -184,7 +184,23 @@ If `delivery_gate == "blocked"` AND the ONLY conflicts are proportion/geometry d
 
 The canonical budget is **1 attempt + at most 1 retry per turn** — defined in `botji-render-mode` (Retry budget). The retry combines BOTH escalations below into a single call (don't burn the budget on two cosmetic re-runs).
 
-**The retry call:** add the exact `primary_blocker` text from the review as the FIRST FORBIDDEN entry, AND move the adjacency constraint to the very first item in `subject_inventory`. Both moves in one transform:
+### Orchestration: prefer the Kanban workflow template
+
+The durable orchestration for this retry lives at `kanban/workflows/render_retry.yaml` (seeded into `$HERMES_HOME/kanban/workflows/`). It encodes the same `1 + 1` shape as a 7-step Kanban task: `step_extract_manifest → step_transform_initial → step_review_initial → step_retry_transform → step_review_retry → step_deliver | step_ask_user`. Each step carries `current_step_key`, so the chain survives container restarts and session compaction.
+
+**When to use Kanban vs inline retry:**
+
+| Flow shape | Use Kanban template | Inline (this prose) |
+|---|---|---|
+| Source-bound render with manifest (this skill's core path) | **PREFER** when the template is on disk and Kanban dispatch is enabled | Fallback only |
+| Casual / spec-mode flows in `botji-render-mode` | — | **OK** — no source to preserve, no manifest, single shot |
+| Concept mode (waived fidelity) | — | **OK** |
+
+**How to check:** if `$HERMES_HOME/kanban/workflows/render_retry.yaml` is present AND `kanban.dispatch_in_gateway` is `true` in `config.yaml` (the default), prefer the Kanban template. Otherwise run the same retry inline using the prose below. Skill semantics are identical either way — the template is the durable layer; this prose is the always-on fallback.
+
+### The retry call (template step `step_retry_transform`, or inline)
+
+Add the exact `primary_blocker` text from the review as the FIRST FORBIDDEN entry, AND move the adjacency constraint to the very first item in `subject_inventory`. Both moves in one transform:
 
 ```python
 artifact_transform(
@@ -199,7 +215,9 @@ artifact_transform(
 )
 ```
 
-**If the retry also blocks on the same constraint, stop and ask:**
+### If the retry also blocks on the same constraint (template step `step_ask_user`)
+
+Stop and ask:
 > "I've made 2 attempts. The closest result I could produce conflicts on: [primary_blocker]. gpt-image-2 is having difficulty with this specific constraint. Options: (1) Accept this result with the noted conflict, (2) Adjust the sketch to be less ambiguous about this constraint, (3) Try a different camera angle."
 
 Never silently run a third transform. If the user explicitly authorises another attempt, disclose the budget burn ("3rd attempt as requested — usual cap is 2") and proceed.
