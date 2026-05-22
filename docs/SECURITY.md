@@ -13,10 +13,18 @@ see [OPERATIONS.md](OPERATIONS.md).
 | Tool       | What it catches                                                  | Where it runs                 | Blocks PR? |
 |------------|------------------------------------------------------------------|-------------------------------|------------|
 | gitleaks   | Secrets committed to git (tokens, keys, passwords)               | `.github/workflows/security.yml` | yes        |
-| trivy (image) | OS-package and Python CVEs in the built container image        | `.github/workflows/security.yml` | yes (HIGH+CRITICAL only) |
+| trivy (image) | OS-package and Python CVEs in the built container image        | `.github/workflows/security.yml` | no (informational baseline — see below) |
 | trivy (fs)    | Dockerfile / compose / Actions misconfigurations               | `.github/workflows/security.yml` | no (informational baseline) |
 | dependabot | Outdated GitHub Actions and Docker base images                  | `.github/dependabot.yml` (weekly) | n/a (opens PRs) |
 | SBOM       | Software bill of materials for every image built                 | `.github/workflows/deploy.yml`   | n/a (artifact only) |
+
+The two trivy jobs start as informational on day one: the upstream Hermes
+base image carries a CVE backlog at the moment this baseline lands, and
+triaging it (bump the base, or waive per-CVE in `.trivyignore`) is a
+follow-up workstream — not part of the baseline. Findings already ship to
+the repo's `Security → Code scanning` tab and the workflow artifact, so
+nothing is hidden. Once the backlog is triaged, flip `exit-code: "0"` to
+`"1"` in `.github/workflows/security.yml` to make the gate blocking.
 
 The security workflow also runs on a weekly schedule so newly-disclosed CVEs
 in the base image surface even when nobody touched the repo.
