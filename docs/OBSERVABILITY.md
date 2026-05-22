@@ -102,6 +102,16 @@ Panels:
 The dashboard is templated by `tenant`, queried from
 `label_values(botji_container_info, tenant)`. Multi-select is enabled.
 
+## LLM-judge eval costs (out-of-band)
+
+The skill-interaction LLM-judge tier (`evals/skill_interactions/`) is
+**not** wired into the Prometheus exporter today — it runs as a
+`workflow_dispatch` CI job and prints estimated cost per run (~$0.05/fixture,
+20-fixture cap by default). When the judge moves to blocking, OpenAI
+spend will move into this observability surface as a counter labeled by
+`tenant` and `verdict`. See [`evals/skill_interactions/README.md`](../evals/skill_interactions/README.md)
+for the current cost model.
+
 ## Caveats
 
 - **Cardinality**: label values are bounded by the cardinality table at the

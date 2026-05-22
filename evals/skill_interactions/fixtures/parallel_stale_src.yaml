@@ -33,3 +33,10 @@ deterministic_checks:
   - kind: transform_count_max
     per_branch: 2
   - kind: no_banned_vocabulary
+
+# Tier 2 (advisory LLM-judge): semantic statements the trace should
+# satisfy. Synthetic data only — see README "Privacy note".
+expected_semantic:
+  - The artifact_transform's mood_brief describes an architectural interior render that is consistent with the source images registered in the current turn.
+  - The transform's source_artifact_ids reference at least one of the artifacts registered in this same turn, not a prior compaction-leaked ID.
+  - No prose field in the trace introduces subjects or scene elements that have no basis in the registered source paths.
