@@ -152,12 +152,17 @@ def _legacy_artifact_index_path() -> Path:
 
 
 def _find_legacy_artifact(artifact_id: str) -> dict[str, Any] | None:
-    """Compatibility lookup for legacy botji-artifacts records.
+    """Defense-in-depth lookup for the substrate hooks ONLY.
 
-    Phase 1 runs botji-core beside the older artifact plugin. During migration,
-    skills may legitimately hold legacy ``art_*`` IDs from ``artifact_register``
-    or ``artifact_transform``. Treat those as known artifacts for mechanical
-    receipt/gate checks instead of forcing extra repair loops.
+    V1R PR 1 (2026-05-23) removed the legacy fallback from core tool dispatch.
+    Tools (`source_register`, `output_write`, `receipt_record`, `delivery_gate`)
+    must NOT call this — they treat `art_*` IDs as non-existent. The defense
+    hooks `hooks/stale_id_block.py` and `hooks/delivery_check.py` still call
+    this for mechanical observation: detecting stale `art_*` references leaking
+    out of the legacy plugin so they can be blocked / rewritten before delivery.
+
+    Once V1R PR 11 deletes `botji-artifacts/`, the legacy index is gone and this
+    function returns `None` for every input. The hooks fail open in that case.
     """
     path = _legacy_artifact_index_path()
     if not path.exists():
@@ -181,8 +186,16 @@ def _find_legacy_artifact(artifact_id: str) -> dict[str, Any] | None:
     return None
 
 
-def _find_artifact(artifact_id: str) -> dict[str, Any] | None:
-    return _find_record("artifacts", artifact_id, "artifact_id") or _find_legacy_artifact(artifact_id)
+def _find_native_artifact(artifact_id: str) -> dict[str, Any] | None:
+    """Native-only artifact lookup for core tool dispatch.
+
+    V1R PR 1 (2026-05-23): tools no longer transparently accept `art_*` IDs via
+    legacy fallback. If a tool needs to look up an artifact, it gets a hit only
+    if the artifact lives in the native `src_*` / `out_*` registry. Legacy
+    `art_*` IDs return `None` and the caller raises `unknown source/output_id`
+    — same error path as any other unrecognized ID.
+    """
+    return _find_record("artifacts", artifact_id, "artifact_id")
 
 
 def _native_sources_for_turn(current_turn_id: str) -> list[str]:
@@ -302,7 +315,7 @@ def _handle_artifact_write(args: dict[str, Any], **_: Any) -> str:
         parents = _list_arg(args, "parents")
         if not parents:
             raise ValueError("parents must include at least one source artifact id")
-        missing = [parent for parent in parents if _find_artifact(parent) is None]
+        missing = [parent for parent in parents if _find_native_artifact(parent) is None]
         if missing:
             raise ValueError(f"unknown parent artifact ids: {', '.join(missing)}")
         artifact_id = _new_id("out")
@@ -340,10 +353,10 @@ def _handle_receipt_record(args: dict[str, Any], **_: Any) -> str:
         status = str(args.get("status") or "").strip().lower()
         if status not in {"pass", "warn", "block"}:
             raise ValueError("status must be one of: pass, warn, block")
-        missing_sources = [source_id for source_id in source_ids if _find_artifact(source_id) is None]
+        missing_sources = [source_id for source_id in source_ids if _find_native_artifact(source_id) is None]
         if missing_sources:
             raise ValueError(f"unknown source ids: {', '.join(missing_sources)}")
-        if _find_artifact(output_id) is None:
+        if _find_native_artifact(output_id) is None:
             raise ValueError(f"unknown output_id: {output_id}")
         checks = args.get("checks") if isinstance(args.get("checks"), list) else []
         receipt_id = _new_id("rcpt")
@@ -392,13 +405,13 @@ def _handle_delivery_gate(args: dict[str, Any], **_: Any) -> str:
         source_ids = [str(item) for item in (receipt.get("source_ids") or []) if str(item).strip()]
         if not source_ids:
             return _block(receipt, "missing_sources", "receipt has no source_ids")
-        sources = [_find_artifact(source_id) for source_id in source_ids]
+        sources = [_find_native_artifact(source_id) for source_id in source_ids]
         missing_sources = [source_id for source_id, source in zip(source_ids, sources) if source is None]
         if missing_sources:
             return _block(receipt, "missing_source_artifact", ", ".join(missing_sources))
 
         output_id = str(receipt.get("output_id") or "").strip()
-        output = _find_artifact(output_id)
+        output = _find_native_artifact(output_id)
         if output is None:
             return _block(receipt, "missing_output_artifact", output_id)
         output_path = str(output.get("path") or "")
