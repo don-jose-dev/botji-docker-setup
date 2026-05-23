@@ -1,0 +1,7 @@
+name: botji-adapters
+version: 1.0.0
+description: "V1R adapter protocol: per-file-type detect/extract/normalize/compare. Image adapter shipped in PR 2; pdf/text/dxf/docx/xlsx in PRs 3–7. Replaces scattered image/pdf/text logic in botji-artifacts."
+author: Botji
+kind: standalone
+requires_env: []
+provides_hooks: []
