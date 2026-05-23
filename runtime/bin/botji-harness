@@ -1675,6 +1675,58 @@ def run_review(fixture: dict) -> tuple[bool, str]:
     return True, "ok"
 
 
+def run_render_ops(fixture: dict) -> tuple[bool, str]:
+    """Exercise the V1R render operations dispatcher (PR 9a)."""
+    render_path = _plugin_path("botji-render")
+    render_dir = render_path.parent
+    if str(render_dir) not in sys.path:
+        sys.path.insert(0, str(render_dir))
+
+    module = _load_module(render_path, f"botji_render_h_{uuid.uuid4().hex[:8]}")
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+    scenario = inputs.get("scenario")
+
+    if scenario == "render_exact_copy":
+        with tempfile.TemporaryDirectory(prefix="botji-h-render-") as tmp:
+            src = Path(tmp) / "input.txt"
+            src.write_text(inputs.get("source_content", "hello"), encoding="utf-8")
+            out_dir = Path(tmp) / "out"
+            policy = module.RenderPolicy(route="exact_copy", strict=True)
+            result = module.dispatch("exact_copy", [src], policy, output_dir=out_dir)
+            if expected.get("success") is True and not result.success:
+                return False, f"exact_copy failed: {result.error}"
+            if expected.get("operation") and result.operation != expected["operation"]:
+                return False, f"operation {result.operation!r} != {expected['operation']!r}"
+            if result.output_path is None or not result.output_path.is_file():
+                return False, "exact_copy did not produce an output file"
+            want_route = expected.get("route_metadata")
+            if want_route and result.metadata.get("route") != want_route:
+                return False, f"route metadata {result.metadata.get('route')!r} != {want_route!r}"
+            return True, "ok"
+
+    if scenario == "render_schema":
+        with tempfile.TemporaryDirectory(prefix="botji-h-render-") as tmp:
+            out_dir = Path(tmp) / "out"
+            policy = module.RenderPolicy(route="render_schema", strict=False)
+            result = module.dispatch(
+                "render_schema", [], policy,
+                output_dir=out_dir, schema_payload=inputs.get("payload") or {},
+            )
+            if expected.get("success") is True and not result.success:
+                return False, f"render_schema failed: {result.error}"
+            if expected.get("operation") and result.operation != expected["operation"]:
+                return False, f"operation {result.operation!r} != {expected['operation']!r}"
+            if result.output_path is None or not result.output_path.is_file():
+                return False, "render_schema did not produce an output file"
+            want_suffix = expected.get("output_suffix")
+            if want_suffix and result.output_path.suffix != want_suffix:
+                return False, f"suffix {result.output_path.suffix!r} != {want_suffix!r}"
+            return True, "ok"
+
+    return False, f"unknown scenario: {scenario!r}"
+
+
 SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "core": run_core,
     "gate": run_gate,
@@ -1690,9 +1742,10 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "manifest": run_manifest,
     "adapters": run_adapters,
     "review": run_review,
+    "render-ops": run_render_ops,
 }
 
-SUITE_ORDER = ["core", "gate", "allowlist", "rate-limit", "contract", "fidelity-guard", "id-family", "cron", "delivery", "audit", "render", "manifest", "adapters", "review"]
+SUITE_ORDER = ["core", "gate", "allowlist", "rate-limit", "contract", "fidelity-guard", "id-family", "cron", "delivery", "audit", "render", "manifest", "adapters", "review", "render-ops"]
 
 
 def _fixtures_root() -> Path:

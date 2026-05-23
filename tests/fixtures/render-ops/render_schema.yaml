@@ -1,0 +1,14 @@
+id: render_schema_operation
+description: |
+  Operation: render_schema with a dict payload writes a deterministic JSON
+  file to output_dir. Returns RenderResult with metadata.sha256 stable
+  across invocations of the same payload (deterministic serialization).
+inputs:
+  scenario: render_schema
+  payload:
+    type: kitchen
+    elements: [counter, sink, fridge]
+expected:
+  success: true
+  operation: render_schema
+  output_suffix: .json
