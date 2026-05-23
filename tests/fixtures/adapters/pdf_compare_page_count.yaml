@@ -1,0 +1,15 @@
+id: pdf_compare_page_count
+description: |
+  PdfAdapter.compare() under non-exact_copy routes checks page_count match.
+  Same page count → pass. Mismatched page count → warn (or block under
+  strict). The exact_copy route still enforces byte-exact SHA match
+  regardless of page metadata.
+inputs:
+  scenario: pdf_compare
+expected:
+  match_verdict: pass
+  mismatch_strict_verdict: block
+  mismatch_strict_reason_contains: page_count_mismatch
+  exact_copy_byte_match_verdict: pass
+  exact_copy_byte_mismatch_verdict: block
+  exact_copy_byte_mismatch_reason: byte_exact_fidelity_failed

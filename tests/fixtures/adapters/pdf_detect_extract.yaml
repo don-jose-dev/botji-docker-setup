@@ -1,0 +1,25 @@
+id: pdf_detect_extract
+description: |
+  PdfAdapter.detect() returns True for .pdf suffix and for byte streams
+  starting with %PDF. extract() returns adapter='pdf', mime='application/pdf',
+  size_bytes matching the file, sha256 64-hex, and page_count populated via
+  the raw /Type /Page regex (excluding the /Type /Pages catalog).
+inputs:
+  scenario: pdf_detect_extract
+  # Minimal valid 1-page PDF (~ 480 bytes). Has one /Type /Page (the page)
+  # and one /Type /Pages (the catalog). page_count must be 1, not 2.
+  pdf_b64: |
+    JVBERi0xLjQKMSAwIG9iago8PC9UeXBlIC9DYXRhbG9nIC9QYWdlcyAyIDAgUj4+CmVuZG9iagoy
+    IDAgb2JqCjw8L1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDE+PgplbmRvYmoKMyAw
+    IG9iago8PC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgL01lZGlhQm94IFswIDAgNjEyIDc5Ml0g
+    L0NvbnRlbnRzIDQgMCBSPj4KZW5kb2JqCjQgMCBvYmoKPDwvTGVuZ3RoIDQ0Pj4Kc3RyZWFtCkJU
+    Ci9GMSAxMiBUZgo3MiA3MjAgVGQKKEhlbGxvLCBXb3JsZCEpIFRqCkVUCmVuZHN0cmVhbQplbmRv
+    YmoKeHJlZgowIDUKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAw
+    MDAwNTUgMDAwMDAgbiAKMDAwMDAwMDEwMyAwMDAwMCBuIAowMDAwMDAwMTc4IDAwMDAwIG4gCnRy
+    YWlsZXIKPDwvU2l6ZSA1IC9Sb290IDEgMCBSPj4Kc3RhcnR4cmVmCjI1MQolJUVPRgo=
+expected:
+  detect_pdf: true
+  detect_text: false
+  adapter: pdf
+  mime_type: application/pdf
+  page_count: 1

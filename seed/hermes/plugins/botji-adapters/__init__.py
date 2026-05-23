@@ -22,6 +22,7 @@ import logging
 
 from protocol import Adapter, Evidence, CompareResult, ReviewPolicy  # noqa: I001
 from image import ImageAdapter  # noqa: I001
+from pdf import PdfAdapter  # noqa: I001
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 # extract/compare calls to the right adapter without per-file-type branches.
 REGISTRY: dict[str, Adapter] = {
     "image": ImageAdapter(),
+    "pdf": PdfAdapter(),
 }
 
 
@@ -61,4 +63,5 @@ def register(ctx) -> None:  # noqa: ARG001 — no-op; adapters are import-only
 
 
 __all__ = ["Adapter", "Evidence", "CompareResult", "ReviewPolicy",
-           "ImageAdapter", "REGISTRY", "get_adapter", "detect_adapter"]
+           "ImageAdapter", "PdfAdapter", "REGISTRY",
+           "get_adapter", "detect_adapter"]
