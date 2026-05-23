@@ -67,6 +67,15 @@ reasoning, the prompt boundaries, and the user-visible failure mode.
   belongs in the legacy plugin or in a skill rule. Once Phase 4 retires the
   legacy plugin, transition-period code in core becomes dead weight — and
   reviewers won't notice it leaving because it's small.
+- **No legacy `art_*` acceptance in core tools.** As of [V1R PR 1](BOTJI_V1R.md)
+  the tools `source_register`, `output_write`, `receipt_record`, and
+  `delivery_gate` treat `art_*` IDs as non-existent — there is no transparent
+  legacy fallback at lookup time. The substrate hooks (`hooks/stale_id_block.py`,
+  `hooks/delivery_check.py`) may still observe `art_*` IDs for defense-in-depth:
+  detecting stale lineage leakage out of the legacy plugin and blocking or
+  rewriting bad deliveries. Observation is mechanical; acceptance is not.
+  Once V1R PR 11 deletes `botji-artifacts/`, the legacy index is gone and the
+  hooks become no-ops on `art_*` automatically.
 - **No user-visible caveat text.** The substrate emits structured verdicts
   (`pass` / `warn` / `block` + machine-readable reasons). Wording is a skill
   concern.
