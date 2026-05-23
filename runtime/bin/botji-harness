@@ -1402,6 +1402,77 @@ def run_adapters(fixture: dict) -> tuple[bool, str]:
             return False, f"exact_copy reasons missing {want_r!r}: {res.reasons}"
         return True, "ok"
 
+    if scenario == "text_detect_extract":
+        content = inputs.get("content", "")
+        filename = inputs.get("filename", "sample.txt")
+        with tempfile.TemporaryDirectory(prefix="botji-h-adapt-") as tmp:
+            text_path = Path(tmp) / filename
+            text_path.write_text(content, encoding="utf-8")
+            adapter = module.REGISTRY["text"]
+            if expected.get("detect_text") is True and not adapter.detect(text_path):
+                return False, f"detect() returned False for text {text_path}"
+
+            evidence = adapter.extract(text_path)
+            want_adapter = expected.get("adapter")
+            if want_adapter and evidence.adapter != want_adapter:
+                return False, f"adapter {evidence.adapter!r} != {want_adapter!r}"
+            want_mime = expected.get("mime_type")
+            if want_mime and evidence.mime_type != want_mime:
+                return False, f"mime_type {evidence.mime_type!r} != {want_mime!r}"
+            want_lines = expected.get("line_count")
+            got_lines = evidence.metadata.get("line_count")
+            if want_lines is not None and got_lines != want_lines:
+                return False, f"line_count {got_lines} != {want_lines}"
+            want_lang = expected.get("language")
+            got_lang = evidence.metadata.get("language")
+            if want_lang and got_lang != want_lang:
+                return False, f"language {got_lang!r} != {want_lang!r}"
+            return True, "ok"
+
+    if scenario == "text_compare":
+        adapter = module.REGISTRY["text"]
+        ReviewPolicy = module.ReviewPolicy
+        Evidence = module.Evidence
+
+        src = Evidence(adapter="text", mime_type="text/plain",
+                       sha256="a" * 64, size_bytes=1000, metadata={"line_count": 100, "char_count": 1000})
+
+        # Within 10% tolerance (95 lines vs 100)
+        within = Evidence(adapter="text", mime_type="text/plain",
+                          sha256="b" * 64, size_bytes=950, metadata={"line_count": 95, "char_count": 950})
+        res = adapter.compare(src, within, ReviewPolicy(route="render_brief", strict=False))
+        want_v = expected.get("within_tolerance_verdict")
+        if want_v and res.verdict != want_v:
+            return False, f"within-tolerance verdict {res.verdict!r} != {want_v!r}"
+
+        # Outside 10% tolerance (50 lines vs 100), strict → block
+        outside = Evidence(adapter="text", mime_type="text/plain",
+                           sha256="c" * 64, size_bytes=500, metadata={"line_count": 50, "char_count": 500})
+        res = adapter.compare(src, outside, ReviewPolicy(route="render_brief", strict=True))
+        want_v = expected.get("outside_tolerance_strict_verdict")
+        if want_v and res.verdict != want_v:
+            return False, f"outside-strict verdict {res.verdict!r} != {want_v!r}"
+        want_r = expected.get("outside_tolerance_reason_contains")
+        if want_r and not any(want_r in r for r in res.reasons):
+            return False, f"outside reasons missing {want_r!r}: {res.reasons}"
+
+        # exact_copy match
+        same = Evidence(adapter="text", mime_type="text/plain",
+                        sha256="a" * 64, size_bytes=1000, metadata={"line_count": 100, "char_count": 1000})
+        res = adapter.compare(src, same, ReviewPolicy(route="exact_copy", strict=True))
+        want_v = expected.get("exact_copy_match_verdict")
+        if want_v and res.verdict != want_v:
+            return False, f"exact_copy match verdict {res.verdict!r} != {want_v!r}"
+
+        # exact_copy mismatch
+        diff = Evidence(adapter="text", mime_type="text/plain",
+                        sha256="d" * 64, size_bytes=1000, metadata={"line_count": 100, "char_count": 1000})
+        res = adapter.compare(src, diff, ReviewPolicy(route="exact_copy", strict=True))
+        want_v = expected.get("exact_copy_mismatch_verdict")
+        if want_v and res.verdict != want_v:
+            return False, f"exact_copy mismatch verdict {res.verdict!r} != {want_v!r}"
+        return True, "ok"
+
     return False, f"unknown scenario: {scenario!r}"
 
 

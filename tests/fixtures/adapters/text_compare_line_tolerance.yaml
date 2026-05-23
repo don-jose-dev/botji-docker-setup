@@ -1,0 +1,14 @@
+id: text_compare_line_tolerance
+description: |
+  TextAdapter.compare() under non-exact_copy routes allows ±10% line-count
+  drift. Within tolerance → pass. Outside tolerance → warn (or block under
+  strict mode) with line_count_drift reason. exact_copy still requires
+  byte-exact SHA match regardless of line count.
+inputs:
+  scenario: text_compare
+expected:
+  within_tolerance_verdict: pass
+  outside_tolerance_strict_verdict: block
+  outside_tolerance_reason_contains: line_count_drift
+  exact_copy_match_verdict: pass
+  exact_copy_mismatch_verdict: block
