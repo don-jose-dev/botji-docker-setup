@@ -1473,6 +1473,27 @@ def run_adapters(fixture: dict) -> tuple[bool, str]:
             return False, f"exact_copy mismatch verdict {res.verdict!r} != {want_v!r}"
         return True, "ok"
 
+    if scenario == "dxf_detect_extract":
+        dxf_content = inputs.get("dxf_content", "")
+        with tempfile.TemporaryDirectory(prefix="botji-h-adapt-") as tmp:
+            dxf_path = Path(tmp) / "sample.dxf"
+            dxf_path.write_text(dxf_content, encoding="utf-8")
+            adapter = module.REGISTRY["dxf"]
+            if expected.get("detect_dxf") is True and not adapter.detect(dxf_path):
+                return False, f"detect() returned False for dxf {dxf_path}"
+            evidence = adapter.extract(dxf_path)
+            want_adapter = expected.get("adapter")
+            if want_adapter and evidence.adapter != want_adapter:
+                return False, f"adapter {evidence.adapter!r} != {want_adapter!r}"
+            want_mime = expected.get("mime_type")
+            if want_mime and evidence.mime_type != want_mime:
+                return False, f"mime_type {evidence.mime_type!r} != {want_mime!r}"
+            want_ec = expected.get("entity_count")
+            got_ec = evidence.metadata.get("entity_count")
+            if want_ec is not None and got_ec != want_ec:
+                return False, f"entity_count {got_ec} != {want_ec}"
+            return True, "ok"
+
     return False, f"unknown scenario: {scenario!r}"
 
 
