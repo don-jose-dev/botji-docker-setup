@@ -1,0 +1,13 @@
+id: image_render_brief_visual_drift
+description: |
+  Engine: image adapter under render_brief route with dimension drift
+  triggers visual_fidelity → warn. Aggregate verdict = warn (no block axes).
+inputs:
+  scenario: engine_image_dimension_drift
+  source_width: 1024
+  source_height: 1024
+  output_width: 512
+  output_height: 768
+expected:
+  verdict: warn
+  axes_triggered_contains: visual_fidelity

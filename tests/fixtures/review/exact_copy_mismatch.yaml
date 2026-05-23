@@ -1,0 +1,13 @@
+id: exact_copy_mismatch
+description: |
+  Engine: under exact_copy route with mismatched SHA, byte_exact_fidelity
+  fails and the engine aggregates to verdict=block with primary_blocker=
+  byte_exact_fidelity. This is the most important review path — broken
+  bytes must block delivery.
+inputs:
+  scenario: engine_image_exact_copy
+  source_sha: aaaa
+  output_sha: bbbb
+expected:
+  verdict: block
+  primary_blocker: byte_exact_fidelity

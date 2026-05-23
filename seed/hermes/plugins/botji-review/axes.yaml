@@ -1,0 +1,93 @@
+# V1R declarative review axes.
+#
+# Each axis declares:
+#   description     — human-readable purpose (one line)
+#   applies_when    — dict matched against {route, adapter, strict};
+#                     missing keys are wildcards
+#   evidence_required — list of evidence fields the axis needs
+#   action          — "delegate_to_adapter" (call adapter.compare and
+#                     surface that result) or "ignore_if_unreachable"
+#                     (used for axes that need vision/manifest skills)
+#   on_pass         — verdict + reason emitted when the comparator passes
+#   on_fail         — verdict + reason emitted when it fails
+#
+# The engine selects every axis whose applies_when matches the current
+# call, dispatches to the adapter, and aggregates the verdicts (block
+# beats warn beats pass).
+
+axes:
+  artifact_lineage:
+    description: "Output's parent chain references existing source artifacts."
+    applies_when: {}
+    evidence_required: [output.parents, source.artifact_id]
+    action: substrate_check
+    on_pass: {verdict: pass, reason: lineage_intact}
+    on_fail: {verdict: block, reason: missing_parent}
+
+  byte_exact_fidelity:
+    description: "exact_copy route requires source.sha256 == output.sha256."
+    applies_when:
+      route: exact_copy
+    evidence_required: [source.sha256, output.sha256]
+    action: delegate_to_adapter
+    on_pass: {verdict: pass, reason: byte_exact_match}
+    on_fail: {verdict: block, reason: byte_exact_fidelity_failed}
+
+  provider_transform_proof:
+    description: "edit_image route must show provider produced the output."
+    applies_when:
+      route: edit_image
+    evidence_required: [output.provider_route]
+    action: substrate_check
+    on_pass: {verdict: pass, reason: provider_routed}
+    on_fail: {verdict: block, reason: provider_route_missing}
+
+  visual_fidelity:
+    description: "Image content alignment with source (vision review)."
+    applies_when:
+      adapter: image
+      route_not: exact_copy
+    evidence_required: [source.metadata, output.metadata]
+    action: delegate_to_adapter
+    on_pass: {verdict: pass, reason: visual_fidelity_pass}
+    on_fail: {verdict: warn, reason: visual_fidelity_drift}
+
+  page_count_match:
+    description: "PDF page count preserved across the transform."
+    applies_when:
+      adapter: pdf
+      route_not: exact_copy
+    evidence_required: [source.page_count, output.page_count]
+    action: delegate_to_adapter
+    on_pass: {verdict: pass, reason: page_count_match}
+    on_fail: {verdict: warn, reason: page_count_mismatch}
+
+  line_count_tolerance:
+    description: "Text/markdown line count within ±10% of source."
+    applies_when:
+      adapter: text
+      route_not: exact_copy
+    evidence_required: [source.line_count, output.line_count]
+    action: delegate_to_adapter
+    on_pass: {verdict: pass, reason: line_count_within_tolerance}
+    on_fail: {verdict: warn, reason: line_count_drift}
+
+  entity_count_tolerance:
+    description: "DXF entity count within ±5% of source."
+    applies_when:
+      adapter: dxf
+      route_not: exact_copy
+    evidence_required: [source.entity_count, output.entity_count]
+    action: delegate_to_adapter
+    on_pass: {verdict: pass, reason: entity_count_within_tolerance}
+    on_fail: {verdict: warn, reason: entity_count_drift}
+
+  sheet_count_match:
+    description: "XLSX sheet count preserved (structural — no tolerance)."
+    applies_when:
+      adapter: xlsx
+      route_not: exact_copy
+    evidence_required: [source.sheet_count, output.sheet_count]
+    action: delegate_to_adapter
+    on_pass: {verdict: pass, reason: sheet_count_match}
+    on_fail: {verdict: warn, reason: sheet_count_mismatch}

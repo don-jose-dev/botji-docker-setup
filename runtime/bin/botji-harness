@@ -1583,6 +1583,98 @@ def run_adapters(fixture: dict) -> tuple[bool, str]:
 # Orchestration
 # ---------------------------------------------------------------------------
 
+def run_review(fixture: dict) -> tuple[bool, str]:
+    """Exercise the V1R declarative review engine (PR 8a).
+
+    Scenarios:
+      engine_image_exact_copy        synthesize image source+output Evidence
+                                     with configurable SHAs; assert engine
+                                     verdict matches expected (block on
+                                     mismatch, pass on match)
+      engine_image_dimension_drift   image evidence with mismatched
+                                     width/height; visual_fidelity axis fires
+                                     under render_brief route
+    """
+    # Load both botji-adapters (for Evidence/ReviewPolicy + image adapter)
+    # and botji-review (engine).
+    adapters_path = _plugin_path("botji-adapters")
+    review_path = _plugin_path("botji-review")
+    for plugin_dir in (adapters_path.parent, review_path.parent):
+        if str(plugin_dir) not in sys.path:
+            sys.path.insert(0, str(plugin_dir))
+
+    adapters_mod = _load_module(adapters_path, f"botji_adapters_h_{uuid.uuid4().hex[:8]}")
+    review_mod = _load_module(review_path, f"botji_review_h_{uuid.uuid4().hex[:8]}")
+
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+    scenario = inputs.get("scenario")
+
+    Evidence = adapters_mod.Evidence
+    ReviewPolicy = adapters_mod.ReviewPolicy
+    image_adapter = adapters_mod.REGISTRY["image"]
+
+    if scenario == "engine_image_exact_copy":
+        src = Evidence(
+            adapter="image", mime_type="image/png",
+            sha256=(inputs.get("source_sha") or "a") * 64,
+            size_bytes=100,
+            metadata={"width": 100, "height": 100, "parents": ["src_test"]},
+        )
+        out = Evidence(
+            adapter="image", mime_type="image/png",
+            sha256=(inputs.get("output_sha") or "a") * 64,
+            size_bytes=100,
+            metadata={"width": 100, "height": 100},
+        )
+        policy = ReviewPolicy(route="exact_copy", strict=True)
+        result = review_mod.review(
+            src, out, policy,
+            context={"route": "exact_copy", "adapter": "image",
+                     "output": {"parents": ["src_test"]}},
+            adapter=image_adapter,
+        )
+    elif scenario == "engine_image_dimension_drift":
+        src = Evidence(
+            adapter="image", mime_type="image/png",
+            sha256="a" * 64, size_bytes=100,
+            metadata={
+                "width": int(inputs.get("source_width", 1024)),
+                "height": int(inputs.get("source_height", 1024)),
+            },
+        )
+        out = Evidence(
+            adapter="image", mime_type="image/png",
+            sha256="b" * 64, size_bytes=100,
+            metadata={
+                "width": int(inputs.get("output_width", 512)),
+                "height": int(inputs.get("output_height", 768)),
+            },
+        )
+        policy = ReviewPolicy(route="render_brief", strict=False)
+        result = review_mod.review(
+            src, out, policy,
+            context={"route": "render_brief", "adapter": "image",
+                     "output": {"parents": ["src_test"]}},
+            adapter=image_adapter,
+        )
+    else:
+        return False, f"unknown scenario: {scenario!r}"
+
+    want_v = expected.get("verdict")
+    if want_v and result.verdict != want_v:
+        return False, f"verdict {result.verdict!r} != {want_v!r} (axes: {[a.name for a in result.axis_results]})"
+    want_pb = expected.get("primary_blocker")
+    if want_pb and result.primary_blocker != want_pb:
+        return False, f"primary_blocker {result.primary_blocker!r} != {want_pb!r}"
+    want_axis = expected.get("axes_triggered_contains")
+    if want_axis:
+        names = [a.name for a in result.axis_results]
+        if want_axis not in names:
+            return False, f"axis {want_axis!r} not triggered. Got: {names}"
+    return True, "ok"
+
+
 SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "core": run_core,
     "gate": run_gate,
@@ -1597,9 +1689,10 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "render": run_render,
     "manifest": run_manifest,
     "adapters": run_adapters,
+    "review": run_review,
 }
 
-SUITE_ORDER = ["core", "gate", "allowlist", "rate-limit", "contract", "fidelity-guard", "id-family", "cron", "delivery", "audit", "render", "manifest", "adapters"]
+SUITE_ORDER = ["core", "gate", "allowlist", "rate-limit", "contract", "fidelity-guard", "id-family", "cron", "delivery", "audit", "render", "manifest", "adapters", "review"]
 
 
 def _fixtures_root() -> Path:

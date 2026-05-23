@@ -1,0 +1,12 @@
+id: exact_copy_match
+description: |
+  Engine: under exact_copy route with matching source/output SHA, the
+  byte_exact_fidelity axis returns pass. With no other applicable axes
+  (since most are gated route_not: exact_copy), aggregate verdict = pass.
+inputs:
+  scenario: engine_image_exact_copy
+  source_sha: aaaa
+  output_sha: aaaa
+expected:
+  verdict: pass
+  axes_triggered_contains: byte_exact_fidelity
