@@ -1,0 +1,13 @@
+id: xlsx_detect_extract
+description: |
+  XlsxAdapter.detect() returns True for .xlsx suffix and for ZIP files
+  containing xl/ entries. extract() counts <sheet> elements in xl/workbook.xml.
+  Harness builds a minimal xlsx with N sheets and verifies count.
+inputs:
+  scenario: xlsx_detect_extract
+  sheet_count: 3
+expected:
+  detect_xlsx: true
+  adapter: xlsx
+  mime_type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+  sheet_count: 3
