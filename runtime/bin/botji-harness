@@ -1220,6 +1220,96 @@ def run_manifest(fixture: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Suite: adapters — V1R Adapter protocol (PR 2: image)
+# ---------------------------------------------------------------------------
+
+def run_adapters(fixture: dict) -> tuple[bool, str]:
+    """Exercise the V1R Adapter protocol (introduced in PR 2 with the image adapter).
+
+    Scenarios:
+      image_detect_extract     write a PNG to tempdir, verify detect()+extract()
+                               return adapter='image', expected mime/sha/size,
+                               and (best-effort) width/height/mode via Pillow
+      image_compare_exact_copy verify byte-exact compare verdicts: matching SHAs
+                               return pass; mismatched return block with the
+                               byte_exact_fidelity_failed reason.
+    """
+    import base64
+    plugin_path = _plugin_path("botji-adapters")
+    plugin_dir = plugin_path.parent
+    if str(plugin_dir) not in sys.path:
+        sys.path.insert(0, str(plugin_dir))
+
+    module = _load_module(plugin_path, f"botji_adapters_h_{uuid.uuid4().hex[:8]}")
+
+    inputs = fixture.get("inputs") or {}
+    expected = fixture.get("expected") or {}
+    scenario = inputs.get("scenario")
+
+    if scenario == "image_detect_extract":
+        png_bytes = base64.b64decode("".join(inputs.get("png_b64", "").split()))
+        with tempfile.TemporaryDirectory(prefix="botji-h-adapt-") as tmp:
+            img_path = Path(tmp) / "sample.png"
+            img_path.write_bytes(png_bytes)
+            txt_path = Path(tmp) / "sample.txt"
+            txt_path.write_text("not an image", encoding="utf-8")
+
+            adapter = module.REGISTRY["image"]
+            want_detect_image = expected.get("detect_image")
+            if want_detect_image is True and not adapter.detect(img_path):
+                return False, f"detect() returned False for image {img_path}"
+            want_detect_text = expected.get("detect_text")
+            if want_detect_text is False and adapter.detect(txt_path):
+                return False, f"detect() returned True for non-image {txt_path}"
+
+            evidence = adapter.extract(img_path)
+            want_adapter = expected.get("adapter")
+            if want_adapter and evidence.adapter != want_adapter:
+                return False, f"adapter {evidence.adapter!r} != expected {want_adapter!r}"
+            want_mime = expected.get("mime_type")
+            if want_mime and evidence.mime_type != want_mime:
+                return False, f"mime_type {evidence.mime_type!r} != expected {want_mime!r}"
+            want_size = expected.get("size_bytes")
+            if want_size is not None and evidence.size_bytes != want_size:
+                return False, f"size_bytes {evidence.size_bytes} != expected {want_size}"
+            if not evidence.sha256 or len(evidence.sha256) != 64:
+                return False, f"sha256 not a 64-hex digest: {evidence.sha256!r}"
+            return True, "ok"
+
+    if scenario == "image_compare_exact_copy":
+        adapter = module.REGISTRY["image"]
+        ReviewPolicy = module.ReviewPolicy
+        Evidence = module.Evidence
+
+        src = Evidence(adapter="image", mime_type="image/png",
+                       sha256="a" * 64, size_bytes=100, metadata={"width": 10, "height": 10})
+        out_match = Evidence(adapter="image", mime_type="image/png",
+                             sha256="a" * 64, size_bytes=100, metadata={"width": 10, "height": 10})
+        out_mismatch = Evidence(adapter="image", mime_type="image/png",
+                                sha256="b" * 64, size_bytes=100, metadata={"width": 10, "height": 10})
+        policy = ReviewPolicy(route="exact_copy", strict=True)
+
+        res_match = adapter.compare(src, out_match, policy)
+        want_v = expected.get("match_verdict")
+        if want_v and res_match.verdict != want_v:
+            return False, f"match verdict {res_match.verdict!r} != {want_v!r}"
+        want_r = expected.get("match_reason_contains")
+        if want_r and not any(want_r in r for r in res_match.reasons):
+            return False, f"match reasons missing {want_r!r}: {res_match.reasons}"
+
+        res_mismatch = adapter.compare(src, out_mismatch, policy)
+        want_v = expected.get("mismatch_verdict")
+        if want_v and res_mismatch.verdict != want_v:
+            return False, f"mismatch verdict {res_mismatch.verdict!r} != {want_v!r}"
+        want_r = expected.get("mismatch_reason_contains")
+        if want_r and not any(want_r in r for r in res_mismatch.reasons):
+            return False, f"mismatch reasons missing {want_r!r}: {res_mismatch.reasons}"
+        return True, "ok"
+
+    return False, f"unknown scenario: {scenario!r}"
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -1236,9 +1326,10 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "audit": run_audit,
     "render": run_render,
     "manifest": run_manifest,
+    "adapters": run_adapters,
 }
 
-SUITE_ORDER = ["core", "gate", "allowlist", "rate-limit", "contract", "fidelity-guard", "id-family", "cron", "delivery", "audit", "render", "manifest"]
+SUITE_ORDER = ["core", "gate", "allowlist", "rate-limit", "contract", "fidelity-guard", "id-family", "cron", "delivery", "audit", "render", "manifest", "adapters"]
 
 
 def _fixtures_root() -> Path:

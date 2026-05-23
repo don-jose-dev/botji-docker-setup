@@ -1,0 +1,13 @@
+id: image_compare_exact_copy
+description: |
+  ImageAdapter.compare() under the exact_copy route requires byte-exact match.
+  Identical SHAs → pass with reason 'byte_exact_match'. Mismatched SHAs →
+  block with reason 'byte_exact_fidelity_failed'. This is the canonical
+  byte-fidelity contract for the exact_copy route the render router uses.
+inputs:
+  scenario: image_compare_exact_copy
+expected:
+  match_verdict: pass
+  match_reason_contains: byte_exact_match
+  mismatch_verdict: block
+  mismatch_reason_contains: byte_exact_fidelity_failed

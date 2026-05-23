@@ -1,0 +1,18 @@
+id: image_detect_extract
+description: |
+  ImageAdapter.detect() returns True for image suffixes; extract() returns an
+  Evidence record with adapter='image', mime_type from the suffix, a sha256,
+  and size_bytes matching the file. Width/height/mode are populated when
+  Pillow is available (best-effort, fail-soft if not).
+inputs:
+  scenario: image_detect_extract
+  # 1x1 transparent PNG (minimal valid PNG) — 67 bytes total.
+  png_b64: |
+    iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABh6FO1AAA
+    AABJRU5ErkJggg==
+expected:
+  detect_image: true
+  detect_text: false
+  adapter: image
+  mime_type: image/png
+  size_bytes: 70
