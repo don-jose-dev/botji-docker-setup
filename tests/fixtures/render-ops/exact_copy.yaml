@@ -1,0 +1,12 @@
+id: exact_copy_operation
+description: |
+  Operation: exact_copy with one source writes a SHA-named file to output_dir
+  whose content equals the source. Returns RenderResult with success=true,
+  metadata.sha256 matches the source SHA.
+inputs:
+  scenario: render_exact_copy
+  source_content: hello-world
+expected:
+  success: true
+  operation: exact_copy
+  route_metadata: exact_copy

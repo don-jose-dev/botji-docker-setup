@@ -1,0 +1,7 @@
+name: botji-render
+version: 1.0.0
+description: "V1R render plugin: providers/openai_codex + operations (exact_copy, render_schema, edit_image). Consolidates the provider routing and operation dispatch that lives in botji-artifacts/_codex.py."
+author: Botji
+kind: standalone
+requires_env: []
+provides_hooks: []
