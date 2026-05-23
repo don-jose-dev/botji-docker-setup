@@ -1,0 +1,19 @@
+id: text_detect_extract
+description: |
+  TextAdapter.detect() returns True for text suffixes (.md, .txt, .py, .yaml,
+  etc.) and for any binary that decodes as clean UTF-8 (no NUL bytes).
+  extract() returns line_count, char_count, and a language hint when the
+  suffix is mapped (.md → markdown, .py → python, etc.).
+inputs:
+  scenario: text_detect_extract
+  content: |
+    # Sample
+    line two
+    line three
+  filename: notes.md
+expected:
+  detect_text: true
+  adapter: text
+  mime_type: text/markdown
+  line_count: 3
+  language: markdown
