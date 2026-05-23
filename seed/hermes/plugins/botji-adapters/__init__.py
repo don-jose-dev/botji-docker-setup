@@ -25,6 +25,7 @@ from image import ImageAdapter  # noqa: I001
 from pdf import PdfAdapter  # noqa: I001
 from text import TextAdapter  # noqa: I001
 from dxf import DxfAdapter  # noqa: I001
+from docx import DocxAdapter  # noqa: I001
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ REGISTRY: dict[str, Adapter] = {
     "pdf": PdfAdapter(),
     "text": TextAdapter(),
     "dxf": DxfAdapter(),
+    "docx": DocxAdapter(),
 }
 
 

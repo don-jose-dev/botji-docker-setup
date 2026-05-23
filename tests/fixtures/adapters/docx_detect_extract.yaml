@@ -1,0 +1,14 @@
+id: docx_detect_extract
+description: |
+  DocxAdapter.detect() returns True for .docx suffix and for ZIP files
+  containing word/ entries. extract() counts <w:p> paragraph opens in
+  word/document.xml. The harness builds a minimal valid docx with 2
+  paragraphs and verifies the extracted count.
+inputs:
+  scenario: docx_detect_extract
+  paragraph_count: 2
+expected:
+  detect_docx: true
+  adapter: docx
+  mime_type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+  paragraph_count: 2
