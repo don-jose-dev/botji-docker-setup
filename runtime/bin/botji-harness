@@ -1494,6 +1494,47 @@ def run_adapters(fixture: dict) -> tuple[bool, str]:
                 return False, f"entity_count {got_ec} != {want_ec}"
             return True, "ok"
 
+    if scenario == "docx_detect_extract":
+        import zipfile as _zf
+        para_count = int(inputs.get("paragraph_count", 2))
+        # Build a minimal valid docx in tempdir: [Content_Types].xml + word/document.xml
+        body = "".join(
+            f"<w:p><w:r><w:t>Paragraph {i+1}</w:t></w:r></w:p>"
+            for i in range(para_count)
+        )
+        document_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            '<w:body>' + body + '</w:body></w:document>'
+        )
+        content_types = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            '</Types>'
+        )
+        with tempfile.TemporaryDirectory(prefix="botji-h-adapt-") as tmp:
+            docx_path = Path(tmp) / "sample.docx"
+            with _zf.ZipFile(docx_path, "w") as zf:
+                zf.writestr("[Content_Types].xml", content_types)
+                zf.writestr("word/document.xml", document_xml)
+            adapter = module.REGISTRY["docx"]
+            if expected.get("detect_docx") is True and not adapter.detect(docx_path):
+                return False, f"detect() returned False for docx {docx_path}"
+            evidence = adapter.extract(docx_path)
+            want_adapter = expected.get("adapter")
+            if want_adapter and evidence.adapter != want_adapter:
+                return False, f"adapter {evidence.adapter!r} != {want_adapter!r}"
+            want_mime = expected.get("mime_type")
+            if want_mime and evidence.mime_type != want_mime:
+                return False, f"mime_type {evidence.mime_type!r} != {want_mime!r}"
+            want_pc = expected.get("paragraph_count")
+            got_pc = evidence.metadata.get("paragraph_count")
+            if want_pc is not None and got_pc != want_pc:
+                return False, f"paragraph_count {got_pc} != {want_pc}"
+            return True, "ok"
+
     return False, f"unknown scenario: {scenario!r}"
 
 
