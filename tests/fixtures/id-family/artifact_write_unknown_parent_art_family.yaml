@@ -1,0 +1,14 @@
+id: artifact_write_unknown_parent_art_family
+description: |
+  artifact_write rejects a legacy art_* parent ID. As of V1R PR 1, core tools
+  no longer transparently look up legacy botji-artifacts records. art_* IDs
+  given as parents return "unknown parent" — the same error path as any other
+  unregistered ID. Replaces the now-obsolete legacy_artifact_compat fixture
+  (which asserted the opposite behavior under the pre-V1R contract).
+  Mixed-family detection (a tool call carrying BOTH art_* and src_*) still
+  fires earlier at pre_tool_call — see pre_hook_mixed_family fixture.
+inputs:
+  scenario: artifact_write_unknown_parent
+  parent_id: art_20260520T000000Z_deadbeef
+expected:
+  error_contains: "unknown parent"
