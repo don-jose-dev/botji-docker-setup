@@ -24,6 +24,7 @@ from protocol import Adapter, Evidence, CompareResult, ReviewPolicy  # noqa: I00
 from image import ImageAdapter  # noqa: I001
 from pdf import PdfAdapter  # noqa: I001
 from text import TextAdapter  # noqa: I001
+from dxf import DxfAdapter  # noqa: I001
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ REGISTRY: dict[str, Adapter] = {
     "image": ImageAdapter(),
     "pdf": PdfAdapter(),
     "text": TextAdapter(),
+    "dxf": DxfAdapter(),
 }
 
 

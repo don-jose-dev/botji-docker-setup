@@ -1,0 +1,48 @@
+id: dxf_detect_extract
+description: |
+  DxfAdapter.detect() returns True for .dxf suffix and for content with
+  SECTION + ENTITIES markers. extract() counts entities (LINE/CIRCLE/etc.)
+  via group-code-0 regex. The minimal fixture below has 2 LINE entities;
+  page_count test asserts that's what we get.
+inputs:
+  scenario: dxf_detect_extract
+  # Minimal valid DXF with 2 LINE entities. 0\nSECTION / 0\nENDSEC frames
+  # the ENTITIES block; 0\nLINE introduces each entity.
+  dxf_content: |
+    0
+    SECTION
+    2
+    ENTITIES
+    0
+    LINE
+    8
+    0
+    10
+    0.0
+    20
+    0.0
+    11
+    100.0
+    21
+    0.0
+    0
+    LINE
+    8
+    0
+    10
+    100.0
+    20
+    0.0
+    11
+    100.0
+    21
+    100.0
+    0
+    ENDSEC
+    0
+    EOF
+expected:
+  detect_dxf: true
+  adapter: dxf
+  mime_type: image/vnd.dxf
+  entity_count: 2
