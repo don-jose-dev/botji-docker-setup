@@ -1325,6 +1325,83 @@ def run_adapters(fixture: dict) -> tuple[bool, str]:
             return False, f"mismatch reasons missing {want_r!r}: {res_mismatch.reasons}"
         return True, "ok"
 
+    if scenario == "pdf_detect_extract":
+        pdf_bytes = base64.b64decode("".join(inputs.get("pdf_b64", "").split()))
+        with tempfile.TemporaryDirectory(prefix="botji-h-adapt-") as tmp:
+            pdf_path = Path(tmp) / "sample.pdf"
+            pdf_path.write_bytes(pdf_bytes)
+            txt_path = Path(tmp) / "sample.txt"
+            txt_path.write_text("not a pdf", encoding="utf-8")
+
+            adapter = module.REGISTRY["pdf"]
+            if expected.get("detect_pdf") is True and not adapter.detect(pdf_path):
+                return False, f"detect() returned False for pdf {pdf_path}"
+            if expected.get("detect_text") is False and adapter.detect(txt_path):
+                return False, f"detect() returned True for non-pdf {txt_path}"
+
+            evidence = adapter.extract(pdf_path)
+            want_adapter = expected.get("adapter")
+            if want_adapter and evidence.adapter != want_adapter:
+                return False, f"adapter {evidence.adapter!r} != {want_adapter!r}"
+            want_mime = expected.get("mime_type")
+            if want_mime and evidence.mime_type != want_mime:
+                return False, f"mime_type {evidence.mime_type!r} != {want_mime!r}"
+            want_pages = expected.get("page_count")
+            got_pages = evidence.metadata.get("page_count")
+            if want_pages is not None and got_pages != want_pages:
+                return False, f"page_count {got_pages} != {want_pages}"
+            if not evidence.sha256 or len(evidence.sha256) != 64:
+                return False, f"sha256 not a 64-hex digest: {evidence.sha256!r}"
+            return True, "ok"
+
+    if scenario == "pdf_compare":
+        adapter = module.REGISTRY["pdf"]
+        ReviewPolicy = module.ReviewPolicy
+        Evidence = module.Evidence
+
+        # Same SHAs, same pages → pass (non-exact route)
+        src = Evidence(adapter="pdf", mime_type="application/pdf",
+                       sha256="a" * 64, size_bytes=500, metadata={"page_count": 2})
+        out_match = Evidence(adapter="pdf", mime_type="application/pdf",
+                             sha256="c" * 64, size_bytes=500, metadata={"page_count": 2})
+        out_pages_mismatch = Evidence(adapter="pdf", mime_type="application/pdf",
+                                      sha256="d" * 64, size_bytes=500, metadata={"page_count": 3})
+
+        # Non-strict route, matching pages
+        res = adapter.compare(src, out_match, ReviewPolicy(route="render_brief", strict=False))
+        want_v = expected.get("match_verdict")
+        if want_v and res.verdict != want_v:
+            return False, f"match verdict {res.verdict!r} != {want_v!r}"
+
+        # Strict mode, pages mismatch → block
+        res = adapter.compare(src, out_pages_mismatch, ReviewPolicy(route="render_brief", strict=True))
+        want_v = expected.get("mismatch_strict_verdict")
+        if want_v and res.verdict != want_v:
+            return False, f"mismatch strict verdict {res.verdict!r} != {want_v!r}"
+        want_r = expected.get("mismatch_strict_reason_contains")
+        if want_r and not any(want_r in r for r in res.reasons):
+            return False, f"strict mismatch reasons missing {want_r!r}: {res.reasons}"
+
+        # exact_copy with matching SHA
+        out_same_sha = Evidence(adapter="pdf", mime_type="application/pdf",
+                                sha256="a" * 64, size_bytes=500, metadata={"page_count": 2})
+        res = adapter.compare(src, out_same_sha, ReviewPolicy(route="exact_copy", strict=True))
+        want_v = expected.get("exact_copy_byte_match_verdict")
+        if want_v and res.verdict != want_v:
+            return False, f"exact_copy match verdict {res.verdict!r} != {want_v!r}"
+
+        # exact_copy with different SHA
+        out_diff_sha = Evidence(adapter="pdf", mime_type="application/pdf",
+                                sha256="e" * 64, size_bytes=500, metadata={"page_count": 2})
+        res = adapter.compare(src, out_diff_sha, ReviewPolicy(route="exact_copy", strict=True))
+        want_v = expected.get("exact_copy_byte_mismatch_verdict")
+        if want_v and res.verdict != want_v:
+            return False, f"exact_copy mismatch verdict {res.verdict!r} != {want_v!r}"
+        want_r = expected.get("exact_copy_byte_mismatch_reason")
+        if want_r and not any(want_r in r for r in res.reasons):
+            return False, f"exact_copy reasons missing {want_r!r}: {res.reasons}"
+        return True, "ok"
+
     return False, f"unknown scenario: {scenario!r}"
 
 
