@@ -1,0 +1,7 @@
+name: botji-review
+version: 1.0.0
+description: "V1R declarative review engine. Axes in YAML, engine evaluates by dispatching adapter.compare() per applicable axis. Replaces procedural _review.py branches."
+author: Botji
+kind: standalone
+requires_env: []
+provides_hooks: []
