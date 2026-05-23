@@ -51,11 +51,13 @@ PLUGIN_CONTRACTS = {
         },
     },
     "botji-render": {
-        "submodules": ["_lease", "_fairshare", "_render"],
+        # V1R PR 9a replaced the old (never-built) lease/fairshare/render shape
+        # with operations.py + providers/openai_codex.py. PR 9b will move
+        # remaining provider code from botji-artifacts/_codex.py.
+        "submodules": ["operations"],
         "symbols": {
-            "_lease":     ["acquire", "compute_request_hash", "lookup_result", "record_result"],
-            "_fairshare": ["reserve_slot", "queue_depth"],
-            "_render":    ["render", "RenderError"],
+            "operations": ["dispatch", "exact_copy", "render_schema", "edit_image",
+                           "OPERATIONS", "RenderPolicy", "RenderResult"],
         },
     },
     "botji-allowlist": {
