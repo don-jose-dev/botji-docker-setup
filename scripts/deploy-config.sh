@@ -158,9 +158,31 @@ state["auth_mode"] = "chatgpt"
 
 hermes_auth_path.write_text(json.dumps(hermes_auth, indent=2, sort_keys=True) + "\n")
 PY
-    chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/auth.json" 2>/dev/null || true
+    # Hard-fail on chown problems for the Hermes auth store — silent failure
+    # here was the root cause of the 2026-05-25 production outage: file
+    # remained root-owned after the python write_text, Hermes (uid 10000)
+    # couldn't read it, and "Primary provider auth failed: No Codex
+    # credentials stored" surfaced on every render. The .codex/auth.json
+    # chown above can still be soft (its file isn't load-bearing for Hermes).
+    if [ -z "${HERMES_RUNTIME_UID:-}" ] || [ -z "${HERMES_RUNTIME_GID:-}" ]; then
+      echo "ERROR: HERMES_RUNTIME_UID/GID not set; cannot chown auth.json" >&2
+      exit 1
+    fi
+    chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/auth.json" || {
+      echo "ERROR: chown failed on $DATA_DIR/auth.json (uid=$HERMES_RUNTIME_UID gid=$HERMES_RUNTIME_GID)" >&2
+      exit 1
+    }
     chmod 600 "$DATA_DIR/auth.json"
-    echo "    Hermes openai-codex auth state written to $DATA_DIR/auth.json"
+    # Verify: Hermes provider auth depends on this file being owned by the
+    # hermes runtime user. If we shipped a deploy where it isn't, render
+    # turns will all fail with "No Codex credentials stored" until manual
+    # recovery (docker exec -u root chown 10000:10000 /opt/data/auth.json).
+    actual_uid="$(stat -c '%u' "$DATA_DIR/auth.json")"
+    if [ "$actual_uid" != "$HERMES_RUNTIME_UID" ]; then
+      echo "ERROR: auth.json owner mismatch after chown (expected $HERMES_RUNTIME_UID, got $actual_uid)" >&2
+      exit 1
+    fi
+    echo "    Hermes openai-codex auth state written to $DATA_DIR/auth.json (owner $HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID)"
   else
     echo "    CODEX_AUTH_B64 not set — skipping auth.json"
   fi
