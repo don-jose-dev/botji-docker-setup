@@ -115,7 +115,7 @@ for the current cost model.
 ## Caveats
 
 - **Cardinality**: label values are bounded by the cardinality table at the
-  top of `seed/hermes/plugins/botji-core/metrics/exporter.py`. Do not add
+  top of `seed/hermes/plugins/botji-observability/exporter.py`. Do not add
   session IDs, user IDs, file paths, prompts, or anything user-supplied.
   Raising the cardinality contract is a charter-relevant change.
 - **Retention**: `prometheus_client` keeps counters in memory; restarts reset
@@ -177,8 +177,10 @@ contract as the metrics export).
 | `artifact_review` | review action that affects downstream delivery |
 
 This list lives in `_AUDIT_TOOLS` at the top of
-`seed/hermes/plugins/botji-core/metrics/hooks.py`. Adding a new substrate
-tool here means adding its name there too.
+`seed/hermes/plugins/botji-observability/hooks.py`. Adding a new substrate
+tool here means adding its name there too. (Pre-PR-11 location:
+`botji-core/metrics/hooks.py` — extracted to a sibling plugin so the
+substrate stays state + tools only.)
 
 ### Record schema
 

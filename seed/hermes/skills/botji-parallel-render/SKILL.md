@@ -33,7 +33,7 @@ Do **NOT** fan out when:
 ## Pattern
 
 ```
-1. Register all sources in the main context (cheap; one artifact_register per file).
+1. Register all sources in the main context (cheap; one source_register per file).
 2. Spawn one delegate_task per variant — each subagent owns a full render pipeline.
 3. Wait for all subagent summaries to return.
 4. Collect output_artifact paths + review badges from each summary.
@@ -46,7 +46,8 @@ Register-first is mandatory: subagents inherit a **subset** of the parent contex
 
 ```python
 # Step 1 — register every source in the parent (cheap, sequential)
-src_ids = [artifact_register(path=p, role="source", declared_type="image")["artifact_id"]
+src_ids = [source_register(path=p, current_turn_id=turn_id, role="source",
+                           declared_type="image")["source_id"]
            for p in user_uploaded_paths]
 
 # Step 2 — fan out one task per variant
@@ -90,9 +91,9 @@ Retry photo 2? (y/n)
 User sends 3 phone photos of different kitchens with the caption: **"make 3D for all"**.
 
 1. **Parent registers all three sources** (3 cheap calls, ~1s each):
-   - `artifact_register(path="/opt/data/uploads/kitchen_a.jpg", role="source", declared_type="image")` → `art_aaa`
-   - `artifact_register(path="/opt/data/uploads/kitchen_b.jpg", ...)` → `art_bbb`
-   - `artifact_register(path="/opt/data/uploads/kitchen_c.jpg", ...)` → `art_ccc`
+   - `source_register(path="/opt/data/uploads/kitchen_a.jpg", current_turn_id=t, role="source", declared_type="image")` → `src_aaa`
+   - `source_register(path="/opt/data/uploads/kitchen_b.jpg", ...)` → `src_bbb`
+   - `source_register(path="/opt/data/uploads/kitchen_c.jpg", ...)` → `src_ccc`
 
 2. **Parent fans out three subagents** in a single `delegate_task` call. Each goal string carries one `artifact_id` and instructs the subagent to run Photo mode (operation_run `edit_image` + review_record) and return the output path + review verdict.
 

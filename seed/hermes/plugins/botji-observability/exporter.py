@@ -12,7 +12,6 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 TENANT: str = os.environ.get("BOTJI_TENANT_ID", "unknown").strip() or "unknown"
-# Aligned with budget config: tool calls cap ~90s, response ~180s.
 DURATION_BUCKETS = (1.0, 5.0, 10.0, 30.0, 60.0, 90.0, 120.0, 180.0, 300.0)
 DEFAULT_PORT = int(os.environ.get("BOTJI_METRICS_PORT", "9090"))
 DEFAULT_BIND = os.environ.get("BOTJI_METRICS_BIND", "127.0.0.1")
@@ -58,7 +57,7 @@ def start_exporter(port: int | None = None, bind: str | None = None) -> bool:
     try:
         import prometheus_client  # type: ignore[import-not-found]
     except ImportError:
-        logger.warning("botji-core metrics: prometheus_client missing — disabled")
+        logger.warning("botji-observability: prometheus_client missing — disabled")
         return False
     try:
         _build(prometheus_client)
@@ -66,9 +65,9 @@ def start_exporter(port: int | None = None, bind: str | None = None) -> bool:
             port if port is not None else DEFAULT_PORT,
             addr=bind if bind is not None else DEFAULT_BIND)
         _started = True
-        logger.info("botji-core metrics: exporter on %s:%s (tenant=%s)",
+        logger.info("botji-observability: exporter on %s:%s (tenant=%s)",
                     bind or DEFAULT_BIND, port or DEFAULT_PORT, TENANT)
         return True
     except Exception as exc:  # noqa: BLE001 — fail-open contract
-        logger.warning("botji-core metrics: failed to start exporter: %s", exc)
+        logger.warning("botji-observability: failed to start exporter: %s", exc)
         return False

@@ -33,8 +33,6 @@
     "seed/codex/config.toml",
     "seed/hermes/SOUL.md",
     "seed/hermes/config.yaml",
-    "seed/hermes/plugins/botji-artifacts/__init__.py",
-    "seed/hermes/plugins/botji-artifacts/plugin.yaml",
     "seed/hermes/schemas/artifact_lineage.schema.json",
     "seed/hermes/schemas/artifact_schema.schema.json",
     "seed/hermes/schemas/prompt_contract.schema.json",

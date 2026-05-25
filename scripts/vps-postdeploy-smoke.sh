@@ -82,12 +82,6 @@ else
     echo "    WARN: harness exited non-zero without fixtures (advisory)"
 fi
 
-echo "=== postdeploy: deterministic artifact mini-harness ==="
-docker exec "$CONTAINER_NAME" botji-artifact-harness \
-  --adapters text,image \
-  --strict \
-  --require-modality-comparators >/tmp/botji-artifact-mini-harness.json
-
 echo "=== postdeploy: log budget ==="
 docker exec "$CONTAINER_NAME" botji-log-budget \
   --since-minutes "$SINCE_MINUTES" \
@@ -101,12 +95,7 @@ docker exec "$CONTAINER_NAME" botji-log-budget \
   --max-tool-seconds operation_run=90 \
   --max-tool-seconds evidence_extract_manifest=90
 
-if [ "${RUN_LIVE_PROVIDER_E2E:-0}" = "1" ]; then
-  echo "=== postdeploy: live provider e2e ==="
-  docker exec "$CONTAINER_NAME" botji-artifact-e2e \
-    --quality low \
-    --max-attempts "${BOTJI_LIVE_E2E_MAX_ATTEMPTS:-1}" \
-    --require-pass
-else
-  echo "=== postdeploy: live provider e2e skipped (RUN_LIVE_PROVIDER_E2E=0) ==="
-fi
+# V1R PR 11 retired the live `botji-artifact-e2e` harness with the legacy
+# botji-artifacts plugin. The C2PA + receipt-PDF fixtures under
+# tests/fixtures/c2pa_stamp/ and tests/fixtures/receipt_pdf/ now cover the
+# render output surface end-to-end without a live provider round-trip.

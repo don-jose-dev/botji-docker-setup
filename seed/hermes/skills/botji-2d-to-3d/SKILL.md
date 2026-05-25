@@ -70,10 +70,12 @@ Verify the manifest against the sketch. If a label is ambiguous, write both inte
 
 ```python
 # Register
-source = artifact_register(path=..., role="source", declared_type="image")
+source = source_register(path=..., current_turn_id=turn_id, role="source",
+                         declared_type="image")
+src_id = source["source_id"]
 
 # Extract manifest automatically (preferred over writing it by hand)
-manifest_result = evidence_extract_manifest(artifact_id=source["artifact_id"])
+manifest_result = evidence_extract_manifest(source_artifact_id=src_id)
 manifest = manifest_result["manifest"]
 fidelity_reqs = manifest_result["fidelity_requirements"]
 # manifest contains: scene_type, source_modality, elements[], element_count,

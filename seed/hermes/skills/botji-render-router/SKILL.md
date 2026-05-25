@@ -13,24 +13,19 @@ Use this skill first for every image/render request, before reading `botji-2d-to
 The router owns the workflow decision. Plugins execute tools. Reviews enforce
 delivery. Do not let a plugin capability decide the route by accident.
 
-Current production image generation still runs through the legacy
-`artifact_*` tools. For source-bound image work, use the legacy `art_*` image
-pipeline end-to-end, then record the reviewed output with `receipt_record` and
-`delivery_gate`. Do not start normal "make 3D" turns with `source_register` until
-Hermes-native generation has replaced `operation_run`.
+Source-bound image work uses Hermes-native IDs end-to-end:
+`source_register` → `operation_run` → `output_write` → `review_record` →
+`receipt_record` → `delivery_gate`. V1R PR 11 retired the legacy `art_*`
+pipeline; only `src_*` / `out_*` / `rcpt_*` IDs are valid on the substrate.
 
-Do not mix identifier families:
+Do not mix identifier families. Any tool call carrying both legacy `art_*`
+and native `src_*` / `out_*` / `rcpt_*` is blocked by the `pre_tool_call`
+substrate hook. If you see a stale `art_*` ID in conversation history, treat
+it as historical only — re-register the current attachment with
+`source_register` to get a fresh `src_*` ID for this turn.
 
-- `src_*` IDs come from `botji-core` and are valid for `source_current`,
-  `artifact_write`, `receipt_record`, and `delivery_gate`.
-- `art_*` IDs come from legacy `artifact_*` tools and are valid for
-  `evidence_extract_manifest`, `operation_run`, `review_record`, and
-  compatibility `receipt_record` / `delivery_gate`.
-- Never pass a `src_*` ID to a legacy `artifact_*` tool. If a legacy extractor is
-  required, call `artifact_register` on the same current attachment path and use
-  that returned `art_*` ID for the legacy leg.
-- Do not repair a receipt failure with repeated retries. One ID-family repair is
-  allowed; after that, deliver the reviewed output with a caveat or stop.
+Do not repair a receipt failure with repeated retries. One correction is
+allowed; after that, deliver the reviewed output with a caveat or stop.
 
 ---
 
@@ -57,23 +52,21 @@ or schematic annotations.
 For a single uploaded photo/reference image and the text `Make 3d`:
 
 1. Register the image attached in the **current user turn**:
-   `artifact_register(path=<current attachment path>, role="source", declared_type="image")`
-   Use the returned `art_*` ID as `source_id`.
-2. Do not call `source_register` or `source_current` for this route.
-3. Build a structured premium brief from visible facts and user memory. Fill
+   `source_register(path=<current attachment path>, current_turn_id=<turn id>, role="source", declared_type="image")`
+   Use the returned `src_*` ID as `source_id`.
+2. Build a structured premium brief from visible facts and user memory. Fill
    `camera_brief`, `light_brief`, `materials_brief`, `mood_brief`,
    `reference_brief`, and `signature_brief`; do not rely on mood alone for the
    premium look.
-4. `operation_run(operation="edit_image", source_artifact_ids=[source_id], ...)`
-5. `review_record(source_artifact_ids=[source_id], output_artifact_id=<output art_*>, use_openai_vision=True)`
-6. Call `receipt_record(source_ids=[source_id], output_id=<output art_*>, route="operation_run.edit_image", status=<pass|warn|block>, ...)`, then `delivery_gate`.
-7. Deliver if `delivery_gate` is `clear` or `warned`; if blocked, show the blocker and ask whether to retry.
+3. `operation_run(operation="edit_image", source_artifact_ids=[source_id], ...)`
+4. `review_record(source_artifact_ids=[source_id], output_artifact_id=<out_*>, use_openai_vision=True)`
+5. Call `receipt_record(source_ids=[source_id], output_id=<out_*>, route="operation_run.edit_image", status=<pass|warn|block>, ...)`, then `delivery_gate`.
+6. Deliver if `delivery_gate` is `clear` or `warned`; if blocked, show the blocker and ask whether to retry.
 
 Do **not** call:
 
 - `evidence_extract_manifest`
 - `evidence_extract`
-- `artifact_normalize`
 - `session_search`
 - `skill_view`
 
@@ -83,7 +76,7 @@ or you genuinely lack a required tool argument.
 This is the normal route for photos and reference renders. It should complete in
 roughly one provider image call plus one review call.
 
-Never reuse an artifact ID from a previous turn just because it is in context.
+Never reuse a source ID from a previous turn just because it is in context.
 If the user attached a file in the current turn, that exact attachment path (or
 same SHA-256 bytes) must be the parent lineage for the output. A stale source ID
 is a hard block.

@@ -31,7 +31,7 @@ _AUDIT_TOOLS = frozenset({
     "artifact_review", "review_record", "evidence_extract", "evidence_extract_manifest",
 })
 _KNOWN_OPS = frozenset({"edit_image", "exact_copy", "render_schema"})
-_TIMED_TOOLS = _AUDIT_TOOLS  # All audited tools get pre/post wall-clock timing.
+_TIMED_TOOLS = _AUDIT_TOOLS
 _START_TIMES: dict[tuple[str, str], float] = {}
 _AUDIT_DONE: set[tuple[str, str]] = set()
 _LOCK = threading.Lock()

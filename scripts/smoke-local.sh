@@ -13,9 +13,8 @@ docker compose --env-file .env run --rm hermes bash -lc '
   test -f /opt/data/skills/botji-parallel-render/SKILL.md
   test -f /opt/data/schemas/prompt_contract.schema.json
   test -f /opt/data/schemas/source_fidelity_review.schema.json
-  test -f /opt/data/schemas/artifact_schema.schema.json
   test -f /opt/data/.codex/config.toml
-  botji-artifact-harness --strict --require-modality-comparators >/tmp/botji-artifact-harness.json
+  botji-harness run --suite all
 '
 
 echo "Local smoke passed."

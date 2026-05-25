@@ -20,7 +20,7 @@ inputs:
         role: source
         declared_type: text
       save_as: alt
-    - tool: artifact_write
+    - tool: output_write
       args:
         path: $path:output
         parents:

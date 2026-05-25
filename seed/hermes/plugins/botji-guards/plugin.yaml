@@ -1,0 +1,10 @@
+name: botji-guards
+version: 0.1.0
+description: "Cross-cutting enforcement hooks (pre_tool_call + transform_llm_output) extracted from botji-core in V1R PR 11. Substrate ('Skills guide; hooks enforce') backstop kept outside the LOC-capped state plugin."
+author: Botji
+kind: standalone
+requires_env: []
+provides_tools: []
+provides_hooks:
+  - pre_tool_call
+  - transform_llm_output

@@ -146,46 +146,6 @@ def _find_record(kind: str, record_id: str, id_field: str) -> dict[str, Any] | N
     return None
 
 
-def _legacy_artifact_index_path() -> Path:
-    root = Path(os.environ.get("BOTJI_ARTIFACT_ROOT", str(_hermes_home() / "artifacts"))).resolve()
-    return root / "index" / "artifacts.jsonl"
-
-
-def _find_legacy_artifact(artifact_id: str) -> dict[str, Any] | None:
-    """Defense-in-depth lookup for the substrate hooks ONLY.
-
-    V1R PR 1 (2026-05-23) removed the legacy fallback from core tool dispatch.
-    Tools (`source_register`, `output_write`, `receipt_record`, `delivery_gate`)
-    must NOT call this — they treat `art_*` IDs as non-existent. The defense
-    hooks `hooks/stale_id_block.py` and `hooks/delivery_check.py` still call
-    this for mechanical observation: detecting stale `art_*` references leaking
-    out of the legacy plugin so they can be blocked / rewritten before delivery.
-
-    Once V1R PR 11 deletes `botji-artifacts/`, the legacy index is gone and this
-    function returns `None` for every input. The hooks fail open in that case.
-    """
-    path = _legacy_artifact_index_path()
-    if not path.exists():
-        return None
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError as exc:
-        logger.warning("botji-core: failed to read legacy artifact index %s: %s", path, exc)
-        return None
-    for line in reversed(lines):
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(record, dict) and str(record.get("artifact_id") or "") == str(artifact_id):
-            compatible = dict(record)
-            compatible["_record_source"] = "legacy-botji-artifacts"
-            return compatible
-    return None
-
-
 def _find_native_artifact(artifact_id: str) -> dict[str, Any] | None:
     """Native-only artifact lookup for core tool dispatch.
 
@@ -193,22 +153,10 @@ def _find_native_artifact(artifact_id: str) -> dict[str, Any] | None:
     legacy fallback. If a tool needs to look up an artifact, it gets a hit only
     if the artifact lives in the native `src_*` / `out_*` registry. Legacy
     `art_*` IDs return `None` and the caller raises `unknown source/output_id`
-    — same error path as any other unrecognized ID.
+    — same error path as any other unrecognized ID. PR 11 deleted the legacy
+    plugin and index, so the lookup is native-only by construction.
     """
     return _find_record("artifacts", artifact_id, "artifact_id")
-
-
-def _native_sources_for_turn(current_turn_id: str) -> list[str]:
-    if not current_turn_id:
-        return []
-    matches: list[str] = []
-    for record in _read_records("sources"):
-        if str(record.get("current_turn_id") or "").strip() != current_turn_id:
-            continue
-        artifact_id = str(record.get("artifact_id") or "").strip()
-        if artifact_id.startswith("src_"):
-            matches.append(artifact_id)
-    return matches
 
 
 def _copy_into_store(src: Path, bucket: str, artifact_id: str) -> Path:
@@ -435,25 +383,6 @@ def _handle_delivery_gate(args: dict[str, Any], **_: Any) -> str:
             if stale_sources:
                 return _block(receipt, "stale_current_turn_source", ", ".join(stale_sources))
 
-            # If the current turn already registered native botji-core sources
-            # (src_*), reject any receipt whose source_ids point to legacy
-            # art_* records. Same-bytes SHA fallback in the artifact guard
-            # otherwise silently passes stale art_ IDs from earlier turns.
-            native_for_turn = _native_sources_for_turn(current_turn_id)
-            if native_for_turn:
-                legacy_in_receipt = [
-                    source_id
-                    for source_id, source in zip(source_ids, sources)
-                    if source
-                    and str(source.get("_record_source") or "") == "legacy-botji-artifacts"
-                ]
-                if legacy_in_receipt:
-                    return _block(
-                        receipt,
-                        "mixed_pipeline_source",
-                        f"legacy art_ ids {', '.join(legacy_in_receipt)} present while current turn has native src_ ids {', '.join(native_for_turn)}",
-                    )
-
         gate = "warned" if status == "warn" else "clear"
         receipt_pdf_path = _maybe_generate_receipt_pdf(receipt, sources, output)
         return _ok(
@@ -515,8 +444,8 @@ SOURCE_CURRENT_SCHEMA = {
     },
 }
 
-ARTIFACT_WRITE_SCHEMA = {
-    "name": "artifact_write",
+OUTPUT_WRITE_SCHEMA = {
+    "name": "output_write",
     "description": "Register a generated output artifact and link it to existing parent source IDs.",
     "parameters": {
         "type": "object",
@@ -532,8 +461,6 @@ ARTIFACT_WRITE_SCHEMA = {
         "required": ["path", "parents"],
     },
 }
-
-OUTPUT_WRITE_SCHEMA = {**ARTIFACT_WRITE_SCHEMA, "name": "output_write"}
 
 RECEIPT_RECORD_SCHEMA = {
     "name": "receipt_record",
@@ -588,15 +515,7 @@ def register(ctx) -> None:
         toolset="file",
         schema=OUTPUT_WRITE_SCHEMA,
         handler=_handle_artifact_write,
-        description=ARTIFACT_WRITE_SCHEMA["description"],
-    )
-    # DELETED_BY: PR_11
-    ctx.register_tool(
-        name="artifact_write",
-        toolset="file",
-        schema=ARTIFACT_WRITE_SCHEMA,
-        handler=_handle_artifact_write,
-        description=ARTIFACT_WRITE_SCHEMA["description"],
+        description=OUTPUT_WRITE_SCHEMA["description"],
     )
     ctx.register_tool(
         name="receipt_record",
@@ -612,19 +531,5 @@ def register(ctx) -> None:
         handler=_handle_delivery_gate,
         description=DELIVERY_GATE_SCHEMA["description"],
     )
-    # Cross-cutting hooks — see hooks/stale_id_block.py + hooks/delivery_check.py.
-    if hasattr(ctx, "register_hook"):
-        from .hooks import pre_tool_call as _pre_tool_call, transform_llm_output as _xform
-        ctx.register_hook("pre_tool_call", _pre_tool_call)
-        ctx.register_hook("transform_llm_output", _xform)
     _core_root().mkdir(parents=True, exist_ok=True)
     logger.info("botji-core: registered Hermes-native source/artifact/receipt tools (root=%s)", _core_root())
-
-    # Mechanical observability — see docs/OBSERVABILITY.md. Fail-open: if the
-    # exporter or hook registration trips, the plugin still serves tools.
-    try:
-        from .metrics import register_hooks, start_exporter
-        if start_exporter():
-            register_hooks(ctx)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("botji-core: metrics init skipped (%s) — tools still serve", exc)

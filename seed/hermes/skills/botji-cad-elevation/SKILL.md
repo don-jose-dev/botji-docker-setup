@@ -42,19 +42,19 @@ via the `terminal` tool, **not** plain `python -c` or `execute_code` (which defa
 ## Required pipeline (sketch / photo / render → DXF)
 
 ```
-1. artifact_register(path, role="source")
+1. source_register(path, current_turn_id, role="source")  — returns src_*
 2. evidence_extract              — pull pixels / text / dim labels
 3. vision_analyze                — read every visible dimension and label; list with confidence
 4. evidence_extract_manifest     — spatial manifest (element order, adjacency, counts)
-5. artifact_normalize(schema_profile="dxf_cad", semantic_schema={...})
-                                  — bind dims + labels + manifest into a structured schema
+5. operation_run(operation="render_schema", schema_payload={...})
+                                  — bind dims + labels + manifest into a typed schema
 6. terminal(command="/opt/hermes/.venv/bin/python <<PY ... ezdxf script ... PY")
                                   — script reads the schema, emits a real .dxf
-7. artifact_register(path=output.dxf, role="output", parents=[source_id])
+7. output_write(path=output.dxf, parents=[src_id], current_turn_id=...)  — returns out_*
 8. evidence_extract(detail="metadata", adapter="dxf")
                                   — verify ezdxf can re-parse what was written
-9. review_record(...)          — review against source manifest (counts, order, labels)
-10. Deliver only if review passes
+9. review_record(...)             — review against source manifest (counts, order, labels)
+10. receipt_record + delivery_gate — deliver only if gate clears
 ```
 
 ## Minimum ezdxf template (cabinet elevation)

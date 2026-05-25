@@ -27,39 +27,19 @@ legacy_plugin = "${LEGACY_PLUGIN}"
 # that must be present after register(). Adding a new plugin is just one
 # entry here.
 PLUGIN_CONTRACTS = {
-    "botji-artifacts": {
-        "submodules": [
-            "_constants", "_utils", "_detect", "_registry", "_metadata",
-            "_extraction", "_rendering", "_normalization", "_codex", "_vision",
-            "_review", "_models", "_handlers", "_schemas", "_prompts",
-        ],
-        "symbols": {
-            "_handlers": ["_handle_artifact_register", "_handle_artifact_transform",
-                          "_handle_artifact_review", "_handle_artifact_normalize",
-                          "_handle_artifact_extract", "_handle_artifact_extract_manifest",
-                          "_handle_artifact_list", "_handle_artifact_read"],
-            "_schemas":  ["ARTIFACT_TRANSFORM_SCHEMA", "ARTIFACT_REVIEW_SCHEMA",
-                          "ARTIFACT_REGISTER_SCHEMA", "ARTIFACT_NORMALIZE_SCHEMA",
-                          "ARTIFACT_EXTRACT_MANIFEST_SCHEMA"],
-            "_review":   ["_build_review", "_reviews_dir"],
-            "_rendering": ["_resolve_schema_payload", "_render_schema_preview_png",
-                           "_create_output_artifact", "_load_evidence"],
-            "_extraction": ["_build_normalized_schema", "_coerce_source_ids",
-                            "_deterministic_schema_for_artifact"],
-            "_constants": ["MAX_SOURCE_ARTIFACTS", "ARTIFACT_SCHEMA_VERSION",
-                           "STRUCTURED_ADAPTERS"],
-        },
-    },
     "botji-render": {
         # V1R PR 9b: operations + real Codex image provider.
         # v1.1: c2pa_stamp.py adds EU AI Act Article 50 manifest stamping for
         # PNG outputs; operations.dispatch wraps every PNG result with it.
-        "submodules": ["operations", "providers.openai_codex", "c2pa_stamp"],
+        # PR 11: manifest.py exposes extract_manifest (migrated out of legacy
+        # botji-artifacts/_codex.py) for spatial-manifest extraction.
+        "submodules": ["operations", "providers.openai_codex", "c2pa_stamp", "manifest"],
         "symbols": {
             "operations": ["dispatch", "exact_copy", "render_schema", "edit_image",
                            "OPERATIONS", "RenderPolicy", "RenderResult"],
             "providers.openai_codex": ["generate_image", "resolve_provider_route", "codex_available"],
             "c2pa_stamp": ["stamp_png"],
+            "manifest": ["extract_manifest"],
         },
     },
     "botji-allowlist": {
@@ -71,6 +51,18 @@ PLUGIN_CONTRACTS = {
         "symbols": {},
     },
     "botji-core": {
+        "submodules": [],
+        "symbols": {},
+    },
+    "botji-guards": {
+        # PR 11: hooks extracted out of botji-core. Submodules import within
+        # the plugin package; smoke only verifies __init__ has register().
+        "submodules": [],
+        "symbols": {},
+    },
+    "botji-observability": {
+        # PR 11: metrics + audit extracted out of botji-core. Same shape:
+        # register() wires hooks lazily so smoke can load without prometheus_client.
         "submodules": [],
         "symbols": {},
     },
@@ -87,7 +79,7 @@ PLUGIN_CONTRACTS = {
         "symbols": {},
     },
 }
-REQUIRED_PLUGINS = {"botji-allowlist", "botji-artifacts", "botji-catalog", "botji-core", "botji-gate", "botji-receipt", "botji-render"}
+REQUIRED_PLUGINS = {"botji-allowlist", "botji-catalog", "botji-core", "botji-gate", "botji-guards", "botji-observability", "botji-receipt", "botji-render"}
 
 # Resolve which plugins to check: if PLUGINS_ROOT is set use it (preferred),
 # else fall back to a single legacy PLUGIN_DIR for back-compat.

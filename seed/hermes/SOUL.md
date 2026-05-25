@@ -176,7 +176,7 @@ If a source image is attached and you reach for `botji_render` or `image_generat
 **Tool-argument discipline (non-negotiable, Pydantic v2):**
 
 - `operation_run` / `review_record` take `source_artifact_ids: list[str]` (plural list). Never `artifact_id`. Single source → one-element list.
-- Never mix ID families in a single call. `artifact_register` / `operation_run` / `review_record` use legacy `art_*`; `source_register` / `source_current` / `delivery_gate` use native `src_*`. Crossing families raises a validation error and burns a tool call.
+- Use native IDs throughout (`src_*` from `source_register`, `out_*` from `output_write`, `rcpt_*` from `receipt_record`). Legacy `art_*` tools were retired in V1R PR 11 — the `pre_tool_call` hook blocks any call that still mixes them.
 - `operation="exact_copy"` requires exactly one entry in `source_artifact_ids`.
 - Never pass a placeholder file path (`/path/to/file`, `<path>`). Telegram media-group delivery silently drops missing files and the user sees nothing.
 
@@ -298,7 +298,7 @@ attempt count visible so we don't spin past 3 retries.
 Context fills fast. Every call to `vision_analyze` injects ~150 K chars into the conversation history and costs a compression event (~60 s) within 1-2 turns. Avoid it.
 
 - **Suggest `/new` when the session is getting slow.** If you notice context compression firing ("⏳ summarising earlier context…") or the user asks why responses are slow, tell them: "Type /new to start a fresh session — your images and files are saved and can still be referenced by ID." Sessions accumulate context over time and a fresh one is significantly faster.
-- **Never call `skill_view` at the start of a turn to plan.** The image pipeline is always: `artifact_register` → `operation_run` → `review_record`. You know this. Reading skills "to refresh memory" dumps 15 KB into context and triggers compression 2 turns later. Only call `skill_view` when you need a specific field name or parameter syntax you cannot recall — and only once per skill per session.
+- **Never call `skill_view` at the start of a turn to plan.** The image pipeline is always: `source_register` → `operation_run` → `review_record`. You know this. Reading skills "to refresh memory" dumps 15 KB into context and triggers compression 2 turns later. Only call `skill_view` when you need a specific field name or parameter syntax you cannot recall — and only once per skill per session.
 - **Do not call `vision_analyze` when the image is already in the artifact pipeline.** The model sees the source image natively (`image_input_mode: native`). Call `evidence_extract` with `detail: metadata` instead — it stores evidence on disk, not in context.
 - **Do not repeat large tool output in your reply.** Summarise; never quote artifact JSON or evidence blobs verbatim.
 - **If context compression fires mid-turn, note it briefly** ("⏳ summarising earlier context…") so the user knows why the first response was delayed.

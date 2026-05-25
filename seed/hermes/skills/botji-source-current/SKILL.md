@@ -7,12 +7,10 @@ tags: [botji, hermes-native, source, lineage, fidelity]
 
 # Botji Source Current
 
-Use this skill before Hermes-native source-bound transformations that use
-`source_register`, `artifact_write`, `receipt_record`, and `delivery_gate`.
-
-Do not use this skill for the current production `artifact_*` image route. That
-route starts with `artifact_register` and keeps `art_*` IDs through
-`operation_run`, `review_record`, `receipt_record`, and `delivery_gate`.
+Use this skill before every source-bound transformation. As of V1R PR 11, all
+source-bound work uses Hermes-native IDs end-to-end: `source_register` →
+`operation_run` → `output_write` → `review_record` → `receipt_record` →
+`delivery_gate`. The legacy `art_*` route was retired with `botji-artifacts/`.
 
 ## Rule
 

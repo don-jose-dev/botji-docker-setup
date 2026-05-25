@@ -11,28 +11,21 @@ Use this skill before delivering any reviewed source-bound output.
 
 ## Steps
 
-For Hermes-native `src_*` / `out_*` outputs:
+Every source-bound output uses Hermes-native IDs end-to-end (V1R PR 11
+retired the legacy `art_*` pipeline):
 
 1. Register the generated output with:
-   `artifact_write(path=<output path>, parents=<current source_ids>, kind="output", claim_level="reviewed", current_turn_id=<id>, metadata={...})`
+   `output_write(path=<output path>, parents=<current src_* ids>, kind="output", claim_level="reviewed", current_turn_id=<id>, metadata={...})`
 2. Convert review checks into a receipt:
-   `receipt_record(source_ids=<current source_ids>, output_id=<output_id>, route=<route label>, status=<pass|warn|block>, checks=<checks>, claim_level="reviewed", current_turn_id=<id>)`
+   `receipt_record(source_ids=<current src_* ids>, output_id=<out_*>, route=<route label>, status=<pass|warn|block>, checks=<checks>, claim_level="reviewed", current_turn_id=<id>)`
 3. Call:
    `delivery_gate(receipt_id=<receipt_id>)`
 4. Deliver only when `delivery_gate` is `clear` or `warned`.
 
-For current production `artifact_*` image outputs:
-
-1. Do not call `artifact_write`. The output is already registered by
-   `operation_run` as an `art_*` artifact with parents.
-2. Convert the `review_record` result into:
-   `receipt_record(source_ids=<source art_* ids>, output_id=<output art_* id>, route="operation_run.edit_image", status=<pass|warn|block>, checks=<checks>, claim_level="reviewed", current_turn_id=<id>)`
-3. Call `delivery_gate(receipt_id=<receipt_id>)`.
-4. Deliver only when `delivery_gate` is `clear` or `warned`.
-
 Never retry `receipt_record` with the same arguments after an ID-family error.
-If it says a `src_*` ID was sent to a legacy artifact tool, switch to the
-matching `art_*` ID from `artifact_register` or stop and report the mismatch.
+If it reports a mixed `art_*` + `src_*` payload, the call was holding a stale
+legacy ID — re-register the current attachment with `source_register` and use
+the new `src_*` ID.
 
 ## Status Mapping
 
