@@ -95,7 +95,7 @@ jobs:
 
       - name: Upload SBOM artifact
         if: steps.sbom.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-${{ steps.meta.outputs.version }}
           path: sbom/botji-hermes.spdx.json
