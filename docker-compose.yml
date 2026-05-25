@@ -27,12 +27,15 @@ services:
     environment:
       TZ: ${TZ:-Europe/Amsterdam}
       HERMES_HOME: /opt/data
-      # Unix HOME for the hermes user — must be a writable path on the mounted
-      # volume so Hermes can write XDG state (~/.local/state/hermes/gateway-locks/).
-      # Default hermes user inherits HOME=/root which is drwx------ root:root,
-      # blocking lock creation and auto-pausing the telegram platform after 10
-      # consecutive permission errors (observed 2026-05-25 on production VPS).
-      HOME: /opt/data
+      # Redirect ONLY the XDG state path (gateway lock files) to the writable
+      # tenant volume — not HOME globally. The earlier HOME=/opt/data attempt
+      # also moved Hermes' own auth store to ~/auth.json = /opt/data/auth.json
+      # which conflicted with a pre-existing root-owned file and broke
+      # Codex provider auth. XDG_STATE_HOME is the surgical fix:
+      # ~/.local/state/hermes/gateway-locks/ → /opt/data/.local/state/hermes/...
+      # which the hermes user (uid 10000) can write, without disturbing HOME-
+      # derived paths like auth, config, or cache.
+      XDG_STATE_HOME: /opt/data/.local/state
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
       BOTJI_TENANT_ID: ${BOTJI_TENANT_ID:-botji}
