@@ -12,6 +12,11 @@
 #   write_codex_auth     — decode /tmp/codex-auth.b64 into $DATA_DIR/.codex/
 #                          and convert into the Hermes provider auth store at
 #                          $DATA_DIR/auth.json.
+#   ensure_auth_file_owner DATA UID GID LABEL
+#                        — harden $DATA/auth.json ownership/mode after startup.
+#   write_hermes_auth_store_from_codex CODEX_AUTH HERMES_AUTH
+#                        — convert a Codex CLI auth file into the Hermes
+#                          openai-codex provider store shape.
 #
 # Reads from setup_env: HERMES_RUNTIME_UID, HERMES_RUNTIME_GID, DATA_DIR.
 
@@ -104,18 +109,38 @@ PY
   fi
 }
 
-write_codex_auth() {
-  echo "==> Write Codex / Hermes auth"
-  if [ -s /tmp/codex-auth.b64 ]; then
-    mkdir -p "$DATA_DIR/.codex"
-    base64 -d /tmp/codex-auth.b64 > "$DATA_DIR/.codex/auth.json"
-    chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/.codex" "$DATA_DIR/.codex/auth.json" 2>/dev/null || true
-    chmod 600 "$DATA_DIR/.codex/auth.json"
-    echo "    Codex auth.json written to $DATA_DIR/.codex/"
+ensure_auth_file_owner() {
+  local data_dir="$1"
+  local runtime_uid="$2"
+  local runtime_gid="$3"
+  local label="${4:-Hermes auth}"
 
-    # Hermes openai-codex does not read the raw Codex CLI auth shape directly.
-    # Convert ~/.codex/auth.json tokens into the Hermes provider auth store.
-    python3 - "$DATA_DIR/.codex/auth.json" "$DATA_DIR/auth.json" <<'PY'
+  if [ ! -f "$data_dir/auth.json" ]; then
+    return 0
+  fi
+  if [ -z "$runtime_uid" ] || [ -z "$runtime_gid" ]; then
+    echo "ERROR: runtime UID/GID not set; cannot chown $data_dir/auth.json" >&2
+    return 1
+  fi
+  chown "$runtime_uid:$runtime_gid" "$data_dir/auth.json" || {
+    echo "ERROR: chown failed on $data_dir/auth.json (uid=$runtime_uid gid=$runtime_gid)" >&2
+    return 1
+  }
+  chmod 600 "$data_dir/auth.json"
+
+  actual_uid="$(stat -c '%u' "$data_dir/auth.json")"
+  if [ "$actual_uid" != "$runtime_uid" ]; then
+    echo "ERROR: auth.json owner mismatch after chown (expected $runtime_uid, got $actual_uid)" >&2
+    return 1
+  fi
+  echo "    $label auth.json owner ensured ($runtime_uid:$runtime_gid)"
+}
+
+write_hermes_auth_store_from_codex() {
+  local codex_auth_path="$1"
+  local hermes_auth_path="$2"
+
+  python3 - "$codex_auth_path" "$hermes_auth_path" <<'PY'
 import json
 import sys
 from datetime import datetime, timezone
@@ -158,31 +183,26 @@ state["auth_mode"] = "chatgpt"
 
 hermes_auth_path.write_text(json.dumps(hermes_auth, indent=2, sort_keys=True) + "\n")
 PY
+}
+
+write_codex_auth() {
+  echo "==> Write Codex / Hermes auth"
+  if [ -s /tmp/codex-auth.b64 ]; then
+    mkdir -p "$DATA_DIR/.codex"
+    base64 -d /tmp/codex-auth.b64 > "$DATA_DIR/.codex/auth.json"
+    chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/.codex" "$DATA_DIR/.codex/auth.json" 2>/dev/null || true
+    chmod 600 "$DATA_DIR/.codex/auth.json"
+    echo "    Codex auth.json written to $DATA_DIR/.codex/"
+
+    # Hermes openai-codex does not read the raw Codex CLI auth shape directly.
+    # Convert ~/.codex/auth.json tokens into the Hermes provider auth store.
+    write_hermes_auth_store_from_codex "$DATA_DIR/.codex/auth.json" "$DATA_DIR/auth.json"
     # Hard-fail on chown problems for the Hermes auth store — silent failure
     # here was the root cause of the 2026-05-25 production outage: file
     # remained root-owned after the python write_text, Hermes (uid 10000)
     # couldn't read it, and "Primary provider auth failed: No Codex
-    # credentials stored" surfaced on every render. The .codex/auth.json
-    # chown above can still be soft (its file isn't load-bearing for Hermes).
-    if [ -z "${HERMES_RUNTIME_UID:-}" ] || [ -z "${HERMES_RUNTIME_GID:-}" ]; then
-      echo "ERROR: HERMES_RUNTIME_UID/GID not set; cannot chown auth.json" >&2
-      exit 1
-    fi
-    chown "$HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID" "$DATA_DIR/auth.json" || {
-      echo "ERROR: chown failed on $DATA_DIR/auth.json (uid=$HERMES_RUNTIME_UID gid=$HERMES_RUNTIME_GID)" >&2
-      exit 1
-    }
-    chmod 600 "$DATA_DIR/auth.json"
-    # Verify: Hermes provider auth depends on this file being owned by the
-    # hermes runtime user. If we shipped a deploy where it isn't, render
-    # turns will all fail with "No Codex credentials stored" until manual
-    # recovery (docker exec -u root chown 10000:10000 /opt/data/auth.json).
-    actual_uid="$(stat -c '%u' "$DATA_DIR/auth.json")"
-    if [ "$actual_uid" != "$HERMES_RUNTIME_UID" ]; then
-      echo "ERROR: auth.json owner mismatch after chown (expected $HERMES_RUNTIME_UID, got $actual_uid)" >&2
-      exit 1
-    fi
-    echo "    Hermes openai-codex auth state written to $DATA_DIR/auth.json (owner $HERMES_RUNTIME_UID:$HERMES_RUNTIME_GID)"
+    # credentials stored" surfaced on every render.
+    ensure_auth_file_owner "$DATA_DIR" "$HERMES_RUNTIME_UID" "$HERMES_RUNTIME_GID" "Hermes openai-codex"
   else
     echo "    CODEX_AUTH_B64 not set — skipping auth.json"
   fi

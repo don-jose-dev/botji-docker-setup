@@ -276,6 +276,21 @@ deploy_additional_tenant() {
   # Best-effort kanban schema migration on the additional tenant's kanban.db.
   migrate_kanban_db_for_tenant "$tenant_data_abs/kanban.db" "$tenant_uid" "$tenant_gid"
 
+  # Additional tenants keep their own .codex/auth.json, but Hermes reads its
+  # provider auth from $HERMES_HOME/auth.json. Rebuild that store from the
+  # tenant-local Codex auth when present; do not copy primary-tenant tokens.
+  if [ -f "$tenant_data_abs/.codex/auth.json" ]; then
+    if write_hermes_auth_store_from_codex \
+        "$tenant_data_abs/.codex/auth.json" \
+        "$tenant_data_abs/auth.json"; then
+      ensure_auth_file_owner "$tenant_data_abs" "$tenant_uid" "$tenant_gid" \
+        "additional tenant $tenant_id" \
+        || echo "    WARNING: additional tenant auth ownership fix failed (non-fatal — /opt/botji already shipped)"
+    else
+      echo "    WARNING: additional tenant auth conversion failed (non-fatal — tenant may need fresh Codex login)"
+    fi
+  fi
+
   # Remove stale skills metadata files written by a previous (different) image.
   # When a tenant transitions from one hermes-agent image to another, the old
   # image's ~/.hermes/skills/.bundled_manifest is read by the new image's
@@ -348,6 +363,9 @@ deploy_additional_tenant() {
   done
   if [ "$tenant_status" = "healthy" ]; then
     echo "    additional tenant $tenant_container healthy"
+    ensure_auth_file_owner "$tenant_data_abs" "$tenant_uid" "$tenant_gid" \
+      "additional tenant $tenant_id" \
+      || echo "    WARNING: additional tenant auth ownership fix failed (non-fatal — /opt/botji already shipped)"
     if [ -f scripts/vps-postdeploy-smoke.sh ]; then
       BOTJI_CONTAINER_NAME="$tenant_container" \
         BOTJI_TENANT_ID="$tenant_id" \

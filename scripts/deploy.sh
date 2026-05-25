@@ -73,6 +73,10 @@ start_primary_tenant
 wait_for_primary_health
 
 if [ "$STATUS" = "healthy" ]; then
+  # Upstream Hermes startup can touch /opt/data/auth.json before the gateway
+  # runs as the hermes UID. Re-assert ownership after the container is healthy
+  # so the first real Telegram turn can read the provider auth store.
+  ensure_auth_file_owner "$DATA_DIR" "$HERMES_RUNTIME_UID" "$HERMES_RUNTIME_GID" "post-start Hermes"
   run_primary_smoke
   record_last_deploy "$STATUS"
   # shellcheck disable=SC2034  # read by the cleanup trap in vps-deploy.sh
