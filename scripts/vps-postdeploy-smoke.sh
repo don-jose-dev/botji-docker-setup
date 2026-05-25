@@ -84,6 +84,41 @@ PY
 echo "    gateway process/env/auth contract ok"
 '
 
+echo "=== postdeploy: Hermes provider/platform status ==="
+docker exec -u 10000:10000 "$CONTAINER_NAME" sh -lc '
+set -eu
+export HERMES_HOME="${HERMES_HOME:-/opt/data}"
+export CODEX_HOME="${CODEX_HOME:-/opt/data/.codex}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-/opt/data/.local/state}"
+if [ -x /opt/hermes/.venv/bin/hermes ]; then
+  HERMES_BIN=/opt/hermes/.venv/bin/hermes
+elif command -v hermes >/dev/null 2>&1; then
+  HERMES_BIN=hermes
+else
+  echo "ERROR: hermes binary not found" >&2
+  exit 1
+fi
+status_output="$("$HERMES_BIN" status 2>&1)" || {
+  printf "%s\n" "$status_output" >&2
+  exit 1
+}
+printf "%s\n" "$status_output"
+printf "%s\n" "$status_output" | awk "
+  /OpenAI Codex/ && /logged in/ && !/not logged/ { ok=1 }
+  END { exit ok ? 0 : 1 }
+" || {
+  echo "ERROR: OpenAI Codex provider is not logged in" >&2
+  exit 1
+}
+printf "%s\n" "$status_output" | awk "
+  /Telegram/ && /configured/ && !/not configured/ { ok=1 }
+  END { exit ok ? 0 : 1 }
+" || {
+  echo "ERROR: Telegram platform is not configured" >&2
+  exit 1
+}
+'
+
 echo "=== postdeploy: runtime tenant harness ==="
 docker exec "$CONTAINER_NAME" botji-runtime-harness \
   --expected-tenant "$TENANT_ID" \

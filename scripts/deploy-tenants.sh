@@ -288,16 +288,24 @@ deploy_additional_tenant() {
   # single-use and sharing one auth.json across tenants causes
   # refresh_token_reused outages.
   local tenant_auth_b64="/tmp/codex-auth-${tenant_id}.b64"
-  if [ -s "$tenant_auth_b64" ]; then
-    mkdir -p "$tenant_data_abs/.codex"
-    base64 -d "$tenant_auth_b64" > "$tenant_data_abs/.codex/auth.json"
-    chown "$tenant_uid:$tenant_gid" "$tenant_data_abs/.codex" "$tenant_data_abs/.codex/auth.json" 2>/dev/null || true
-    chmod 600 "$tenant_data_abs/.codex/auth.json"
-    echo "    tenant-specific Codex auth written from centralized secret"
-  fi
-  if [ -f "$tenant_data_abs/.codex/auth.json" ]; then
+  local tenant_codex_auth="$tenant_data_abs/.codex/auth.json"
+  maybe_install_staged_codex_auth \
+    "$tenant_auth_b64" \
+    "$tenant_codex_auth" \
+    "$tenant_uid" \
+    "$tenant_gid" \
+    "additional tenant $tenant_id" || {
+      case "$?" in
+        1) : ;;
+        *) echo "    ERROR: additional tenant staged auth import failed"; return 1 ;;
+      esac
+    }
+  if [ -f "$tenant_codex_auth" ]; then
+    ensure_codex_auth_file_owner "$tenant_codex_auth" "$tenant_uid" "$tenant_gid" \
+      "additional tenant $tenant_id" \
+      || { echo "    ERROR: additional tenant Codex auth ownership fix failed"; return 1; }
     if write_hermes_auth_store_from_codex \
-        "$tenant_data_abs/.codex/auth.json" \
+        "$tenant_codex_auth" \
         "$tenant_data_abs/auth.json"; then
       ensure_auth_file_owner "$tenant_data_abs" "$tenant_uid" "$tenant_gid" \
         "additional tenant $tenant_id" \
@@ -306,6 +314,14 @@ deploy_additional_tenant() {
       echo "    ERROR: additional tenant auth conversion failed — tenant needs fresh Codex login"
       return 1
     fi
+  elif [ -f "$tenant_data_abs/auth.json" ]; then
+    echo "    no tenant Codex CLI auth file present; preserving existing Hermes provider auth store"
+    ensure_auth_file_owner "$tenant_data_abs" "$tenant_uid" "$tenant_gid" \
+      "additional tenant $tenant_id" \
+      || { echo "    ERROR: additional tenant auth ownership fix failed"; return 1; }
+  else
+    echo "    ERROR: additional tenant $tenant_id has no Codex auth; stage /tmp/codex-auth-${tenant_id}.b64 from a fresh tenant login"
+    return 1
   fi
 
   # Remove stale skills metadata files written by a previous (different) image.

@@ -18,7 +18,7 @@ push to master ──> GitHub Actions
                                ├── docker pull <image>
                                ├── copy seed/ → /opt/botji/data
                                ├── pre-flight smoke (smoke-plugin.sh) ◀── gate
-                               ├── write Codex auth from CI secret
+                               ├── preserve/seed Codex auth, then write Hermes provider auth
                                ├── clear Telegram webhook
                                └── docker compose up -d --force-recreate
 ```
@@ -434,14 +434,29 @@ Symptom in `errors.log`:
 Primary provider auth failed: No Codex credentials stored. Run `hermes auth`...
 ```
 
-Resolution:
+Do not copy one `auth.json` across bots. Codex OAuth refresh tokens rotate and
+are single-use; replaying an older GitHub secret or sharing one file between
+tenants causes `refresh_token_reused`.
+
+Resolution is per tenant:
 
 ```sh
-make codex-push-auth VPS_HOST=<ip>
+# Fresh login for primary botji tenant.
+CODEX_HOME="$PWD/.codex-botji-auth" codex login
+base64 -w 0 "$PWD/.codex-botji-auth/auth.json" | gh secret set CODEX_AUTH_B64 --env production
+
+# Fresh, separate login for degain tenant. Same ChatGPT account is OK; same
+# auth.json file is not.
+CODEX_HOME="$PWD/.codex-degain-auth" codex login
+base64 -w 0 "$PWD/.codex-degain-auth/auth.json" | gh secret set CODEX_AUTH_B64_DEGAIN --env production
+
+gh workflow run "Build and Deploy" --ref master
 ```
 
-This re-encodes `~/.codex/auth.json` from the workstation that did the OAuth
-device-flow login and pushes it to the VPS.
+The deploy script preserves a newer VPS-local OAuth chain and only imports the
+staged secret when it is newer or when `BOTJI_FORCE_CODEX_AUTH_SYNC=1` is set.
+This keeps routine deploys from rolling production back to a consumed refresh
+token while still allowing an intentional credential rotation.
 
 ---
 

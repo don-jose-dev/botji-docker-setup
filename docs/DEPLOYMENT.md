@@ -14,7 +14,9 @@ DigitalOcean equivalent costs $24/month for less RAM. Hostinger wins on price/pe
 - GitHub account with this repo pushed
 - Domain name pointed at your VPS IP (for dashboard HTTPS)
 - `TELEGRAM_BOT_TOKEN` from @BotFather
-- Codex/ChatGPT subscription auth exported as `CODEX_AUTH_B64`
+- Codex/ChatGPT subscription auth seed exported as `CODEX_AUTH_B64`
+  (and one separate auth seed per additional tenant, such as
+  `CODEX_AUTH_B64_DEGAIN`)
 
 ---
 
@@ -109,7 +111,8 @@ cat ~/.ssh/botji_deploy        # copy the private key
 | `VPS_SSH_KEY` | Contents of `~/.ssh/botji_deploy` |
 | `VPS_PORT` | `22` |
 | `DEPLOY_PATH` | `/opt/botji` |
-| `CODEX_AUTH_B64` | Base64-encoded local Codex `auth.json` |
+| `CODEX_AUTH_B64` | Base64-encoded Codex `auth.json` seed for the primary tenant |
+| `CODEX_AUTH_B64_DEGAIN` | Base64-encoded Codex `auth.json` seed for the degain tenant |
 
 **Allow GitHub Actions to push to GHCR:**
 Go to your GitHub profile → Packages → botji-hermes → Package Settings → Add repository access.
@@ -144,45 +147,75 @@ systemctl list-timers botji-backup.timer
 
 ## Codex authentication (ChatGPT subscription)
 
-Codex runs headless in the container and cannot open a browser. Log in **locally** where you have a browser, then push the credential file to the VPS. No API key is required for this deployment.
+Codex runs headless in the container and cannot open a browser. Log in
+**locally** where you have a browser, then stage a credential seed in GitHub
+Actions. No API key is required for this deployment.
 
-**Step 1 — Log in locally (one-time, on your own machine)**
+Important: Codex OAuth refresh tokens rotate and are single-use. Treat the
+GitHub secret as a seed/rotation input, not the canonical live auth state.
+Routine deploys preserve the newer VPS-local OAuth chain and only import the
+staged seed when it is newer or when `BOTJI_FORCE_CODEX_AUTH_SYNC=1` is set.
+
+Use one OAuth chain per live tenant. The same ChatGPT account is fine; the same
+`auth.json` file is not safe to reuse across bots.
+
+**Step 1 - Log in locally for each tenant**
 
 ```bash
 # Install Codex CLI if not already installed
 npm i -g @openai/codex
 
-# Optional: use a separate CODEX_HOME so it doesn't mix with your personal login
-export CODEX_HOME="$HOME/.codex-botji"   # Mac/Linux
-# On Windows PowerShell: $env:CODEX_HOME = "C:\Users\You\.codex-botji"
-
+# Primary botji tenant.
+export CODEX_HOME="$PWD/.codex-botji-auth"
 codex login
-# A browser opens → log in to ChatGPT → credentials saved to $CODEX_HOME
+
+# Additional degain tenant. This must be a separate login directory.
+export CODEX_HOME="$PWD/.codex-degain-auth"
+codex login
 ```
 
-**Step 2 — Push credentials to the VPS**
+Windows PowerShell equivalent:
+
+```powershell
+$env:CODEX_HOME = "$PWD\.codex-botji-auth"
+codex login
+
+$env:CODEX_HOME = "$PWD\.codex-degain-auth"
+codex login
+```
+
+**Step 2 - Stage auth seeds in GitHub environment secrets**
 
 ```bash
-# From your local machine, inside the botji-docker-setup directory:
-make codex-push-auth VPS_HOST=187.124.13.159
-
-# With a custom SSH key or VPS user:
-make codex-push-auth VPS_HOST=187.124.13.159 VPS_USER=root SSH_KEY=~/.ssh/botji_deploy
+base64 -w 0 .codex-botji-auth/auth.json | gh secret set CODEX_AUTH_B64 --env production
+base64 -w 0 .codex-degain-auth/auth.json | gh secret set CODEX_AUTH_B64_DEGAIN --env production
 ```
 
-Credentials are written to `/opt/botji/data/botji/.codex/` on the VPS. They persist across container restarts (mounted volume). No `make reload` needed — Codex reads the file on each call.
+Windows PowerShell equivalent:
 
-**Step 3 — Verify**
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path ".codex-botji-auth\auth.json"))) |
+  gh secret set CODEX_AUTH_B64 --env production
+[Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path ".codex-degain-auth\auth.json"))) |
+  gh secret set CODEX_AUTH_B64_DEGAIN --env production
+```
+
+For a future `idesigns` tenant, repeat the same pattern with its own
+`CODEX_HOME` and `CODEX_AUTH_B64_IDESIGNS`.
+
+**Step 3 - Deploy and verify**
 
 ```bash
-# Check the file is present on VPS:
-ssh botji@187.124.13.159 'ls -la /opt/botji/data/botji/.codex/'
-
-# Check Codex can run inside the container:
-ssh botji@187.124.13.159 'cd /opt/botji && docker compose exec hermes codex --version'
+gh workflow run "Build and Deploy" --ref master
 ```
 
-**Re-authentication:** ChatGPT tokens expire. When Codex starts returning auth errors, repeat steps 1–3. Typical token lifetime is 30–90 days.
+The deploy smoke fails unless Hermes reports OpenAI Codex logged in, Telegram
+configured, exactly one gateway process, and the expected tenant identity for
+each required bot.
+
+**Re-authentication:** when Codex starts returning auth errors, repeat steps
+1-3 only for the affected tenant. Do not copy the primary tenant's `auth.json`
+into an additional tenant.
 
 ---
 
@@ -192,7 +225,7 @@ ssh botji@187.124.13.159 'cd /opt/botji && docker compose exec hermes codex --ve
 |------|---------|
 | View logs | `make logs` |
 | Apply config/SOUL change | `make reload` |
-| Push Codex auth to VPS | `make codex-push-auth VPS_HOST=<ip>` |
+| Seed/rotate Codex auth | Fresh tenant `codex login`, then `gh secret set CODEX_AUTH_B64... --env production` |
 | Check Codex status | `make codex-status` |
 | Manual backup | `make snapshot` |
 | Upload backup to cloud | `make backup-cloud` |
@@ -223,7 +256,7 @@ make reload
 |--------|--------------|
 | `API_SERVER_KEY` | Generate new: `openssl rand -hex 32`. Update `.env`, run `make reload`. |
 | `TELEGRAM_BOT_TOKEN` | Revoke in @BotFather, get new token, update `.env`, run `make reload`. |
-| Codex auth | Run `make codex-login`, update `CODEX_AUTH_B64`, then redeploy. |
+| Codex auth | Fresh tenant `codex login`, update the matching `CODEX_AUTH_B64...` secret, then redeploy. |
 | Deploy SSH key | Generate new keypair, update server `authorized_keys` and GitHub secret. |
 
 ---
