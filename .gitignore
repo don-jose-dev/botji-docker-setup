@@ -9,6 +9,7 @@ backups/
 
 # Actual env file — only .env.example is tracked
 .env
+.codex-*-auth/
 
 # Claude Code project state
 .claude/

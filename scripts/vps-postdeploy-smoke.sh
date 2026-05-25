@@ -36,6 +36,54 @@ if STARTED_EPOCH="$(date -d "$STARTED_AT" +%s 2>/dev/null)"; then
   fi
 fi
 
+echo "=== postdeploy: gateway runtime contract ==="
+docker exec -e EXPECTED_TENANT="$TENANT_ID" -u 10000:10000 "$CONTAINER_NAME" sh -lc '
+set -eu
+pids="$(ps -eo pid,args | awk "/[h]ermes gateway run/ {print \$1}")"
+count="$(printf "%s\n" "$pids" | sed "/^$/d" | wc -l | tr -d " ")"
+if [ "$count" != "1" ]; then
+  echo "ERROR: expected exactly one hermes gateway run process, found $count" >&2
+  ps -eo pid,ppid,user,args | grep -E "[h]ermes gateway run|[s]6-supervise gateway" >&2 || true
+  exit 1
+fi
+pid="$(printf "%s\n" "$pids" | sed "/^$/d" | head -n1)"
+env_dump="$(tr "\0" "\n" < "/proc/$pid/environ")"
+require_env() {
+  if ! printf "%s\n" "$env_dump" | grep -q "^$1="; then
+    echo "ERROR: gateway process missing env $1" >&2
+    exit 1
+  fi
+}
+for key in HERMES_HOME CODEX_HOME XDG_STATE_HOME BOTJI_TENANT_ID; do
+  require_env "$key"
+done
+if ! printf "%s\n" "$env_dump" | grep -qx "BOTJI_TENANT_ID=$EXPECTED_TENANT"; then
+  echo "ERROR: gateway BOTJI_TENANT_ID does not match $EXPECTED_TENANT" >&2
+  exit 1
+fi
+if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+  require_env TELEGRAM_BOT_TOKEN
+fi
+python3 - <<'"'"'PY'"'"'
+import json
+from pathlib import Path
+
+auth_path = Path("/opt/data/auth.json")
+if not auth_path.exists():
+    raise SystemExit("ERROR: /opt/data/auth.json missing")
+data = json.loads(auth_path.read_text())
+tokens = (
+    data.get("providers", {})
+    .get("openai-codex", {})
+    .get("tokens", {})
+)
+missing = [key for key in ("access_token", "refresh_token") if not tokens.get(key)]
+if missing:
+    raise SystemExit("ERROR: Codex provider auth missing " + ",".join(missing))
+PY
+echo "    gateway process/env/auth contract ok"
+'
+
 echo "=== postdeploy: runtime tenant harness ==="
 docker exec "$CONTAINER_NAME" botji-runtime-harness \
   --expected-tenant "$TENANT_ID" \

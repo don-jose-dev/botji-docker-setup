@@ -11,7 +11,27 @@ services:
     image: ${BOTJI_IMAGE_NAME:-botji/hermes-codex}:${BOTJI_IMAGE_TAG:-local}
     container_name: ${BOTJI_TENANT_ID:-botji}-hermes
     restart: unless-stopped
-    command: ["gateway", "run"]
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        set -e
+        if [ -d /run/s6/container_environment ]; then
+          for env_file in /run/s6/container_environment/*; do
+            [ -f "$$env_file" ] || continue
+            env_key=$${env_file##*/}
+            case "$$env_key" in
+              ''|*[!A-Za-z0-9_]*|[0-9]*) continue ;;
+            esac
+            env_val=$$(cat "$$env_file")
+            export "$$env_key=$$env_val"
+          done
+        fi
+        # Keep this deployment on one gateway path. The base Hermes image may
+        # restore a persisted s6 gateway-default service; this container uses
+        # the Docker CMD gateway so compose owns lifecycle and env injection.
+        /command/s6-svc -d /run/service/gateway-default 2>/dev/null || true
+        exec hermes gateway run
     stop_grace_period: 60s
     ports:
       # Bound to host loopback only. No public-facing service by default.

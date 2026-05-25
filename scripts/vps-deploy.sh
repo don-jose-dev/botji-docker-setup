@@ -14,7 +14,7 @@ cleanup() {
   if [ "$exit_code" -ne 0 ] && [ "${ROLLBACK_ON_ERROR:-0}" = "1" ] && [ "${ROLLBACK_DONE:-0}" != "1" ]; then
     rollback_to_previous "script_error" || true
   fi
-  rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 \
+  rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth*.b64 \
         /tmp/vps-deploy.sh /tmp/deploy.sh /tmp/deploy-env.sh \
         /tmp/deploy-config.sh /tmp/deploy-tenants.sh /tmp/deploy-smoke.sh
 }
