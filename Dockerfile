@@ -46,6 +46,7 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
          jsonschema \
          pydantic \
          prometheus-client \
+         "c2pa-python==0.32.6" \
     && uv pip install --system --break-system-packages \
          ezdxf \
          pillow
