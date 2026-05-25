@@ -133,6 +133,10 @@ def truncate_generic(tool_name: str, result: str, session_id: str) -> str | None
 
 # Tools that bypass truncation — their full output is needed by downstream logic.
 _PASSTHROUGH_TOOLS = frozenset({
+    "evidence_extract",
+    "evidence_extract_manifest",
+    "operation_run",
+    "review_record",
     "artifact_register",     # artifact records are small but referenced by ID
     "artifact_read",         # explicit read intent — don't truncate
     "artifact_review",       # processed by the verdict writer; replay needs full content

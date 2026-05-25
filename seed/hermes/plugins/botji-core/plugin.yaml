@@ -7,6 +7,8 @@ requires_env: []
 provides_tools:
   - source_register
   - source_current
+  - output_write
+  # DELETED_BY: PR_11
   - artifact_write
   - receipt_record
   - delivery_gate

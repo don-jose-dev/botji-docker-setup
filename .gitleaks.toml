@@ -26,6 +26,9 @@ paths = [
   # Lockfiles and example envs are non-credential by design; we still want them
   # scanned by ruleset, but globbed allowlist keeps churn manageable.
   '''(?i).*\.env\.example$''',
+  # Intentional fake secret-shaped values used to verify audit-log redaction.
+  # Keep this scoped to the single fixture; real source/docs stay scanned.
+  '''^tests/fixtures/audit/secret_redaction\.yaml$''',
   # gitleaks should never scan itself
   '''^\.gitleaks\.toml$''',
   # Generated SBOM/lock artifacts (none today, future-proofing)

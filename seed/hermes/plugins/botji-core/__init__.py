@@ -513,6 +513,8 @@ ARTIFACT_WRITE_SCHEMA = {
     },
 }
 
+OUTPUT_WRITE_SCHEMA = {**ARTIFACT_WRITE_SCHEMA, "name": "output_write"}
+
 RECEIPT_RECORD_SCHEMA = {
     "name": "receipt_record",
     "description": "Persist a skill-authored review receipt for a source-bound output.",
@@ -561,6 +563,14 @@ def register(ctx) -> None:
         handler=_handle_source_current,
         description=SOURCE_CURRENT_SCHEMA["description"],
     )
+    ctx.register_tool(
+        name="output_write",
+        toolset="file",
+        schema=OUTPUT_WRITE_SCHEMA,
+        handler=_handle_artifact_write,
+        description=ARTIFACT_WRITE_SCHEMA["description"],
+    )
+    # DELETED_BY: PR_11
     ctx.register_tool(
         name="artifact_write",
         toolset="file",

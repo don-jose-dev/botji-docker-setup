@@ -1,8 +1,8 @@
 """V1R render plugin.
 
 Operations dispatcher (``exact_copy``, ``render_schema``, ``edit_image``)
-and provider implementations. Replaces the switch-statement render dispatch
-in ``botji-artifacts/_handlers.py::_handle_artifact_transform``.
+and provider implementations. During cutover, legacy handlers consume this
+module while artifact bookkeeping remains outside the provider.
 
 Accessed by direct import:
     from operations import dispatch, OPERATIONS, RenderPolicy, RenderResult

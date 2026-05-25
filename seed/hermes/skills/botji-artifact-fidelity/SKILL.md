@@ -23,37 +23,37 @@ The default transformation policy is exact preservation: if the user provided a 
 
 **Design proposal** ("add a wardrobe here", "show what a kitchen looks like in this space", "give me a 3D image of [element] in this area"): the user explicitly wants to ADD or PLACE something. This is NOT a fidelity violation. Pipeline:
 1. `artifact_register(path, role="source")`
-2. `artifact_transform(operation="edit_image", ...)` — include the requested element in `subject_inventory`
-3. `artifact_review(fidelity_requirements=["Allowed transform: [element] added/placed as user requested"])`
+2. `operation_run(operation="edit_image", ...)` — include the requested element in `subject_inventory`
+3. `review_record(fidelity_requirements=["Allowed transform: [element] added/placed as user requested"])`
    The `"Allowed transform:"` prefix tells the review that this specific addition was user-authorised — the gate will not block it.
 4. Deliver with: `✅ Design proposal · route: edit_image · claim: reviewed · [element] placed as requested`
 
-**Concept generation** (no source image, or user says "design me X from scratch"): skip artifact_review. Claim level `draft`. Gate does not fire.
+**Concept generation** (no source image, or user says "design me X from scratch"): skip review_record. Claim level `draft`. Gate does not fire.
 
 **Never use fidelity mode for a design proposal** — the review will correctly flag "element added not in source" as a hard conflict and block delivery. Use `"Allowed transform:"` in fidelity_requirements instead.
 
 ## Required loop
 
 1. Call `artifact_register` for every source file path. Pass `current_turn_id` set to the same value you would use for `source_register` / `source_current` so the dedup short-circuit cannot return a stale lineage record from an earlier turn when the user re-sends identical bytes.
-2. Call `artifact_extract` before making claims about file contents, dimensions, text, pages, layers, tables, or visible structure.
+2. Call `evidence_extract` before making claims about file contents, dimensions, text, pages, layers, tables, or visible structure.
 3. Call `artifact_normalize` to create a `botji.artifact_schema.v1` contract before transformation.
    This applies to every file type: image, PDF, text, DXF/CAD, DOCX, XLSX, HTML, SVG, STEP, IFC, ZIP, audio, video, or binary fallback.
 4. Create a source inventory before transformation. Split it into hard acceptance requirements and advisory preferences.
    Hard requirements are source facts or explicit user constraints; advisory preferences are style, finish, lighting, and best-effort exactness.
-5. If the user asks for a derivative output, call `artifact_transform` with `source_artifact_ids`.
+5. If the user asks for a derivative output, call `operation_run` with `source_artifact_ids`.
    Omit `operation` or use `operation: "exact_copy"` when the output must preserve the source byte-for-byte. This is the default and the 100% file-fidelity route.
    Prefer `provider_route: "openai_codex"` when the user wants to use Codex/ChatGPT subscription auth.
    Use `operation: "render_schema"` before image generation when exact structure matters.
-6. Call `artifact_review` before presenting a generated artifact as faithful.
+6. Call `review_record` before presenting a generated artifact as faithful.
    Pass the hard acceptance requirements as `fidelity_requirements`; advisory preferences may warn but must not become blockers unless the user made them mandatory.
 7. Final replies must name the output artifact ID/path and review ID/path when available.
    Return the artifact record `path` under `/opt/data/artifacts/outputs/...`, not a raw `/opt/data/cache/...` path from a generation tool. Cache paths are only staging inputs.
 
 ## Route rules
 
-- Exact preservation: use `artifact_transform` with omitted operation or `operation: "exact_copy"`; this verifies byte-for-byte preservation and is not a mock.
-- Source-image edit or render: use `artifact_transform(operation: "edit_image", provider_route: "openai_codex")` only when the contract has an explicit change list. Do not use prompt-only `image_generate`.
-- Schema-first preview or intermediate: use `artifact_transform(operation: "render_schema")`. This route is deterministic, not a mock, and is the preferred bridge for any file type before a styled/rendered output.
+- Exact preservation: use `operation_run` with omitted operation or `operation: "exact_copy"`; this verifies byte-for-byte preservation and is not a mock.
+- Source-image edit or render: use `operation_run(operation: "edit_image", provider_route: "openai_codex")` only when the contract has an explicit change list. Do not use prompt-only `image_generate`.
+- Schema-first preview or intermediate: use `operation_run(operation: "render_schema")`. This route is deterministic, not a mock, and is the preferred bridge for any file type before a styled/rendered output.
 - New concept image with no source file: `image_generate` is allowed only when the contract says concept generation.
 - PDF questions: extract page/text/table evidence first. Do not claim OCR or exact table structure if the PDF has no text layer and OCR was not performed.
 - DXF/CAD questions: use DXF structure as the geometry authority. Vision is only a preview/review signal.
@@ -80,7 +80,7 @@ Provider image edits can pass at 100% transform-contract fidelity while remainin
 
 ## No fallback
 
-If `artifact_transform` returns `auth_required` or a provider error for source-bound image work, stop and report the failure. Do not silently switch to `image_generate`. A source-bound Codex route must pass the image as `input_image` and persist route evidence.
+If `operation_run` returns `auth_required` or a provider error for source-bound image work, stop and report the failure. Do not silently switch to `image_generate`. A source-bound Codex route must pass the image as `input_image` and persist route evidence.
 
 ## Professional work
 

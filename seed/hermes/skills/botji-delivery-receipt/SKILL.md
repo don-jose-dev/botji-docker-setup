@@ -24,9 +24,9 @@ For Hermes-native `src_*` / `out_*` outputs:
 For current production `artifact_*` image outputs:
 
 1. Do not call `artifact_write`. The output is already registered by
-   `artifact_transform` as an `art_*` artifact with parents.
-2. Convert the `artifact_review` result into:
-   `receipt_record(source_ids=<source art_* ids>, output_id=<output art_* id>, route="artifact_transform.edit_image", status=<pass|warn|block>, checks=<checks>, claim_level="reviewed", current_turn_id=<id>)`
+   `operation_run` as an `art_*` artifact with parents.
+2. Convert the `review_record` result into:
+   `receipt_record(source_ids=<source art_* ids>, output_id=<output art_* id>, route="operation_run.edit_image", status=<pass|warn|block>, checks=<checks>, claim_level="reviewed", current_turn_id=<id>)`
 3. Call `delivery_gate(receipt_id=<receipt_id>)`.
 4. Deliver only when `delivery_gate` is `clear` or `warned`.
 

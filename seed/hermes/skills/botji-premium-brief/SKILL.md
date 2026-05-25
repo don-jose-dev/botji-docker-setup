@@ -1,6 +1,6 @@
 ---
 name: botji-premium-brief
-description: Premium image-brief construction. Required reading before every artifact_transform(operation="edit_image") call. Defines CAMERA · LIGHT · MATERIALS · MOOD · REFERENCE · SIGNATURE structure plus banned noise vocabulary and worked examples. Without this discipline, output is flat AI-default.
+description: Premium image-brief construction. Required reading before every operation_run(operation="edit_image") call. Defines CAMERA · LIGHT · MATERIALS · MOOD · REFERENCE · SIGNATURE structure plus banned noise vocabulary and worked examples. Without this discipline, output is flat AI-default.
 tags: [botji, premium, image, brief, render]
 version: 1.0.0
 ---
@@ -9,7 +9,7 @@ version: 1.0.0
 
 The fidelity skills tell you what to PRESERVE. **This skill tells you what to SPECIFY** so the output is premium, not flat AI-default.
 
-A brief without explicit MATERIAL · LIGHT · REFERENCE produces mediocre output. Every artifact_transform brief must include all three plus a SIGNATURE detail.
+A brief without explicit MATERIAL · LIGHT · REFERENCE produces mediocre output. Every operation_run brief must include all three plus a SIGNATURE detail.
 
 ---
 
@@ -212,7 +212,7 @@ FORBIDDEN:
    - MATERIALS names at least 3 surfaces with finish
    - REFERENCE names one specific genre or publication
    - SIGNATURE describes a quality of light or surface, not an object
-7. Call `artifact_transform(operation="edit_image", source_artifact_ids=[...], instructions=<brief>)`.
+7. Call `operation_run(operation="edit_image", source_artifact_ids=[...], instructions=<brief>)`.
 
 ---
 

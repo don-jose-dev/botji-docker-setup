@@ -128,7 +128,7 @@
   "verification_steps": [
     "artifact_registry_lookup",
     "sha256_lineage_check",
-    "artifact_transform_route_check",
+    "operation_run_route_check",
     "upper_lower_grid_alignment_check"
   ],
   "reviewer_notes": "Blocked on upper/lower grid misalignment. Cannot pass until user confirms design intent.",

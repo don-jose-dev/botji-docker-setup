@@ -51,13 +51,12 @@ PLUGIN_CONTRACTS = {
         },
     },
     "botji-render": {
-        # V1R PR 9a replaced the old (never-built) lease/fairshare/render shape
-        # with operations.py + providers/openai_codex.py. PR 9b will move
-        # remaining provider code from botji-artifacts/_codex.py.
-        "submodules": ["operations"],
+        # V1R PR 9b: operations plus the real Codex image provider.
+        "submodules": ["operations", "providers.openai_codex"],
         "symbols": {
             "operations": ["dispatch", "exact_copy", "render_schema", "edit_image",
                            "OPERATIONS", "RenderPolicy", "RenderResult"],
+            "providers.openai_codex": ["generate_image", "resolve_provider_route", "codex_available"],
         },
     },
     "botji-allowlist": {
@@ -73,7 +72,7 @@ PLUGIN_CONTRACTS = {
         "symbols": {},
     },
 }
-REQUIRED_PLUGINS = {"botji-allowlist", "botji-artifacts", "botji-core", "botji-gate"}
+REQUIRED_PLUGINS = {"botji-allowlist", "botji-artifacts", "botji-core", "botji-gate", "botji-render"}
 
 # Resolve which plugins to check: if PLUGINS_ROOT is set use it (preferred),
 # else fall back to a single legacy PLUGIN_DIR for back-compat.

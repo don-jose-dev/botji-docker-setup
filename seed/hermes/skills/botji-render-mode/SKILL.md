@@ -17,7 +17,7 @@ Prerequisites: `artifact_register` for the source must already have been called 
 
 ## Retry budget — canonical
 
-**Maximum 2 `artifact_transform(operation="edit_image")` calls per user turn.** This is the canonical cap. It applies regardless of which skill the agent is reading (`botji-render-router`, `botji-2d-to-3d`, `botji-codex-engineering`) — when they reference a retry, they reference *this* number.
+**Maximum 2 `operation_run(operation="edit_image")` calls per user turn.** This is the canonical cap. It applies regardless of which skill the agent is reading (`botji-render-router`, `botji-2d-to-3d`, `botji-codex-engineering`) — when they reference a retry, they reference *this* number.
 
 The shape is always *1 attempt + at most 1 retry*. If the retry also blocks, stop and ask the user (accept, adjust source, or try a different camera angle). Never silently run a third transform.
 
@@ -42,12 +42,12 @@ If the user asks for a CAD / DXF / DWG deliverable rather than a render, switch 
 
 ## Photo mode pipeline (~60–90s)
 
-Use when source is a raster image. Do NOT run `artifact_extract`, `artifact_normalize`, `schema_validate`, or `user_confirm` on a photo — those steps are for technical drawings only.
+Use when source is a raster image. Do NOT run `evidence_extract`, `artifact_normalize`, `schema_validate`, or `user_confirm` on a photo — those steps are for technical drawings only.
 
 ```
 1. artifact_register(path, role="source", declared_type="image", current_turn_id=...)
 
-2. artifact_transform(
+2. operation_run(
      operation="edit_image",
      source_artifact_ids=[source_id],
      contract_id=contract_id,
@@ -69,7 +69,7 @@ Use when source is a raster image. Do NOT run `artifact_extract`, `artifact_norm
      ]
    )
 
-3. artifact_review(
+3. review_record(
      source_artifact_ids=[source_id],
      output_artifact_id=output_id,
      fidelity_requirements=hard_preserve,
@@ -93,12 +93,12 @@ Use when source has machine-readable geometry (DXF, PDF, IFC, SVG). For sketches
 
 ```
 1. artifact_register          — register source; get artifact_id and sha256
-2. artifact_extract           — extract geometry, layers, entities, dimensions
+2. evidence_extract           — extract geometry, layers, entities, dimensions
 3. schema_validate            — validate dimension sums, counts, positions
 4. user_confirm               — confirm inferred measurements (only if ambiguous)
 5. artifact_normalize         — emit botji.artifact_schema.v1 as transform contract
-6. artifact_transform         — drive output from schema contract
-7. artifact_review            — compare output against source schema
+6. operation_run         — drive output from schema contract
+7. review_record            — compare output against source schema
 8. persist lineage            — source → schema → render → review all linked
 ```
 
