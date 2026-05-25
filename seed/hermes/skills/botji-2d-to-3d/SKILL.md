@@ -73,14 +73,14 @@ Verify the manifest against the sketch. If a label is ambiguous, write both inte
 source = artifact_register(path=..., role="source", declared_type="image")
 
 # Extract manifest automatically (preferred over writing it by hand)
-manifest_result = artifact_extract_manifest(artifact_id=source["artifact_id"])
+manifest_result = evidence_extract_manifest(artifact_id=source["artifact_id"])
 manifest = manifest_result["manifest"]
 fidelity_reqs = manifest_result["fidelity_requirements"]
 # manifest contains: scene_type, source_modality, elements[], element_count,
 # adjacency_constraints[], opening_constraints[], layout_hints[]
 ```
 
-If `artifact_extract_manifest` fails (Codex unavailable), fall back to writing the manifest manually as shown in Step 0.
+If `evidence_extract_manifest` fails (Codex unavailable), fall back to writing the manifest manually as shown in Step 0.
 
 > **Future shape (Phase C2 onward — not yet emitted).** A typed v2 manifest schema is now scaffolded at `seed/hermes/schemas/manifest_v2.schema.json` with Pydantic models alongside. v2 will replace prose labels with controlled-vocab `type` + `zone` fields so review compares typed rows by `(element_id, type, zone)` instead of fuzzy-matching prose. The pipeline still emits v1 today — **do not hand-write v2 manifests in this skill yet**. See [`docs/MANIFEST_V2.md`](../../../../docs/MANIFEST_V2.md) for the migration plan.
 
@@ -88,10 +88,10 @@ If `artifact_extract_manifest` fails (Codex unavailable), fall back to writing t
 
 ## Step 2 — Build the manifest-driven prompt
 
-Translate the spatial manifest into the `artifact_transform` call. Every constraint is derived from the manifest. The FORBIDDEN list must name elements **explicitly** — generic "don't reorder" is not enough.
+Translate the spatial manifest into the `operation_run` call. Every constraint is derived from the manifest. The FORBIDDEN list must name elements **explicitly** — generic "don't reorder" is not enough.
 
 ```python
-artifact_transform(
+operation_run(
     operation="edit_image",
     source_artifact_ids=[source_id],
     contract_id=contract_id,
@@ -149,10 +149,10 @@ For each adjacency constraint in the manifest, write a named FORBIDDEN entry:
 ## Step 3 — Review against the spatial manifest
 
 ```python
-artifact_review(
+review_record(
     source_artifact_ids=[source_id],
     output_artifact_id=output_id,
-    # Use fidelity_reqs from artifact_extract_manifest — or build manually from Step 0
+    # Use fidelity_reqs from evidence_extract_manifest — or build manually from Step 0
     fidelity_requirements=fidelity_reqs or [
         "Total element count: exactly [N] units",
         "[Adjacency constraint verbatim from manifest]",
@@ -205,7 +205,7 @@ The durable orchestration for this retry lives at `kanban/workflows/render_retry
 Add the exact `primary_blocker` text from the review as the FIRST FORBIDDEN entry, AND move the adjacency constraint to the very first item in `subject_inventory`. Both moves in one transform:
 
 ```python
-artifact_transform(
+operation_run(
     ...
     prior_blocker=review["primary_blocker"],      # verbatim from review verdict
     retry_guidance=review.get("retry_guidance", ""),

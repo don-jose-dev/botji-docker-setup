@@ -20,7 +20,7 @@ Production drawings are a different domain from rendered images. A painted PNG i
 
 ### Rule 1 — Never `edit_image` for CAD output
 
-`artifact_transform(operation="edit_image", ...)` produces a painted PNG. PNGs are not CAD files. A factory cannot CNC from a painted picture of a drawing. If the user intent contains any of the trigger keywords above, `edit_image` is **forbidden** as the delivery route. A painted "production drawing" is the worst possible deliverable: it looks credible to the eye and is unbuildable in the shop.
+`operation_run(operation="edit_image", ...)` produces a painted PNG. PNGs are not CAD files. A factory cannot CNC from a painted picture of a drawing. If the user intent contains any of the trigger keywords above, `edit_image` is **forbidden** as the delivery route. A painted "production drawing" is the worst possible deliverable: it looks credible to the eye and is unbuildable in the shop.
 
 ### Rule 2 — Never hand-write raw DXF group codes
 
@@ -43,17 +43,17 @@ via the `terminal` tool, **not** plain `python -c` or `execute_code` (which defa
 
 ```
 1. artifact_register(path, role="source")
-2. artifact_extract              — pull pixels / text / dim labels
+2. evidence_extract              — pull pixels / text / dim labels
 3. vision_analyze                — read every visible dimension and label; list with confidence
-4. artifact_extract_manifest     — spatial manifest (element order, adjacency, counts)
+4. evidence_extract_manifest     — spatial manifest (element order, adjacency, counts)
 5. artifact_normalize(schema_profile="dxf_cad", semantic_schema={...})
                                   — bind dims + labels + manifest into a structured schema
 6. terminal(command="/opt/hermes/.venv/bin/python <<PY ... ezdxf script ... PY")
                                   — script reads the schema, emits a real .dxf
 7. artifact_register(path=output.dxf, role="output", parents=[source_id])
-8. artifact_extract(detail="metadata", adapter="dxf")
+8. evidence_extract(detail="metadata", adapter="dxf")
                                   — verify ezdxf can re-parse what was written
-9. artifact_review(...)          — review against source manifest (counts, order, labels)
+9. review_record(...)          — review against source manifest (counts, order, labels)
 10. Deliver only if review passes
 ```
 

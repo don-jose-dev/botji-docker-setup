@@ -7,7 +7,7 @@ tags: [botji, parallel, delegate, multi-image, render, performance]
 
 # Botji Parallel Render Skill
 
-Use this skill when one user turn maps to **multiple independent renders**. The default sequential loop is ~50s per `artifact_transform`. A 4-photo "make 3D for all" run takes ~3.5 minutes serial; parallelised it returns in ~50s plus a small overhead. Most botji sessions (≈75%) are multi-image iterative — this is the most leveraged optimisation in the agent.
+Use this skill when one user turn maps to **multiple independent renders**. The default sequential loop is ~50s per `operation_run`. A 4-photo "make 3D for all" run takes ~3.5 minutes serial; parallelised it returns in ~50s plus a small overhead. Most botji sessions (≈75%) are multi-image iterative — this is the most leveraged optimisation in the agent.
 
 Per-render contract requirements live in **botji-artifact-fidelity**. The actual sketch-to-render pipeline lives in **botji-2d-to-3d**. This skill only covers *fan-out*.
 
@@ -53,8 +53,8 @@ src_ids = [artifact_register(path=p, role="source", declared_type="image")["arti
 delegate_task(tasks=[
     {"goal": f"Render 3D photo-fidelity edit of artifact {sid}. "
              f"Follow botji-artifact-fidelity Photo mode (4 steps): "
-             f"artifact_transform(operation='edit_image', source_artifact_ids=['{sid}'], ...), "
-             f"then artifact_review. Return: output_artifact_id, output path, "
+             f"operation_run(operation='edit_image', source_artifact_ids=['{sid}'], ...), "
+             f"then review_record. Return: output_artifact_id, output path, "
              f"final_claim_level, fidelity_percent, primary_blocker (if any).",
      "toolsets": ["file"], "role": "leaf"}
     for sid in src_ids
@@ -79,7 +79,7 @@ Retry photo 2? (y/n)
 
 **Context budget.** Subagents inherit a subset of parent context — they do NOT see the full session history, prior memory loads, or sibling subagent state. Always include the `artifact_id` in the goal string. If the subagent needs user preferences (style, camera, forbidden list), pass them inline in the goal — do not assume `memory` was preloaded.
 
-**Per-render contract.** Each subagent must still honour the full fidelity contract (register → transform → review). Parallelism does not relax the gate. If a subagent skips `artifact_review` to save time, treat its output as `draft`, not `reviewed`.
+**Per-render contract.** Each subagent must still honour the full fidelity contract (register → transform → review). Parallelism does not relax the gate. If a subagent skips `review_record` to save time, treat its output as `draft`, not `reviewed`.
 
 **Overhead floor.** Spawning a subagent costs ~3–5s. For 1 render, sequential is faster. The break-even is 2 renders; the win compounds at 3+.
 
@@ -94,7 +94,7 @@ User sends 3 phone photos of different kitchens with the caption: **"make 3D for
    - `artifact_register(path="/opt/data/uploads/kitchen_b.jpg", ...)` → `art_bbb`
    - `artifact_register(path="/opt/data/uploads/kitchen_c.jpg", ...)` → `art_ccc`
 
-2. **Parent fans out three subagents** in a single `delegate_task` call. Each goal string carries one `artifact_id` and instructs the subagent to run Photo mode (artifact_transform `edit_image` + artifact_review) and return the output path + review verdict.
+2. **Parent fans out three subagents** in a single `delegate_task` call. Each goal string carries one `artifact_id` and instructs the subagent to run Photo mode (operation_run `edit_image` + review_record) and return the output path + review verdict.
 
 3. **Parent waits.** All three render in parallel (~50–80s wall-clock instead of ~150–240s serial).
 

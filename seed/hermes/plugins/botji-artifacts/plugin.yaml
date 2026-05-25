@@ -5,10 +5,18 @@ author: Botji
 kind: standalone
 requires_env: []
 provides_tools:
+  - evidence_extract
+  - evidence_extract_manifest
+  - operation_run
+  - review_record
+  # DELETED_BY: PR_11
   - artifact_register
+  # DELETED_BY: PR_11
   - artifact_extract
   - artifact_normalize
+  # DELETED_BY: PR_11
   - artifact_transform
+  # DELETED_BY: PR_11
   - artifact_review
   - artifact_list
   - artifact_read

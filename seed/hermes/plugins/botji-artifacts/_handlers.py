@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,7 @@ from _models import (
     ArtifactReviewParams,
     ArtifactTransformParams,
 )
-from _utils import _json, _resolve_allowed_path, _artifact_root
+from _utils import _json, _resolve_allowed_path, _artifact_root, _new_id, _sha256
 from _registry import (
     _load_records, _load_artifact, _register_path, _store_evidence, _write_json,
 )
@@ -27,14 +28,27 @@ from _extraction import (
     _extract_artifact, _build_normalized_schema,
 )
 from _normalization import _exact_copy_transform, _render_schema_transform
-from _codex import _openai_codex_image_generate, _resolve_provider_route, _codex_extract_manifest
+from _codex import _codex_extract_manifest
 from _review import _build_review, _reviews_dir
+from _rendering import _create_output_artifact
 
 
 _HERMES_NATIVE_ID_PREFIXES = ("src_", "out_", "rcpt_")
 
 
 _MANIFEST_V2_VALIDATOR: Any = None
+
+
+def _render_runtime() -> tuple[Any, Any, Any]:
+    """Return botji-render dispatch objects without making plugin load order brittle."""
+    render_dir = Path(__file__).resolve().parents[1] / "botji-render"
+    render_dir_str = str(render_dir)
+    if render_dir_str not in sys.path:
+        sys.path.insert(0, render_dir_str)
+    from operations import RenderPolicy, dispatch  # type: ignore[import-not-found]
+    from providers.openai_codex import resolve_provider_route  # type: ignore[import-not-found]
+
+    return RenderPolicy, dispatch, resolve_provider_route
 
 
 def _manifest_v2_validator() -> Any:
@@ -238,8 +252,18 @@ def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
                     f"edit_image requires image artifacts, got "
                     f"{artifact.get('artifact_id')} adapter={artifact.get('adapter')}"
                 )
-        _resolve_provider_route(params.provider_route)
-        result = _openai_codex_image_generate(
+        RenderPolicy, dispatch, resolve_provider_route = _render_runtime()
+        resolve_provider_route(params.provider_route)
+        output_id = _new_id("art")
+        render_result = dispatch(
+            "edit_image",
+            [Path(artifact["path"]) for artifact in source_artifacts],
+            RenderPolicy(
+                route="artifact_transform.edit_image.openai_codex",
+                target_size=params.size,
+                strict=params.fidelity_mode == "strict",
+            ),
+            output_dir=_artifact_root() / "outputs" / output_id,
             source_artifacts=source_artifacts,
             prompt=prompt,
             contract_id=params.contract_id,
@@ -248,6 +272,48 @@ def _handle_artifact_transform(args: dict[str, Any], **_: Any) -> str:
             output_format=params.output_format,
             fidelity_mode=params.fidelity_mode,
         )
+        if not render_result.success or render_result.output_path is None:
+            raise RuntimeError(render_result.error or "botji-render edit_image returned no output")
+        metadata = dict(render_result.metadata or {})
+        output_record = _create_output_artifact(
+            output_id=output_id,
+            output_path=render_result.output_path,
+            declared_type="image",
+            parents=[artifact["artifact_id"] for artifact in source_artifacts],
+            user_intent=prompt,
+            extra={
+                "provider": "openai-codex",
+                "model": metadata.get("model"),
+                "chat_model": metadata.get("chat_model"),
+                "endpoint": metadata.get("endpoint"),
+                "quality": metadata.get("quality"),
+                "size": metadata.get("size"),
+                "requested_size": metadata.get("requested_size"),
+                "output_format": metadata.get("output_format"),
+                "fidelity_mode": metadata.get("fidelity_mode"),
+                "contract_id": params.contract_id,
+                "route": metadata.get("route") or "artifact_transform.edit_image.openai_codex",
+            },
+        )
+        route_evidence = _store_evidence(
+            output_record,
+            extractor="artifact_transform",
+            claim_level="verified",
+            summary="Output image was created through botji-render Codex OAuth Responses image_generation with source artifacts as input_image items.",
+            data={
+                **metadata,
+                "output_artifact_id": output_id,
+                "output_sha256": _sha256(render_result.output_path),
+            },
+        )
+        result = {
+            "output_artifact": _load_artifact(output_id),
+            "route_evidence": route_evidence,
+            "provider": "openai-codex",
+            "model": metadata.get("model"),
+            "chat_model": metadata.get("chat_model"),
+            "endpoint": metadata.get("endpoint"),
+        }
         return _json({"success": True, **result})
     except (ValidationError, Exception) as exc:
         return _json({"success": False, "error": str(exc), "error_type": type(exc).__name__})

@@ -42,7 +42,7 @@ These defaults are non-negotiable. They apply on top of fidelity rules — never
 
 ### Premium brief — for every image `edit_image`
 
-Every `artifact_transform(operation="edit_image")` brief MUST follow `botji-premium-brief`. Universal constraints (enforced; not skill-conditional):
+Every `operation_run(operation="edit_image")` brief MUST follow `botji-premium-brief`. Universal constraints (enforced; not skill-conditional):
 
 - **Required**: one explicit Kelvin number · ≥3 named materials with finish · one named reference genre · one signature detail describing a quality of light or surface (never a new object — that's a fidelity violation).
 - **Banned (auto-reject)**: `realistic`, `photorealistic`, `8K`, `4K`, `beautiful`, `nice`, `luxury`, `elegant`, `polished`, `refined`, `sleek`, `modern style`, `good lighting`, `cosy`, `dreamy`. Replace with a Kelvin number · a named material with finish · a named genre.
@@ -167,16 +167,16 @@ Botji reviews before sending. If Codex fails before executing, mark `source_cove
 
 | Source state | Tool |
 |---|---|
-| Source image attached | `artifact_transform(operation="edit_image", source_artifact_ids=[...])` — primary path |
+| Source image attached | `operation_run(operation="edit_image", source_artifact_ids=[...])` — primary path |
 | No source, spec-only ("render a kitchen from these dimensions") | `botji_render` |
 | Contract explicitly says `concept_generation` (user waived fidelity) | `image_generate` |
 
-If a source image is attached and you reach for `botji_render` or `image_generate`, stop — use `artifact_transform`. See `botji-render-router` for the full decision tree and edge cases.
+If a source image is attached and you reach for `botji_render` or `image_generate`, stop — use `operation_run`. See `botji-render-router` for the full decision tree and edge cases.
 
 **Tool-argument discipline (non-negotiable, Pydantic v2):**
 
-- `artifact_transform` / `artifact_review` take `source_artifact_ids: list[str]` (plural list). Never `artifact_id`. Single source → one-element list.
-- Never mix ID families in a single call. `artifact_register` / `artifact_transform` / `artifact_review` use legacy `art_*`; `source_register` / `source_current` / `delivery_gate` use native `src_*`. Crossing families raises a validation error and burns a tool call.
+- `operation_run` / `review_record` take `source_artifact_ids: list[str]` (plural list). Never `artifact_id`. Single source → one-element list.
+- Never mix ID families in a single call. `artifact_register` / `operation_run` / `review_record` use legacy `art_*`; `source_register` / `source_current` / `delivery_gate` use native `src_*`. Crossing families raises a validation error and burns a tool call.
 - `operation="exact_copy"` requires exactly one entry in `source_artifact_ids`.
 - Never pass a placeholder file path (`/path/to/file`, `<path>`). Telegram media-group delivery silently drops missing files and the user sees nothing.
 
@@ -194,7 +194,7 @@ See `botji-artifact-fidelity` for the full request-type rules including the `All
 
 ## Spatial manifest — mandatory for sketch sources
 
-For any sketch / floor plan / 2D schematic source going into a 3D render, extract a spatial manifest **before** calling `artifact_transform`. Skipping the manifest is the single biggest source of gpt-image-2 hallucination (extra cabinets, inserted fillers, drifting element counts between attempts).
+For any sketch / floor plan / 2D schematic source going into a 3D render, extract a spatial manifest **before** calling `operation_run`. Skipping the manifest is the single biggest source of gpt-image-2 hallucination (extra cabinets, inserted fillers, drifting element counts between attempts).
 
 See `botji-2d-to-3d` for the manifest format, the manifest-driven prompt template, modality-aware review thresholds, and the `prior_blocker` / `retry_guidance` retry escalation.
 
@@ -298,8 +298,8 @@ attempt count visible so we don't spin past 3 retries.
 Context fills fast. Every call to `vision_analyze` injects ~150 K chars into the conversation history and costs a compression event (~60 s) within 1-2 turns. Avoid it.
 
 - **Suggest `/new` when the session is getting slow.** If you notice context compression firing ("⏳ summarising earlier context…") or the user asks why responses are slow, tell them: "Type /new to start a fresh session — your images and files are saved and can still be referenced by ID." Sessions accumulate context over time and a fresh one is significantly faster.
-- **Never call `skill_view` at the start of a turn to plan.** The image pipeline is always: `artifact_register` → `artifact_transform` → `artifact_review`. You know this. Reading skills "to refresh memory" dumps 15 KB into context and triggers compression 2 turns later. Only call `skill_view` when you need a specific field name or parameter syntax you cannot recall — and only once per skill per session.
-- **Do not call `vision_analyze` when the image is already in the artifact pipeline.** The model sees the source image natively (`image_input_mode: native`). Call `artifact_extract` with `detail: metadata` instead — it stores evidence on disk, not in context.
+- **Never call `skill_view` at the start of a turn to plan.** The image pipeline is always: `artifact_register` → `operation_run` → `review_record`. You know this. Reading skills "to refresh memory" dumps 15 KB into context and triggers compression 2 turns later. Only call `skill_view` when you need a specific field name or parameter syntax you cannot recall — and only once per skill per session.
+- **Do not call `vision_analyze` when the image is already in the artifact pipeline.** The model sees the source image natively (`image_input_mode: native`). Call `evidence_extract` with `detail: metadata` instead — it stores evidence on disk, not in context.
 - **Do not repeat large tool output in your reply.** Summarise; never quote artifact JSON or evidence blobs verbatim.
 - **If context compression fires mid-turn, note it briefly** ("⏳ summarising earlier context…") so the user knows why the first response was delayed.
 

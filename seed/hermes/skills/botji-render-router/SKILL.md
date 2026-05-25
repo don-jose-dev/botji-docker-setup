@@ -17,14 +17,14 @@ Current production image generation still runs through the legacy
 `artifact_*` tools. For source-bound image work, use the legacy `art_*` image
 pipeline end-to-end, then record the reviewed output with `receipt_record` and
 `delivery_gate`. Do not start normal "make 3D" turns with `source_register` until
-Hermes-native generation has replaced `artifact_transform`.
+Hermes-native generation has replaced `operation_run`.
 
 Do not mix identifier families:
 
 - `src_*` IDs come from `botji-core` and are valid for `source_current`,
   `artifact_write`, `receipt_record`, and `delivery_gate`.
 - `art_*` IDs come from legacy `artifact_*` tools and are valid for
-  `artifact_extract_manifest`, `artifact_transform`, `artifact_review`, and
+  `evidence_extract_manifest`, `operation_run`, `review_record`, and
   compatibility `receipt_record` / `delivery_gate`.
 - Never pass a `src_*` ID to a legacy `artifact_*` tool. If a legacy extractor is
   required, call `artifact_register` on the same current attachment path and use
@@ -64,15 +64,15 @@ For a single uploaded photo/reference image and the text `Make 3d`:
    `camera_brief`, `light_brief`, `materials_brief`, `mood_brief`,
    `reference_brief`, and `signature_brief`; do not rely on mood alone for the
    premium look.
-4. `artifact_transform(operation="edit_image", source_artifact_ids=[source_id], ...)`
-5. `artifact_review(source_artifact_ids=[source_id], output_artifact_id=<output art_*>, use_openai_vision=True)`
-6. Call `receipt_record(source_ids=[source_id], output_id=<output art_*>, route="artifact_transform.edit_image", status=<pass|warn|block>, ...)`, then `delivery_gate`.
+4. `operation_run(operation="edit_image", source_artifact_ids=[source_id], ...)`
+5. `review_record(source_artifact_ids=[source_id], output_artifact_id=<output art_*>, use_openai_vision=True)`
+6. Call `receipt_record(source_ids=[source_id], output_id=<output art_*>, route="operation_run.edit_image", status=<pass|warn|block>, ...)`, then `delivery_gate`.
 7. Deliver if `delivery_gate` is `clear` or `warned`; if blocked, show the blocker and ask whether to retry.
 
 Do **not** call:
 
-- `artifact_extract_manifest`
-- `artifact_extract`
+- `evidence_extract_manifest`
+- `evidence_extract`
 - `artifact_normalize`
 - `session_search`
 - `skill_view`
@@ -95,7 +95,7 @@ is a hard block.
 Use `botji-2d-to-3d` only when the source is a sketch, floor plan, elevation, or
 schematic.
 
-Write the spatial manifest yourself first. Use `artifact_extract_manifest` only
+Write the spatial manifest yourself first. Use `evidence_extract_manifest` only
 when one of these is true:
 
 - the sketch has more than 10 elements,
@@ -121,7 +121,7 @@ Retries are a user-experience budget, not a provider loop.
 | Second block on the same issue | Stop and ask user: accept, retry, or adjust source/brief |
 | Provider/auth/tool error | Stop and report the failed route; no silent fallback |
 
-The hard ceiling — *maximum 2 `artifact_transform(operation="edit_image")` calls per turn* — is canonical in `botji-render-mode` (Retry budget). The table above expands it for routing decisions; the cap itself lives there so every skill references one number.
+The hard ceiling — *maximum 2 `operation_run(operation="edit_image")` calls per turn* — is canonical in `botji-render-mode` (Retry budget). The table above expands it for routing decisions; the cap itself lives there so every skill references one number.
 
 ## Kitchen / Elevation Hard Blocks
 

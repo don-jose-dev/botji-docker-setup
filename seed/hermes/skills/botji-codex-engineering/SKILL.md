@@ -58,23 +58,23 @@ Every Codex task must include:
 
 ## botji_render and the Responses API flow
 
-### botji_render vs artifact_transform
+### botji_render vs operation_run
 
 | Tool | When to use |
 |---|---|
-| `artifact_transform(operation="edit_image")` | Source-bound image work — a source artifact must be registered and passed as `input_image`. PRIMARY for photo→3D and all fidelity-preserving edits. |
+| `operation_run(operation="edit_image")` | Source-bound image work — a source artifact must be registered and passed as `input_image`. PRIMARY for photo→3D and all fidelity-preserving edits. |
 | `botji_render` | Rendering a schema or spec into an image when there is no pixel source to preserve (e.g. a DXF schema → styled render, or a spec-only brief). Calls the Responses API internally. |
 
-Do not use `botji_render` when the user provided a source image. Use `artifact_transform` instead to preserve the source pixel input.
+Do not use `botji_render` when the user provided a source image. Use `operation_run` instead to preserve the source pixel input.
 
 ### Image generation via Responses API
 
 Image generation goes through the Codex Responses API with the `image_generation` tool. The flow:
 
-1. Hermes calls `artifact_transform` or `botji_render` with a structured brief.
+1. Hermes calls `operation_run` or `botji_render` with a structured brief.
 2. The plugin sends the brief + source image (if any) to the Responses API `image_generation` tool.
 3. Codex returns the generated image; the plugin registers it as an output artifact.
-4. `artifact_review` compares the output against the source artifact and hard requirements.
+4. `review_record` compares the output against the source artifact and hard requirements.
 
 ### 2-attempt mutation strategy (1 + 1 retry, canonical)
 
@@ -89,7 +89,7 @@ For **source-bound** flows (a source artifact was registered before the transfor
 
 ### user_id passthrough
 
-Every `artifact_transform`, `botji_render`, and `image_generate` call must pass `user_id` through to the plugin. This is required for fair-share queueing — the plugin rate-limits per user. Omitting `user_id` breaks queue fairness and may cause incorrect billing attribution.
+Every `operation_run`, `botji_render`, and `image_generate` call must pass `user_id` through to the plugin. This is required for fair-share queueing — the plugin rate-limits per user. Omitting `user_id` breaks queue fairness and may cause incorrect billing attribution.
 
 ## Default safety
 

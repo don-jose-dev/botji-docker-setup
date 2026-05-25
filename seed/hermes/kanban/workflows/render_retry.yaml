@@ -1,7 +1,7 @@
 # Render-retry workflow — durable orchestration for source-bound render + review + 1 retry.
 #
 # Why this lives here
-#   The retry loop for `artifact_review(delivery_gate="blocked")` used to be
+#   The retry loop for `review_record(delivery_gate="blocked")` used to be
 #   prose-only inside botji-2d-to-3d / botji-codex-engineering. That meant the
 #   retry intent was lost on container restart or session compaction.
 #
@@ -34,7 +34,7 @@
 id: render_retry_v1
 name: Source-bound render retry
 description: |
-  Run an `artifact_transform` against a registered source artifact, review
+  Run an `operation_run` against a registered source artifact, review
   against the manifest, and on `delivery_gate == "blocked"` retry once with
   prior_blocker + adjacency-first subject_inventory. After two blocked reviews
   on the same constraint, hand off to the user.
@@ -57,28 +57,28 @@ budget:
 steps:
   - key: step_extract_manifest
     description: |
-      Run `artifact_extract_manifest(artifact_id=source_id)` to populate
+      Run `evidence_extract_manifest(artifact_id=source_id)` to populate
       `manifest` + `fidelity_requirements`. Falls back to hand-written
       manifest from SKILL.md Step 0 if Codex is unavailable.
-    tool: artifact_extract_manifest
+    tool: evidence_extract_manifest
     on_success: step_transform_initial
     on_failure: step_transform_initial   # fall through; agent uses hand manifest
 
   - key: step_transform_initial
     description: |
-      First `artifact_transform(operation="edit_image", ...)` with the full
+      First `operation_run(operation="edit_image", ...)` with the full
       manifest-driven brief — subject_inventory, hard_preserve, and
       forbidden_elements derived per SKILL.md Step 2.
-    tool: artifact_transform
+    tool: operation_run
     operation: edit_image
     on_success: step_review_initial
     on_failure: step_ask_user           # transform itself failed → no retry, escalate
 
   - key: step_review_initial
     description: |
-      `artifact_review(source_artifact_ids, output_artifact_id, fidelity_requirements)`.
+      `review_record(source_artifact_ids, output_artifact_id, fidelity_requirements)`.
       Inspects against the spatial manifest.
-    tool: artifact_review
+    tool: review_record
     transitions:
       - when: delivery_gate == "clear"
         next: step_deliver
@@ -95,7 +95,7 @@ steps:
         - `subject_inventory` rewritten with the adjacency constraint moved
           to position 0 (adjacency-first).
       Do not run a second cosmetic retry — both moves go into this single call.
-    tool: artifact_transform
+    tool: operation_run
     operation: edit_image
     inputs:
       prior_blocker: ${step_review_initial.result.primary_blocker}
@@ -108,7 +108,7 @@ steps:
     description: |
       Second and final review pass. If still blocked on the same constraint,
       the workflow escalates to `step_ask_user`.
-    tool: artifact_review
+    tool: review_record
     transitions:
       - when: delivery_gate == "clear"
         next: step_deliver

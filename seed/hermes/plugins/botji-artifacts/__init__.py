@@ -94,7 +94,7 @@ def _on_tool_result(
     forwards task_id + user_task). transform_tool_result IS called with
     session_id by model_tools.handle_function_call — this is where we get it.
     """
-    if tool_name == "artifact_review" and session_id:
+    if tool_name in {"artifact_review", "review_record"} and session_id:
         response_override: str | None = None
         try:
             payload = json.loads(result) if isinstance(result, str) else (result or {})
@@ -145,6 +145,38 @@ def _on_tool_result(
 
 
 def register(ctx) -> None:
+    # New V1R tool names. `source_register` already lives in botji-core, so this
+    # plugin only exposes the evidence/operation/review surface during cutover.
+    ctx.register_tool(
+        name="evidence_extract",
+        toolset="file",
+        schema={**ARTIFACT_EXTRACT_SCHEMA, "name": "evidence_extract"},
+        handler=_handle_artifact_extract,
+        description=ARTIFACT_EXTRACT_SCHEMA["description"],
+    )
+    ctx.register_tool(
+        name="evidence_extract_manifest",
+        toolset="file",
+        schema={**ARTIFACT_EXTRACT_MANIFEST_SCHEMA, "name": "evidence_extract_manifest"},
+        handler=_handle_artifact_extract_manifest,
+        description=ARTIFACT_EXTRACT_MANIFEST_SCHEMA["description"],
+    )
+    ctx.register_tool(
+        name="operation_run",
+        toolset="file",
+        schema={**ARTIFACT_TRANSFORM_SCHEMA, "name": "operation_run"},
+        handler=_handle_artifact_transform,
+        description=ARTIFACT_TRANSFORM_SCHEMA["description"],
+    )
+    ctx.register_tool(
+        name="review_record",
+        toolset="file",
+        schema={**ARTIFACT_REVIEW_SCHEMA, "name": "review_record"},
+        handler=_handle_artifact_review,
+        description=ARTIFACT_REVIEW_SCHEMA["description"],
+    )
+
+    # DELETED_BY: PR_11
     ctx.register_tool(
         name="artifact_register",
         toolset="file",
@@ -152,6 +184,7 @@ def register(ctx) -> None:
         handler=_handle_artifact_register,
         description=ARTIFACT_REGISTER_SCHEMA["description"],
     )
+    # DELETED_BY: PR_11
     ctx.register_tool(
         name="artifact_extract",
         toolset="file",
@@ -159,6 +192,7 @@ def register(ctx) -> None:
         handler=_handle_artifact_extract,
         description=ARTIFACT_EXTRACT_SCHEMA["description"],
     )
+    # DELETED_BY: PR_11
     ctx.register_tool(
         name="artifact_extract_manifest",
         toolset="file",
@@ -173,6 +207,7 @@ def register(ctx) -> None:
         handler=_handle_artifact_normalize,
         description=ARTIFACT_NORMALIZE_SCHEMA["description"],
     )
+    # DELETED_BY: PR_11
     ctx.register_tool(
         name="artifact_transform",
         toolset="file",
@@ -180,6 +215,7 @@ def register(ctx) -> None:
         handler=_handle_artifact_transform,
         description=ARTIFACT_TRANSFORM_SCHEMA["description"],
     )
+    # DELETED_BY: PR_11
     ctx.register_tool(
         name="artifact_review",
         toolset="file",

@@ -10,15 +10,9 @@ The three operations:
 - ``render_schema`` — generate a typed schema from sources (no image).
 - ``edit_image`` — provider-routed image transform (Codex / others).
 
-Replaces the switch-statement dispatch in
-``botji-artifacts/_handlers.py::_handle_artifact_transform``. The actual
-provider calls live in ``providers/openai_codex.py``. ``operations.py`` is
-the named-function surface botji-render-router consumes.
-
-V1R PR 9a (this PR) ships the operations module with explicit ``exact_copy``
-and ``render_schema`` implementations. ``edit_image`` is delegated to the
-existing Codex path in botji-artifacts via the provider module — PR 9b will
-migrate that path here and delete the orphan code.
+Replaces the switch-statement dispatch in legacy transform consumers. Provider
+calls live in ``providers/openai_codex.py``; ``operations.py`` is the
+named-function surface botji-render-router consumes.
 """
 from __future__ import annotations
 
@@ -144,12 +138,7 @@ def edit_image(
     output_dir: Path,
     **kwargs: Any,
 ) -> RenderResult:
-    """Provider-routed image transform.
-
-    V1R PR 9a: delegates to ``providers/openai_codex.py``. PR 9b will move
-    the existing ``botji-artifacts/_codex.py`` logic into the provider module
-    and delete the orphan there.
-    """
+    """Provider-routed image transform."""
     try:
         from providers.openai_codex import generate_image  # type: ignore[import-not-found]
     except ImportError as exc:

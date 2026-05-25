@@ -12,7 +12,7 @@ Use this skill before Hermes-native source-bound transformations that use
 
 Do not use this skill for the current production `artifact_*` image route. That
 route starts with `artifact_register` and keeps `art_*` IDs through
-`artifact_transform`, `artifact_review`, `receipt_record`, and `delivery_gate`.
+`operation_run`, `review_record`, `receipt_record`, and `delivery_gate`.
 
 ## Rule
 

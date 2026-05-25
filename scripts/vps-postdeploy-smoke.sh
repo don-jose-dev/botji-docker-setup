@@ -96,10 +96,10 @@ docker exec "$CONTAINER_NAME" botji-log-budget \
   --max-api-calls "$MAX_API_CALLS" \
   --max-session-api-calls "$MAX_SESSION_API_CALLS" \
   --max-session-tool-turns "$MAX_SESSION_TOOL_TURNS" \
-  --max-tool-count artifact_transform=1 \
-  --max-tool-count artifact_review=1 \
-  --max-tool-seconds artifact_transform=90 \
-  --max-tool-seconds artifact_extract_manifest=90
+  --max-tool-count operation_run=1 \
+  --max-tool-count review_record=1 \
+  --max-tool-seconds operation_run=90 \
+  --max-tool-seconds evidence_extract_manifest=90
 
 if [ "${RUN_LIVE_PROVIDER_E2E:-0}" = "1" ]; then
   echo "=== postdeploy: live provider e2e ==="

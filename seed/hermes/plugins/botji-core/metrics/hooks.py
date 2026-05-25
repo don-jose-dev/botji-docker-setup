@@ -26,8 +26,9 @@ from . import exporter
 logger = logging.getLogger(__name__)
 
 _AUDIT_TOOLS = frozenset({
-    "artifact_register", "source_register", "artifact_write",
-    "receipt_record", "delivery_gate", "artifact_transform", "artifact_review",
+    "artifact_register", "source_register", "artifact_write", "output_write",
+    "receipt_record", "delivery_gate", "artifact_transform", "operation_run",
+    "artifact_review", "review_record", "evidence_extract", "evidence_extract_manifest",
 })
 _KNOWN_OPS = frozenset({"edit_image", "exact_copy", "render_schema"})
 _TIMED_TOOLS = _AUDIT_TOOLS  # All audited tools get pre/post wall-clock timing.
@@ -139,7 +140,7 @@ def on_post_tool_call(*, tool_name: str = "", args: Any = None, result: Any = No
             s = str(receipt.get("status") or "").strip().lower()
             status = s if s in {"pass", "warn", "block"} else "unknown"
             exporter.receipt_record_total.labels(status=status, tenant=exporter.TENANT).inc()
-        elif tool_name == "artifact_transform":
+        elif tool_name in {"artifact_transform", "operation_run"}:
             op = _operation(args)
             exporter.artifact_transform_total.labels(operation=op, tenant=exporter.TENANT).inc()
             if started is not None:

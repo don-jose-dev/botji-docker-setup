@@ -69,6 +69,10 @@ jobs:
           PLUGINS_ROOT="$(pwd)/seed/hermes/plugins" \
             bash scripts/smoke-plugin.sh
 
+      - name: Enforce PR11 alias deletion markers
+        run: |
+          grep -R "DELETED_BY: PR_11" seed/hermes/plugins/botji-artifacts seed/hermes/plugins/botji-core
+
       - name: Check for unused imports (ruff F401)
         # Catches dead imports left over from refactors before they reach master.
         run: |

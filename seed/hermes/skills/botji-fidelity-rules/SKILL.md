@@ -11,7 +11,7 @@ requires_tools: []
 
 | Rule | Applies to |
 |---|---|
-| **Photo/reference → 3D: use 4-step fast path.** Do NOT run `artifact_extract`, `schema_validate`, or `user_confirm` on raster images. | Photo→3D transforms |
+| **Photo/reference → 3D: use 4-step fast path.** Do NOT run `evidence_extract`, `schema_validate`, or `user_confirm` on raster images. | Photo→3D transforms |
 | Register source artifact before any extraction or transform. | All file/image work |
 | Schema-first pipeline (8 steps): extract → validate → normalize → transform. | DXF, PDF, IFC, technical drawings ONLY |
 | `image_generate` only when contract says `concept_generation` or user waives fidelity. | New concepts only |
@@ -28,7 +28,7 @@ Every generated artifact must trace:
 
 ## Image generation rules
 
-For every `artifact_transform(operation="edit_image")`, the brief MUST be structured (not freeform prose):
+For every `operation_run(operation="edit_image")`, the brief MUST be structured (not freeform prose):
 
 - Use structured fields: `camera_brief`, `light_brief`, `mood_brief`, `subject_inventory`, `hard_preserve`, `forbidden_elements`
 - NEVER use "photorealistic", "high quality", "8K", or "hyperrealistic" — these are noise. Use camera body + lens + lighting instead.

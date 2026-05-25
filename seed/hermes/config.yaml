@@ -189,10 +189,9 @@ plugins:
   enabled:
   - botji-core        # compatibility receipts/delivery gate for legacy art_* outputs
   - botji-artifacts   # bookkeeping (register/extract/normalize/list/read) + legacy review
+  - botji-render      # V1R render operations/providers consumed by operation_run during cutover
   - botji-allowlist   # file-backed Telegram allowlist with hot reload
   - botji-gate        # Default-FAIL delivery gate (transform_llm_output)
-  # botji-render removed 2026-05-19: broken plugin (bad import + missing 'images' attr).
-  # Image generation flows through artifact_transform.edit_image.openai_codex instead.
   # observability/langfuse removed 2026-05-19: not used. Hermes ships built-in
   # observability — see `hermes insights / sessions / logs / dashboard`. Re-enable
   # this plugin only if you want external Langfuse tracing in addition.

@@ -10,7 +10,7 @@ rules documented in ``botji-render-mode`` / ``botji-render-router`` /
 2. Mixed ID family: args carry BOTH ``art_*`` AND any of
    ``src_*``/``out_*``/``rcpt_*``. Complements per-tool check at
    ``botji-artifacts/_handlers.py::_reject_hermes_native_ids``.
-3. Over-budget transform: third ``artifact_transform(operation="edit_image")``
+3. Over-budget transform: third ``operation_run(operation="edit_image")``
    in one turn. Cap=2 from ``botji-render-mode`` Retry budget.
 
 Rule-3 override (skill-forwarded; hook does not infer from brief text):
@@ -89,7 +89,7 @@ def _authorized(args: dict[str, Any]) -> bool:
 
 
 def _check_budget(tool: str, args: dict[str, Any], sid: str) -> dict[str, str] | None:
-    if tool != "artifact_transform" or str(args.get("operation") or "").strip().lower() != "edit_image":
+    if tool not in {"artifact_transform", "operation_run"} or str(args.get("operation") or "").strip().lower() != "edit_image":
         return None
     turn = str(args.get("current_turn_id") or "").strip()
     if not turn:
