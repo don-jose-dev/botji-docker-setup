@@ -80,7 +80,7 @@ jobs:
         # We scan a freshly-built image rather than reaching into GHCR so PRs
         # from forks (which lack registry write) still get scanned. The deploy
         # workflow handles the actual push.
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
