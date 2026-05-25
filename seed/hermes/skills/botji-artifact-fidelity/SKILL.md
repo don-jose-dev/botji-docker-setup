@@ -22,7 +22,7 @@ The default transformation policy is exact preservation: if the user provided a 
 **Fidelity transform** ("make this 3D", "render this sketch", "convert to photo"): use the full pipeline. Gate fires.
 
 **Design proposal** ("add a wardrobe here", "show what a kitchen looks like in this space", "give me a 3D image of [element] in this area"): the user explicitly wants to ADD or PLACE something. This is NOT a fidelity violation. Pipeline:
-1. `artifact_register(path, role="source")`
+1. `source_register(path, current_turn_id, role="source")`
 2. `operation_run(operation="edit_image", ...)` — include the requested element in `subject_inventory`
 3. `review_record(fidelity_requirements=["Allowed transform: [element] added/placed as user requested"])`
    The `"Allowed transform:"` prefix tells the review that this specific addition was user-authorised — the gate will not block it.
@@ -34,20 +34,18 @@ The default transformation policy is exact preservation: if the user provided a 
 
 ## Required loop
 
-1. Call `artifact_register` for every source file path. Pass `current_turn_id` set to the same value you would use for `source_register` / `source_current` so the dedup short-circuit cannot return a stale lineage record from an earlier turn when the user re-sends identical bytes.
+1. Call `source_register(path, current_turn_id, role="source", declared_type=...)` for every source file path. The native `src_*` ID it returns is the lineage anchor for the rest of the turn.
 2. Call `evidence_extract` before making claims about file contents, dimensions, text, pages, layers, tables, or visible structure.
-3. Call `artifact_normalize` to create a `botji.artifact_schema.v1` contract before transformation.
-   This applies to every file type: image, PDF, text, DXF/CAD, DOCX, XLSX, HTML, SVG, STEP, IFC, ZIP, audio, video, or binary fallback.
-4. Create a source inventory before transformation. Split it into hard acceptance requirements and advisory preferences.
+3. Create a source inventory before transformation. Split it into hard acceptance requirements and advisory preferences.
    Hard requirements are source facts or explicit user constraints; advisory preferences are style, finish, lighting, and best-effort exactness.
-5. If the user asks for a derivative output, call `operation_run` with `source_artifact_ids`.
+4. If the user asks for a derivative output, call `operation_run` with `source_artifact_ids=[src_*]`.
    Omit `operation` or use `operation: "exact_copy"` when the output must preserve the source byte-for-byte. This is the default and the 100% file-fidelity route.
    Prefer `provider_route: "openai_codex"` when the user wants to use Codex/ChatGPT subscription auth.
    Use `operation: "render_schema"` before image generation when exact structure matters.
-6. Call `review_record` before presenting a generated artifact as faithful.
+5. Call `review_record` before presenting a generated artifact as faithful.
    Pass the hard acceptance requirements as `fidelity_requirements`; advisory preferences may warn but must not become blockers unless the user made them mandatory.
-7. Final replies must name the output artifact ID/path and review ID/path when available.
-   Return the artifact record `path` under `/opt/data/artifacts/outputs/...`, not a raw `/opt/data/cache/...` path from a generation tool. Cache paths are only staging inputs.
+6. Final replies must name the output artifact ID (`out_*`) and review ID/path when available.
+   Return the artifact record `path` under `/opt/data/botji-core/outputs/...`, not a raw `/opt/data/cache/...` path from a generation tool. Cache paths are only staging inputs.
 
 ## Route rules
 

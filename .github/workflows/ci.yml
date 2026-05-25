@@ -69,9 +69,16 @@ jobs:
           PLUGINS_ROOT="$(pwd)/seed/hermes/plugins" \
             bash scripts/smoke-plugin.sh
 
-      - name: Enforce PR11 alias deletion markers
+      - name: Forbid PR11 alias deletion markers (must all be gone)
+        # PR 10 introduced `# DELETED_BY: PR_11` aliases for one release cycle.
+        # PR 11 removes both the aliases and the entire `botji-artifacts/` plugin.
+        # If any DELETED_BY marker remains anywhere under seed/, the deletion is
+        # incomplete and the cap drop / charter update is misleading.
         run: |
-          grep -R "DELETED_BY: PR_11" seed/hermes/plugins/botji-artifacts seed/hermes/plugins/botji-core
+          if grep -R "DELETED_BY: PR_11" seed/hermes/plugins/ 2>/dev/null; then
+            echo "::error::DELETED_BY: PR_11 marker found — PR 10 aliases must be fully removed in PR 11."
+            exit 1
+          fi
 
       - name: Check for unused imports (ruff F401)
         # Catches dead imports left over from refactors before they reach master.

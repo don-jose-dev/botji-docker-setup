@@ -109,7 +109,7 @@ For source-bound files, images, renders, diagrams, CAD, screenshots, slides, doc
 - extracted source constraints: object counts, positions, dimensions/text, labels, layout relationships, line spans, page/table structure, or DXF layers/entities
 - allowed assumptions and advisory preferences
 - hard requirements that must not drift
-- selected route: `artifact_normalize`, `exact_copy`, `render_schema`, `edit_image`, `manual_review`, or `ask_user`
+- selected route: `exact_copy`, `render_schema`, `edit_image`, `manual_review`, or `ask_user`
 - forbidden routes: usually include `prompt_only_generation` for source-bound work
 - comparator requirement and current comparator status
 - review requirement before final reply

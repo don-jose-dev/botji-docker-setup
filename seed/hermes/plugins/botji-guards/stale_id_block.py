@@ -1,20 +1,24 @@
-"""``pre_tool_call`` hook: stale-ID + mixed-family + over-budget enforcement.
+"""``pre_tool_call`` hook: mixed-family + over-budget enforcement.
 
-Three predicates fire before every tool dispatch — the substrate backstop for
+Two predicates fire before every tool dispatch — the substrate backstop for
 rules documented in ``botji-render-mode`` / ``botji-render-router`` /
 ``botji-codex-engineering`` skills.
 
-1. Stale legacy source: call ``current_turn_id`` != registered ``art_*``
-   record turn. Either missing turn id = indeterminate (allow). Native
-   ``src_*`` cannot go stale by construction.
-2. Mixed ID family: args carry BOTH ``art_*`` AND any of
-   ``src_*``/``out_*``/``rcpt_*``. Complements per-tool check at
-   ``botji-artifacts/_handlers.py::_reject_hermes_native_ids``.
-3. Over-budget transform: third ``operation_run(operation="edit_image")``
+1. Mixed ID family: args carry BOTH ``art_*`` AND any of
+   ``src_*``/``out_*``/``rcpt_*``. Generic prefix check on tool arguments —
+   the legacy plugin is gone, but defense-in-depth catches any stale art_
+   leaking from older receipt history or skill prose drift.
+2. Over-budget transform: third ``operation_run(operation="edit_image")``
    in one turn. Cap=2 from ``botji-render-mode`` Retry budget.
 
-Rule-3 override (skill-forwarded; hook does not infer from brief text):
+Rule-2 override (skill-forwarded; hook does not infer from brief text):
 ``user_authorized_variants: N`` (int >= 1) OR ``user_authorized_retry: true``.
+
+V1R PR 11 removed the stale-legacy predicate that depended on the
+``botji-artifacts`` index. With that plugin deleted, the legacy index is
+permanently gone and the predicate had no work to do. PR 11 also moved this
+hook out of botji-core into the sibling ``botji-guards`` plugin so the
+substrate stays pure state + tools.
 
 Fail-open: any predicate exception logs and returns ``None``.
 """
@@ -54,29 +58,8 @@ def _check_mixed(args: dict[str, Any]) -> dict[str, str] | None:
     native = [i for i in ids if i.startswith(_NATIVE)]
     if legacy and native:
         return _block(f"Mixed-ID-family: legacy {legacy[:3]} + native {native[:3]}. "
-                      "Use one pipeline — source_register for src_* or legacy artifact_* tools end-to-end.")
-    return None
-
-
-def _check_stale(args: dict[str, Any]) -> dict[str, str] | None:
-    call_turn = str(args.get("current_turn_id") or "").strip()
-    if not call_turn:
-        return None
-    legacy = [i for i in _ids(args) if i.startswith(_LEGACY)]
-    if not legacy:
-        return None
-    try:
-        from .. import _find_legacy_artifact  # type: ignore[attr-defined]
-    except Exception:  # noqa: BLE001
-        return None
-    stale = [i for i in legacy
-             if (rec := _find_legacy_artifact(i)) is not None
-             and (rt := str(rec.get("current_turn_id") or "").strip())
-             and rt != call_turn]
-    if stale:
-        return _block(f"Stale source ID: {stale[:3]} registered in a different turn "
-                      f"than call (current_turn_id={call_turn!r}). Re-register the "
-                      "current attachment with source_register.")
+                      "Use one pipeline — source_register for src_* end-to-end. "
+                      "Legacy art_* tools were removed in V1R PR 11.")
     return None
 
 
@@ -102,8 +85,6 @@ def _check_budget(tool: str, args: dict[str, Any], sid: str) -> dict[str, str] |
             return _block(f"Transform budget exhausted: {n} edit_image already in "
                           f"turn {turn!r} (cap: {_BUDGET}). Stop and ask the user. "
                           "Override with user_authorized_variants=N or user_authorized_retry=true.")
-        # Record spend on authorized too so unauthorized retries cannot
-        # piggyback off prior authorization.
         _counts[key] = n + 1
     return None
 
@@ -119,7 +100,7 @@ def pre_tool_call(tool_name: str, args: dict[str, Any] | None = None,
     """First predicate to block wins. Exceptions fail-OPEN (log + allow)."""
     try:
         a = args if isinstance(args, dict) else {}
-        return _check_mixed(a) or _check_stale(a) or _check_budget(tool_name, a, session_id)
+        return _check_mixed(a) or _check_budget(tool_name, a, session_id)
     except Exception as exc:  # noqa: BLE001 — fail-open is the policy.
-        logger.warning("botji-core pre_tool_call hook failed open: %s", exc)
+        logger.warning("botji-guards pre_tool_call hook failed open: %s", exc)
         return None

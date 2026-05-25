@@ -87,9 +87,9 @@ sync_code_components() {
     esac
   done
   # seed/hermes/prompts/ is optional — runtime prompts now live under each plugin
-  # (botji-artifacts/prompts/*.md) and are loaded via _prompts.load_prompt(). The
-  # top-level prompts/templates/ tree was unused and removed 2026-05-21. Keep the
-  # data dir clean for any tenants that still have stale templates copied over.
+  # (botji-render/prompts/*.md) and are loaded via providers/openai_codex._load_prompt().
+  # The top-level prompts/templates/ tree was unused and removed 2026-05-21.
+  # Keep the data dir clean for any tenants that still have stale templates.
   rm -rf "$DATA_DIR/prompts"
   if [ -d seed/hermes/prompts ]; then
     cp -R seed/hermes/prompts "$DATA_DIR/"

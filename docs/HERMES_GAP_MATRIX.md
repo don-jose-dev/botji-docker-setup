@@ -154,10 +154,11 @@ claims cite `seed/hermes/plugins/` and `evals/` in this repo.
   reasoning trail or the prior tool outputs.
 - **Hermes gap:** No hard-block primitive at this seam. To prevent a
   response from being sent, a plugin must replace the text with an
-  error message (which is what `botji-core/hooks/delivery_check.py`
+  error message (which is what `botji-guards/delivery_check.py`
   does).
 - **Botji currently does:**
-  `seed/hermes/plugins/botji-core/hooks/delivery_check.py` (PR #38)
+  `seed/hermes/plugins/botji-guards/delivery_check.py` (V1R PR 11 split
+  from botji-core; original PR #38)
   registers `transform_llm_output` to enforce delivery rules. On
   failure it replaces the reply with `❌ Internal: source-bound output
   missing receipt. Not delivering.` Hook is explicitly fail-open

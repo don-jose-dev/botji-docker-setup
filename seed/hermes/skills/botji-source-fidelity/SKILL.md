@@ -86,7 +86,7 @@ For tool-backed work or generated artifacts, persist a review JSON when file too
 
 ## Pipeline
 
-The procedural loop (`artifact_register` → `evidence_extract` → `artifact_normalize` → `operation_run` → `review_record`) is owned by `botji-artifact-fidelity` — see that skill for the full step list. This skill owns only the **review contract**: which axes are required, what each `compare_status` means, which conditions block delivery, how the receipt JSON is shaped, and the persisted-review rule above.
+The procedural loop (`source_register` → `evidence_extract` → `operation_run` → `output_write` → `review_record`) is owned by `botji-artifact-fidelity` — see that skill for the full step list. This skill owns only the **review contract**: which axes are required, what each `compare_status` means, which conditions block delivery, how the receipt JSON is shaped, and the persisted-review rule above.
 
 ## Review JSON
 

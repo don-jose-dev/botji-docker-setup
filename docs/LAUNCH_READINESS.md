@@ -19,14 +19,14 @@ What exists today, what's missing, and what the user must decide before flipping
 - Test coverage: `tests/fixtures/rate-limit/*.yaml`.
 
 ### Audit log
-- `seed/hermes/plugins/botji-core/metrics/hooks.py`: append-only JSONL via `post_tool_call`.
+- `seed/hermes/plugins/botji-observability/hooks.py`: append-only JSONL via `post_tool_call`.
 - Records timestamp, tool, tenant, session_id, args_hash, args_kinds, result_status, redacted result_summary, duration_ms.
 - Secrets regex-redacted before write (`tok_*`, `sk_*`, `Bearer *`, JWT `eyJ*`).
 - Same fail-open contract as metrics.
 
 ### Delivery gate
-- `seed/hermes/plugins/botji-core/hooks/delivery_check.py` via `transform_llm_output`.
-- Three failure modes: no receipt, blocked receipt, stale `art_*` mention.
+- `seed/hermes/plugins/botji-guards/delivery_check.py` via `transform_llm_output`.
+- Two failure modes: no receipt, blocked receipt. (Stale `art_*` lineage path removed in V1R PR 11 with the legacy plugin.)
 - Fail-open (Hermes contract).
 
 ### Health checks

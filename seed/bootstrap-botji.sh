@@ -78,7 +78,7 @@ for _skill_src in "$SEED/hermes/skills"/botji-*/; do
 done
 copy_file "$SEED/hermes/config.yaml" "$DATA/config.yaml"
 # seed/hermes/prompts/ is optional. Runtime prompts now live under each plugin
-# (e.g. botji-artifacts/prompts/) and are loaded via _prompts.load_prompt().
+# (e.g. botji-render/prompts/) and are loaded directly by the provider modules.
 if [ -d "$SEED/hermes/prompts" ]; then
   copy_dir "$SEED/hermes/prompts" "$DATA/prompts"
 fi
@@ -121,7 +121,7 @@ Seeded controls:
 - artifact-fidelity skill
 - 2d-to-3d skill
 - prompt templates
-- botji-* plugins (botji-artifacts, botji-render, botji-allowlist, botji-gate)
+- botji-* plugins (botji-core, botji-render, botji-allowlist, botji-gate, botji-catalog, botji-receipt)
 - JSON schemas
 - Codex config profiles
 - workspace AGENTS.md

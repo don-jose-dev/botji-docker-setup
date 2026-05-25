@@ -475,160 +475,42 @@ def run_contract(fixture: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# Suite: fidelity-guard
-# ---------------------------------------------------------------------------
-
-def run_fidelity_guard(fixture: dict) -> tuple[bool, str]:
-    """Exercise botji-artifacts _guardrails or _vision module.
-
-    inputs.guard: "current_turn" or "vision"
-    See _run_current_turn_guard / _run_vision_guard for per-guard details.
-    """
-    plugin_root = _plugin_path("botji-artifacts").parent
-    if not (plugin_root / "__init__.py").is_file():
-        return False, f"botji-artifacts plugin not found at {plugin_root}"
-
-    inputs = fixture.get("inputs") or {}
-    expected = fixture.get("expected") or {}
-    guard = inputs.get("guard")
-    if guard == "current_turn":
-        return _run_current_turn_guard(plugin_root, inputs, expected)
-    if guard == "vision":
-        return _run_vision_guard(plugin_root, inputs, expected)
-    return False, f"unknown guard: {guard!r}"
-
-
-def _run_current_turn_guard(plugin_root: Path, inputs: dict, expected: dict) -> tuple[bool, str]:
-    import hashlib
-
-    if str(plugin_root) not in sys.path:
-        sys.path.insert(0, str(plugin_root))
-    from _guardrails import apply_current_turn_source_guard  # type: ignore
-
-    with tempfile.TemporaryDirectory(prefix="botji-h-fid-") as tmp:
-        home = Path(tmp)
-        os.environ["HERMES_HOME"] = str(home)
-        os.environ["BOTJI_ARTIFACT_ROOT"] = str(home / "artifacts")
-
-        current_bytes = inputs.get("current_image_bytes", "current-image").encode("utf-8")
-        registry_bytes = inputs.get("registry_bytes", "stale-image").encode("utf-8")
-        artifact_id = inputs.get("artifact_id", "art_test")
-        session_id = inputs.get("session_id", "session_test")
-
-        current = home / "image_cache" / "current.jpg"
-        stale = home / "image_cache" / "stale.jpg"
-        copied = home / "artifacts" / "sources" / artifact_id / "stale.jpg"
-        current.parent.mkdir(parents=True, exist_ok=True)
-        copied.parent.mkdir(parents=True, exist_ok=True)
-        current.write_bytes(current_bytes)
-        stale.write_bytes(registry_bytes)
-        copied.write_bytes(registry_bytes)
-
-        session_path = home / "sessions" / f"{session_id}.jsonl"
-        session_path.parent.mkdir(parents=True, exist_ok=True)
-        session_path.write_text(json.dumps({
-            "role": "user",
-            "content": [{"type": "text", "text": f"Make 3d\n\n[Image attached at: {current}]"}],
-        }) + "\n", encoding="utf-8")
-
-        sha = hashlib.sha256(registry_bytes).hexdigest()
-        idx = home / "artifacts" / "index" / "artifacts.jsonl"
-        idx.parent.mkdir(parents=True, exist_ok=True)
-        idx.write_text(json.dumps({
-            "artifact_id": artifact_id,
-            "role": "source",
-            "path": str(copied),
-            "original_path": str(stale),
-            "adapter": "image",
-            "sha256": sha,
-            "parents": [],
-            "evidence_ids": [],
-        }) + "\n", encoding="utf-8")
-
-        review = _base_review(artifact_id)
-        guarded, changed = apply_current_turn_source_guard(review, session_id)
-
-        if "changed" in expected and bool(changed) != bool(expected["changed"]):
-            return False, f"changed: expected {expected['changed']}, got {changed}"
-        if "delivery_gate" in expected and guarded.get("delivery_gate") != expected["delivery_gate"]:
-            return False, f"delivery_gate {guarded.get('delivery_gate')!r} != {expected['delivery_gate']!r}"
-        prefix = expected.get("primary_blocker_prefix")
-        if prefix:
-            actual = guarded.get("primary_blocker") or ""
-            if not isinstance(actual, str) or not actual.startswith(prefix):
-                return False, f"primary_blocker {actual!r} missing prefix {prefix!r}"
-        return True, "ok"
-
-
-def _run_vision_guard(plugin_root: Path, inputs: dict, expected: dict) -> tuple[bool, str]:
-    if str(plugin_root) not in sys.path:
-        sys.path.insert(0, str(plugin_root))
-    from _vision import _assess_vision_payload  # type: ignore
-
-    requirements = list(inputs.get("requirements") or [])
-    payload = {"comparison": json.dumps(inputs.get("comparison") or {})}
-    assessed = _assess_vision_payload(payload, requirements)
-
-    if "verdict" in expected and assessed.get("verdict") != expected["verdict"]:
-        return False, f"verdict {assessed.get('verdict')!r} != {expected['verdict']!r}"
-    for needle in expected.get("blockers_contain") or []:
-        blockers = assessed.get("blockers") or []
-        if not any(needle in str(item) for item in blockers):
-            return False, f"blockers missing {needle!r}: {blockers}"
-    return True, "ok"
-
-
-def _base_review(source_id: str) -> dict:
-    return {
-        "review_id": "review_test",
-        "reviewed_output_ref": "art_output",
-        "verdict": "pass",
-        "delivery_gate": "clear",
-        "recommended_action": "deliver",
-        "primary_blocker": None,
-        "retry_guidance": None,
-        "axes": [],
-        "blockers": [],
-        "required_corrections": [],
-        "artifact_context": {
-            "source_artifact_ids": [source_id],
-            "output_artifact_id": "art_output",
-            "evidence_ids": [],
-        },
-        "fidelity_scores": {
-            "transform_contract_fidelity_percent": 100,
-            "preservation_target": "source_constraint_preservation",
-        },
-    }
-
-
-# ---------------------------------------------------------------------------
-# Suite: id-family (NEW)
+# Suite: id-family
 # ---------------------------------------------------------------------------
 
 def run_id_family(fixture: dict) -> tuple[bool, str]:
     """Assert tools reject mixing pipeline ID families.
 
     inputs.scenario:
-      mixed_receipt_sources         - legacy art_ in receipt while turn has native src_
       artifact_write_unknown_parent - unknown parent ID fails artifact_write
       receipt_unknown_source        - receipt_record fails when source_ids is fabricated
       out_id_in_source_slot         - placing out_ in source_ids triggers parent mismatch
-      pre_hook_stale_art            - pre_tool_call hook rejects stale art_ source
       pre_hook_mixed_family         - pre_tool_call hook rejects art_ + src_ in same call
       pre_hook_over_budget          - pre_tool_call hook rejects 3rd edit_image in a turn
       pre_hook_variants_override    - user_authorized_variants bypasses transform cap
-      pre_hook_happy_path           - vanilla call passes all three predicates
+      pre_hook_happy_path           - vanilla call passes both predicates
+
+    PR 11 dropped ``pre_hook_stale_art`` and ``mixed_receipt_sources``: their
+    legacy ``art_*`` index lookup is gone with ``botji-artifacts/``.
     """
-    plugin_path = _plugin_path("botji-core")
+    core_path = _plugin_path("botji-core")
+    guards_path = _plugin_path("botji-guards")
     with tempfile.TemporaryDirectory(prefix="botji-h-idfam-") as tmp:
         home = Path(tmp)
         os.environ["HERMES_HOME"] = str(home)
         os.environ["BOTJI_CORE_ROOT"] = str(home / "botji-core")
         os.environ["BOTJI_ARTIFACT_ROOT"] = str(home / "artifacts")
         ctx = _FakeContext()
-        module = _load_module(plugin_path, f"botji_idfam_h_{uuid.uuid4().hex[:8]}")
-        module.register(ctx)
+        core_mod = _load_module(core_path, f"botji_idfam_core_{uuid.uuid4().hex[:8]}")
+        core_mod.register(ctx)
+        # botji-guards lives in a sibling plugin since V1R PR 11; load it so the
+        # pre_tool_call hook is wired into the shared ctx and id-family
+        # scenarios see the same predicate stack as production.
+        guards_mod = _load_module(guards_path, f"botji_idfam_guards_{uuid.uuid4().hex[:8]}")
+        guards_mod.register(ctx)
+        # Keep ``module`` aliased to guards for the ``module.__name__`` lookups
+        # below (e.g. import the stale_id_block submodule for budget reset).
+        module = guards_mod
 
         inputs = fixture.get("inputs") or {}
         expected = fixture.get("expected") or {}
@@ -641,54 +523,9 @@ def run_id_family(fixture: dict) -> tuple[bool, str]:
         out_file = incoming / "out.txt"
         out_file.write_text("out-bytes", encoding="utf-8")
 
-        if scenario == "mixed_receipt_sources":
-            # Build a full legacy source+output pair in the legacy index so the
-            # output_parent_mismatch check passes (output parents IS art_legacy)
-            # and the mixed_pipeline_source check is the one that fires.
-            legacy_src_path = home / "artifacts" / "sources" / "art_legacy" / "src.txt"
-            legacy_out_path = home / "artifacts" / "outputs" / "art_legacy_out" / "out.txt"
-            legacy_src_path.parent.mkdir(parents=True, exist_ok=True)
-            legacy_out_path.parent.mkdir(parents=True, exist_ok=True)
-            legacy_src_path.write_text("legacy-src", encoding="utf-8")
-            legacy_out_path.write_text("legacy-out", encoding="utf-8")
-            idx = home / "artifacts" / "index" / "artifacts.jsonl"
-            idx.parent.mkdir(parents=True, exist_ok=True)
-            idx.write_text(
-                json.dumps({
-                    "artifact_id": "art_legacy", "role": "source",
-                    "path": str(legacy_src_path), "parents": [],
-                    "created_at": "2026-05-20T00:00:00Z",
-                }) + "\n" +
-                json.dumps({
-                    "artifact_id": "art_legacy_out", "role": "output",
-                    "path": str(legacy_out_path), "parents": ["art_legacy"],
-                    "created_at": "2026-05-20T00:01:00Z",
-                }) + "\n",
-                encoding="utf-8",
-            )
-
-            # Native src_ registration on the same turn flips the substrate
-            # into "current turn has native sources" mode.
-            native = _call_tool(ctx, "source_register", {
-                "path": str(src_file), "current_turn_id": "turn-mixed",
-                "role": "source", "declared_type": "text",
-            })
-            if not native.get("success") or not native["source"]["artifact_id"].startswith("src_"):
-                return False, f"native source registration failed: {native}"
-
-            # Receipt cites the legacy art_ source while turn has a native src_.
-            # Output is the legacy out_ (parents = [art_legacy]) so parent check passes.
-            receipt = _call_tool(ctx, "receipt_record", {
-                "source_ids": ["art_legacy"], "output_id": "art_legacy_out",
-                "route": "legacy-while-native-present", "status": "pass",
-                "current_turn_id": "turn-mixed",
-            })
-            gate = _call_tool(ctx, "delivery_gate", {"receipt_id": receipt["receipt_id"]})
-            return _check_expected(gate, expected)
-
         if scenario == "artifact_write_unknown_parent":
             bogus = inputs.get("parent_id", "src_does_not_exist")
-            written = _call_tool(ctx, "artifact_write", {
+            written = _call_tool(ctx, "output_write", {
                 "path": str(out_file), "parents": [bogus],
                 "current_turn_id": "turn-bogus", "claim_level": "draft",
             })
@@ -705,7 +542,7 @@ def run_id_family(fixture: dict) -> tuple[bool, str]:
                 "path": str(src_file), "current_turn_id": "turn-x",
                 "role": "source", "declared_type": "text",
             })
-            written = _call_tool(ctx, "artifact_write", {
+            written = _call_tool(ctx, "output_write", {
                 "path": str(out_file), "parents": [native["source"]["artifact_id"]],
                 "current_turn_id": "turn-x", "claim_level": "draft",
             })
@@ -726,7 +563,7 @@ def run_id_family(fixture: dict) -> tuple[bool, str]:
                 "path": str(src_file), "current_turn_id": "turn-y",
                 "role": "source", "declared_type": "text",
             })
-            written = _call_tool(ctx, "artifact_write", {
+            written = _call_tool(ctx, "output_write", {
                 "path": str(out_file), "parents": [native["source"]["artifact_id"]],
                 "current_turn_id": "turn-y", "claim_level": "draft",
             })
@@ -739,19 +576,6 @@ def run_id_family(fixture: dict) -> tuple[bool, str]:
             gate = _call_tool(ctx, "delivery_gate", {"receipt_id": receipt["receipt_id"]})
             return _check_expected(gate, expected)
 
-        if scenario == "pre_hook_stale_art":
-            # Seed a legacy art_ record tagged with an older turn id.
-            idx = home / "artifacts" / "index" / "artifacts.jsonl"
-            idx.parent.mkdir(parents=True, exist_ok=True)
-            idx.write_text(json.dumps({
-                "artifact_id": "art_stale_xyz", "role": "source",
-                "current_turn_id": "turn-old",
-                "path": str(src_file),
-            }) + "\n", encoding="utf-8")
-            return _check_hook_result(ctx, fixture, {
-                "source_ids": ["art_stale_xyz"], "current_turn_id": "turn-new",
-            })
-
         if scenario == "pre_hook_mixed_family":
             return _check_hook_result(ctx, fixture, {
                 "source_ids": ["art_legacy_abc", "src_native_def"],
@@ -761,7 +585,7 @@ def run_id_family(fixture: dict) -> tuple[bool, str]:
         if scenario == "pre_hook_over_budget":
             # Reset module-level counter so prior fixtures cannot pollute it.
             from importlib import import_module
-            hooks_pkg = import_module(module.__name__ + ".hooks.stale_id_block")
+            hooks_pkg = import_module(module.__name__ + ".stale_id_block")
             hooks_pkg._reset_transform_counts()
             # First two calls fill the budget.
             for _ in range(2):
@@ -776,7 +600,7 @@ def run_id_family(fixture: dict) -> tuple[bool, str]:
 
         if scenario == "pre_hook_variants_override":
             from importlib import import_module
-            hooks_pkg = import_module(module.__name__ + ".hooks.stale_id_block")
+            hooks_pkg = import_module(module.__name__ + ".stale_id_block")
             hooks_pkg._reset_transform_counts()
             # Pre-fill the budget so a non-authorized call would block.
             for _ in range(2):
@@ -871,27 +695,25 @@ def run_cron(fixture: dict) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 def run_delivery(fixture: dict) -> tuple[bool, str]:
-    """Seed receipts/sources/legacy index, call transform_llm_output, assert.
+    """Seed receipts/sources, call transform_llm_output, assert.
 
     inputs.receipts:         records appended to botji-core/index/receipts.jsonl
     inputs.sources:          records appended to botji-core/index/sources.jsonl
-    inputs.legacy_artifacts: legacy art_* records (artifact_id,
-                             current_turn_id, role, content)
     inputs.response_text:    text passed to the hook
     expected.passthrough:    when true, hook MUST return None
     expected.contains:       substring required in the rewritten string
     expected.not_contains:   substring forbidden in the rewritten string
+
+    PR 11 moved the hook out of botji-core into the sibling botji-guards
+    plugin; the read path goes through the same JSONL index files.
     """
-    from importlib import import_module
-    plugin_path = _plugin_path("botji-core")
+    guards_path = _plugin_path("botji-guards")
     with tempfile.TemporaryDirectory(prefix="botji-h-deliv-") as tmp:
         home = Path(tmp)
         os.environ["HERMES_HOME"] = str(home)
         os.environ["BOTJI_CORE_ROOT"] = str(home / "botji-core")
         os.environ["BOTJI_ARTIFACT_ROOT"] = str(home / "artifacts")
-        ctx = _FakeContext()
-        module = _load_module(plugin_path, f"botji_deliv_h_{uuid.uuid4().hex[:8]}")
-        module.register(ctx)
+        guards_mod = _load_module(guards_path, f"botji_deliv_guards_{uuid.uuid4().hex[:8]}")
 
         inputs = fixture.get("inputs") or {}
         expected = fixture.get("expected") or {}
@@ -901,24 +723,9 @@ def run_delivery(fixture: dict) -> tuple[bool, str]:
             for record in (inputs.get(kind) or []):
                 with (core_idx / f"{kind}.jsonl").open("a", encoding="utf-8") as fh:
                     fh.write(json.dumps(record) + "\n")
-        for entry in (inputs.get("legacy_artifacts") or []):
-            art_id = entry["artifact_id"]
-            data_path = home / "artifacts" / "legacy" / art_id / "data.txt"
-            data_path.parent.mkdir(parents=True, exist_ok=True)
-            data_path.write_text(entry.get("content", "legacy"), encoding="utf-8")
-            legacy_idx = home / "artifacts" / "index" / "artifacts.jsonl"
-            legacy_idx.parent.mkdir(parents=True, exist_ok=True)
-            with legacy_idx.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({
-                    "artifact_id": art_id,
-                    "role": entry.get("role", "source"),
-                    "current_turn_id": entry.get("current_turn_id"),
-                    "path": str(data_path),
-                    "parents": entry.get("parents", []),
-                    "created_at": entry.get("created_at", "2026-05-20T00:00:00Z"),
-                }) + "\n")
 
-        hooks_pkg = import_module(module.__name__ + ".hooks.delivery_check")
+        from importlib import import_module
+        hooks_pkg = import_module(guards_mod.__name__ + ".delivery_check")
         got = hooks_pkg.transform_llm_output(
             response_text=inputs.get("response_text", ""),
             session_id=inputs.get("session_id", "session-d"),
@@ -965,7 +772,7 @@ def run_audit(fixture: dict) -> tuple[bool, str]:
     expected.summary_includes_redaction: bool — at least one <redacted:secret>
     """
     from importlib import import_module
-    plugin_path = _plugin_path("botji-core")
+    observability_path = _plugin_path("botji-observability")
     inputs = fixture.get("inputs") or {}
     expected = fixture.get("expected") or {}
     with tempfile.TemporaryDirectory(prefix="botji-h-audit-") as tmp:
@@ -974,12 +781,11 @@ def run_audit(fixture: dict) -> tuple[bool, str]:
         os.environ["BOTJI_TENANT_ID"] = inputs.get("tenant", "test-tenant")
         os.environ["BOTJI_CORE_ROOT"] = str(home / "botji-core")
         ctx = _FakeContext()
-        module = _load_module(plugin_path, f"botji_audit_h_{uuid.uuid4().hex[:8]}")
-        module.register(ctx)
+        # PR 11 moved metrics + audit out of botji-core into botji-observability.
+        observability_mod = _load_module(observability_path, f"botji_audit_obs_{uuid.uuid4().hex[:8]}")
 
-        mod_metrics = import_module(module.__name__ + ".metrics")
-        hooks_mod = import_module(module.__name__ + ".metrics.hooks")
-        exp_mod = import_module(module.__name__ + ".metrics.exporter")
+        hooks_mod = import_module(observability_mod.__name__ + ".hooks")
+        exp_mod = import_module(observability_mod.__name__ + ".exporter")
 
         class _NoopLabel:
             def inc(self, *_a, **_k): pass
@@ -1148,57 +954,28 @@ def run_render(fixture: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# Suite: manifest — typed manifest v2 schema + back-compat converter tests
+# Suite: manifest — typed manifest v2 schema (JSON Schema only after PR 11)
 # ---------------------------------------------------------------------------
 
 def run_manifest(fixture: dict) -> tuple[bool, str]:
-    """Validate the typed manifest v2 scaffold (Phase C1).
+    """Validate the typed manifest v2 JSON Schema.
 
     inputs.scenario:
-      roundtrip        - v1 prose → typed → v1 prose; assert structural fields
       schema_validate  - directly-written typed manifest against JSON Schema
-      pydantic_validate - directly-written typed manifest through Pydantic
-    See tests/fixtures/manifest/*.yaml for per-scenario inputs/expected.
+
+    PR 11 dropped the Pydantic + prose↔typed converter scenarios when the
+    legacy ``botji-artifacts/_manifest_v2*.py`` modules went away with the
+    plugin. The JSON Schema lives in ``seed/hermes/schemas/`` independently
+    of any plugin, so ``schema_validate`` continues to work end-to-end.
     """
-    plugin_root = _plugin_path("botji-artifacts").parent
-    if str(plugin_root) not in sys.path:
-        sys.path.insert(0, str(plugin_root))
     inputs = fixture.get("inputs") or {}
     expected = fixture.get("expected") or {}
     scenario = inputs.get("scenario")
 
-    if scenario == "roundtrip":
-        from _manifest_v2_compat import prose_to_typed, typed_to_prose  # type: ignore
-        v1 = inputs.get("v1_manifest") or {}
-        typed = prose_to_typed(v1)
-        back = typed_to_prose(typed)
-        if expected.get("element_count_preserved") and back["element_count"] != v1.get("element_count"):
-            return False, f"element_count {back['element_count']} != v1 {v1.get('element_count')}"
-        if expected.get("layout_hints_preserved") and list(back["layout_hints"]) != list(v1.get("layout_hints") or []):
-            return False, f"layout_hints drift: {back['layout_hints']} vs {v1.get('layout_hints')}"
-        if expected.get("fidelity_requirements_preserved") and list(back["fidelity_requirements"]) != list(v1.get("fidelity_requirements") or []):
-            return False, "fidelity_requirements drift"
-        if expected.get("adjacency_count_preserved") and len(back["adjacency_constraints"]) != len(v1.get("adjacency_constraints") or []):
-            return False, "adjacency_constraints count drift"
-        if expected.get("opening_count_preserved") and len(back["opening_constraints"]) != len(v1.get("opening_constraints") or []):
-            return False, "opening_constraints count drift"
-        if expected.get("zones_preserved"):
-            for v1_el, v2_el in zip(v1.get("elements") or [], back["elements"]):
-                # The typed pipeline normalizes zone strings; check it survives
-                # round-trip when the v1 zone was already a canonical Zone enum.
-                if v1_el.get("wall_or_zone") in {"left_wall", "right_wall", "back_wall", "front_wall", "floor", "ceiling", "center", "island"}:
-                    if v2_el["wall_or_zone"] != v1_el["wall_or_zone"]:
-                        return False, f"zone drift: {v2_el['wall_or_zone']} != {v1_el['wall_or_zone']}"
-        return True, "ok"
-
     if scenario == "schema_validate":
         from jsonschema import Draft202012Validator  # type: ignore
         # Schema is at /opt/data/schemas/ on a deployed tenant (deploy seeds
-        # it there) and at seed/hermes/schemas/ in the dev repo. Probe both,
-        # matching the _plugin_path pattern. Previous hardcoded repo-relative
-        # path failed in-container because __file__ resolves to
-        # /usr/local/bin/botji-harness, giving /usr/seed/... which doesn't
-        # exist.
+        # it there) and at seed/hermes/schemas/ in the dev repo. Probe both.
         home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
         schema_path = home / "schemas" / "manifest_v2.schema.json"
         if not schema_path.is_file():
@@ -1217,25 +994,7 @@ def run_manifest(fixture: dict) -> tuple[bool, str]:
             return False, f"errors do not mention {needle!r}: {[e.message for e in errs[:3]]}"
         return True, "ok"
 
-    if scenario == "pydantic_validate":
-        from pydantic import ValidationError as _VE  # type: ignore
-        from _manifest_v2 import Manifest  # type: ignore
-        try:
-            Manifest.model_validate(inputs.get("typed_manifest") or {})
-            valid, err_text = True, ""
-        except _VE as exc:
-            valid, err_text = False, str(exc)
-        want = expected.get("pydantic_valid")
-        if want is True and not valid:
-            return False, f"expected valid, got: {err_text[:200]}"
-        if want is False and valid:
-            return False, "expected pydantic_valid=false, but passed"
-        needle = expected.get("failing_field_contains")
-        if needle and needle not in err_text:
-            return False, f"error does not mention {needle!r}: {err_text[:200]}"
-        return True, "ok"
-
-    return False, f"unknown scenario: {scenario!r}"
+    return False, f"unknown scenario: {scenario!r} (PR 11 removed roundtrip/pydantic_validate with botji-artifacts)"
 
 
 # ---------------------------------------------------------------------------
@@ -1733,7 +1492,6 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "allowlist": run_allowlist,
     "rate-limit": run_rate_limit,
     "contract": run_contract,
-    "fidelity-guard": run_fidelity_guard,
     "id-family": run_id_family,
     "cron": run_cron,
     "delivery": run_delivery,
@@ -1745,7 +1503,7 @@ SUITES: dict[str, Callable[[dict], tuple[bool, str]]] = {
     "render-ops": run_render_ops,
 }
 
-SUITE_ORDER = ["core", "gate", "allowlist", "rate-limit", "contract", "fidelity-guard", "id-family", "cron", "delivery", "audit", "render", "manifest", "adapters", "review", "render-ops"]
+SUITE_ORDER = ["core", "gate", "allowlist", "rate-limit", "contract", "id-family", "cron", "delivery", "audit", "render", "manifest", "adapters", "review", "render-ops"]
 
 
 def _fixtures_root() -> Path:

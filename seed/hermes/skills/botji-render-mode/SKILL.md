@@ -13,7 +13,7 @@ tags:
 
 Use this skill whenever the user has supplied a source artifact (photo, sketch, CAD file, dimensions) and wants a render, edit, or 3D output. This is the **mode-selection layer** for source-bound render work — it decides between photo / technical / spec / concept pipelines and owns the per-mode rules and review thresholds.
 
-Prerequisites: `artifact_register` for the source must already have been called (see `botji-artifact-fidelity` for the generic loop).
+Prerequisites: `source_register` for the source must already have been called (see `botji-artifact-fidelity` for the generic loop). The native `src_*` ID it returns is the `source_id` you pass throughout.
 
 ## Retry budget — canonical
 
@@ -42,10 +42,10 @@ If the user asks for a CAD / DXF / DWG deliverable rather than a render, switch 
 
 ## Photo mode pipeline (~60–90s)
 
-Use when source is a raster image. Do NOT run `evidence_extract`, `artifact_normalize`, `schema_validate`, or `user_confirm` on a photo — those steps are for technical drawings only.
+Use when source is a raster image. Do NOT run `evidence_extract`, `schema_validate`, or `user_confirm` on a photo — those steps are for technical drawings only.
 
 ```
-1. artifact_register(path, role="source", declared_type="image", current_turn_id=...)
+1. source_register(path, current_turn_id, role="source", declared_type="image")
 
 2. operation_run(
      operation="edit_image",
@@ -92,14 +92,14 @@ hard_preserve=["Overall dimensions: 2400mm wide × 1500mm tall — set scale and
 Use when source has machine-readable geometry (DXF, PDF, IFC, SVG). For sketches and floor plans, use `botji-2d-to-3d` directly — it is the full pipeline owner.
 
 ```
-1. artifact_register          — register source; get artifact_id and sha256
-2. evidence_extract           — extract geometry, layers, entities, dimensions
-3. schema_validate            — validate dimension sums, counts, positions
-4. user_confirm               — confirm inferred measurements (only if ambiguous)
-5. artifact_normalize         — emit botji.artifact_schema.v1 as transform contract
-6. operation_run         — drive output from schema contract
-7. review_record            — compare output against source schema
-8. persist lineage            — source → schema → render → review all linked
+1. source_register             — register source; get src_* and sha256
+2. evidence_extract            — extract geometry, layers, entities, dimensions
+3. schema_validate             — validate dimension sums, counts, positions
+4. user_confirm                — confirm inferred measurements (only if ambiguous)
+5. operation_run(render_schema)— emit typed schema as transform contract
+6. operation_run(edit_image)   — drive render from schema contract
+7. review_record               — compare output against source schema
+8. persist lineage             — source → schema → render → review all linked
 ```
 
 Schema is the geometry authority. The render must match the schema, not just look similar.
@@ -109,7 +109,7 @@ Schema is the geometry authority. The render must match the schema, not just loo
 ## Spec mode (dimensions only, no drawing)
 
 ```
-1. Build dimensional spec from user text (no artifact_register needed).
+1. Build dimensional spec from user text (no source_register needed).
 2. image_generate with visual brief including spec dimensions.
 3. Brief visual comparison against spec.
 4. Deliver with claim level "reviewed".

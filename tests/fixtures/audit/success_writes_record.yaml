@@ -7,7 +7,7 @@ description: |
   values), and result_status=success. No raw args, no raw paths.
 inputs:
   tenant: t-success
-  tool_name: artifact_register
+  tool_name: source_register
   tool_call_id: tc-success-1
   session_id: session-success
   args:
