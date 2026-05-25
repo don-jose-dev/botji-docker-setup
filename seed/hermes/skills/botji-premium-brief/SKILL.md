@@ -93,6 +93,17 @@ The signature is something the **light or material does**, never a new object (a
 
 ---
 
+## Prerequisite: catalog lock
+
+Before submitting any draft to `operation_run(operation="edit_image")`, run
+`catalog_check(brief=<full brief>)` from the **`botji-catalog-lock`** skill.
+That skill enforces the **per-tenant** material vocabulary (specific stones,
+woods, paints, fixtures the firm actually uses) on top of the generic banned
+list below. A `block` verdict means do not render; rewrite first. A `warn`
+verdict means substitute the suggested catalog terms before rendering. The
+two skills compose: this one bans generic AI-luxury words, `botji-catalog-lock`
+binds you to the firm's brand vocabulary.
+
 ## Banned noise vocabulary
 
 These words tell the model nothing useful and produce generic AI-luxury output. **Never write them in a brief.** If you find any in your draft, rewrite with specifics.

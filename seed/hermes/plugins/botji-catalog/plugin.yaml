@@ -1,0 +1,11 @@
+name: botji-catalog
+version: 1.0.0
+description: "Per-tenant material catalog lock. Provides catalog_check, catalog_load, catalog_update for brand-vocabulary enforcement on render briefs."
+author: Botji
+kind: standalone
+requires_env: []
+provides_tools:
+  - catalog_check
+  - catalog_load
+  - catalog_update
+provides_hooks: []
