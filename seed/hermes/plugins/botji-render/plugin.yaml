@@ -1,7 +1,10 @@
 name: botji-render
-version: 1.0.0
-description: "V1R render plugin: providers/openai_codex + operations (exact_copy, render_schema, edit_image). Owns provider routing and image generation during the botji-artifacts cutover."
+version: 1.1.0
+description: "V1R render plugin: providers/openai_codex + operations (exact_copy, render_schema, edit_image). Owns provider routing and image generation. v1.1 adds C2PA + IPTC 2025.1 manifest stamping for EU AI Act Article 50 compliance."
 author: Botji
 kind: standalone
-requires_env: []
+requires_env:
+  - BOTJI_C2PA_ENABLED       # optional, default true; set to "0" to disable C2PA stamping
+  - BOTJI_C2PA_CERT_PATH     # required when stamping is on — PEM cert path
+  - BOTJI_C2PA_KEY_PATH      # required when stamping is on — PEM key path
 provides_hooks: []

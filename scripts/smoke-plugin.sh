@@ -51,12 +51,15 @@ PLUGIN_CONTRACTS = {
         },
     },
     "botji-render": {
-        # V1R PR 9b: operations plus the real Codex image provider.
-        "submodules": ["operations", "providers.openai_codex"],
+        # V1R PR 9b: operations + real Codex image provider.
+        # v1.1: c2pa_stamp.py adds EU AI Act Article 50 manifest stamping for
+        # PNG outputs; operations.dispatch wraps every PNG result with it.
+        "submodules": ["operations", "providers.openai_codex", "c2pa_stamp"],
         "symbols": {
             "operations": ["dispatch", "exact_copy", "render_schema", "edit_image",
                            "OPERATIONS", "RenderPolicy", "RenderResult"],
             "providers.openai_codex": ["generate_image", "resolve_provider_route", "codex_available"],
+            "c2pa_stamp": ["stamp_png"],
         },
     },
     "botji-allowlist": {

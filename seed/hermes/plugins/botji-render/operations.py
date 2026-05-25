@@ -18,12 +18,22 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
+# C2PA stamping is on by default (EU AI Act Article 50 compliance, Aug 2 2026).
+# Set BOTJI_C2PA_ENABLED=0/false to disable for a single render call.
+_C2PA_ENV = "BOTJI_C2PA_ENABLED"
+
+
+def _c2pa_enabled() -> bool:
+    raw = os.environ.get(_C2PA_ENV, "1").strip().lower()
+    return raw not in {"0", "false", "no", "off", ""}
 
 
 @dataclass
@@ -157,9 +167,78 @@ OPERATIONS: dict[str, Callable[..., RenderResult]] = {
 }
 
 
+def _maybe_stamp_c2pa(
+    result: RenderResult,
+    sources: list[Path],
+    *,
+    botji_version: str,
+    user_prompt_redacted: str,
+    ai_model: str,
+) -> RenderResult:
+    """Stamp the result's PNG with a C2PA manifest, if enabled.
+
+    Failure to stamp MUST NOT fail the render — log a warning, mark
+    ``metadata['c2pa_stamped'] = False`` on the result, and return the
+    unstamped PNG. Only PNG outputs are stamped (schemas / JSON pass
+    through unchanged).
+    """
+    if not result.success or result.output_path is None:
+        return result
+    if result.output_path.suffix.lower() != ".png":
+        result.metadata.setdefault("c2pa_stamped", False)
+        result.metadata.setdefault("c2pa_skip_reason", "non-png output")
+        return result
+    if not _c2pa_enabled():
+        result.metadata["c2pa_stamped"] = False
+        result.metadata["c2pa_skip_reason"] = f"{_C2PA_ENV} disabled"
+        return result
+    try:
+        from c2pa_stamp import stamp_png  # type: ignore[import-not-found]
+    except Exception as exc:  # noqa: BLE001 — soft failure
+        logger.warning("botji-render: c2pa_stamp import failed: %s", exc)
+        result.metadata["c2pa_stamped"] = False
+        result.metadata["c2pa_skip_reason"] = f"import-failed:{type(exc).__name__}"
+        return result
+
+    # Stamp in place: write to a sibling .stamped.png then atomically replace.
+    raw = result.output_path
+    staged = raw.with_suffix(raw.suffix + ".stamped")
+    try:
+        summary = stamp_png(
+            raw,
+            staged,
+            botji_version=botji_version,
+            source_image_paths=list(sources),
+            user_prompt_redacted=user_prompt_redacted,
+            ai_model=ai_model,
+        )
+        # Atomic-ish replace: Path.replace overwrites destination atomically
+        # on the same volume (POSIX rename / Windows MoveFileEx semantics).
+        staged.replace(raw)
+        result.metadata["c2pa_stamped"] = True
+        result.metadata["c2pa"] = summary
+    except Exception as exc:  # noqa: BLE001 — soft failure
+        logger.warning("botji-render: c2pa stamping failed: %s", exc)
+        result.metadata["c2pa_stamped"] = False
+        result.metadata["c2pa_error"] = f"{type(exc).__name__}: {exc}"[:300]
+        # Best-effort cleanup of the staged file.
+        try:
+            if staged.exists():
+                staged.unlink()
+        except OSError:
+            pass
+    return result
+
+
 def dispatch(operation: str, sources: list[Path], policy: RenderPolicy,
              *, output_dir: Path, **kwargs: Any) -> RenderResult:
-    """Look up the named operation and invoke it. Returns error result for unknown ops."""
+    """Look up the named operation and invoke it. Returns error result for unknown ops.
+
+    Post-processing: if the operation produced a PNG, the dispatcher stamps
+    it with a C2PA manifest (EU AI Act Article 50) before returning. Stamp
+    failure is logged + recorded in ``metadata['c2pa_stamped']=False`` but
+    never fails the render — the unstamped PNG is still returned.
+    """
     fn = OPERATIONS.get(operation)
     if fn is None:
         return RenderResult(
@@ -168,10 +247,27 @@ def dispatch(operation: str, sources: list[Path], policy: RenderPolicy,
             error_type="ValueError",
         )
     try:
-        return fn(sources, policy, output_dir=output_dir, **kwargs)
+        result = fn(sources, policy, output_dir=output_dir, **kwargs)
     except Exception as exc:  # noqa: BLE001 — render must fail soft, not crash
         logger.warning("botji-render: %s raised: %s", operation, exc)
         return RenderResult(
             operation=operation, output_path=None,
             error=str(exc)[:500], error_type=type(exc).__name__,
         )
+    botji_version = str(
+        kwargs.get("botji_version") or policy.extras.get("botji_version") or "unknown"
+    )
+    user_prompt_redacted = str(
+        kwargs.get("user_prompt_redacted")
+        or policy.extras.get("user_prompt_redacted")
+        or ""
+    )
+    ai_model = str(
+        kwargs.get("ai_model") or policy.extras.get("ai_model") or "gpt-image-2"
+    )
+    return _maybe_stamp_c2pa(
+        result, sources,
+        botji_version=botji_version,
+        user_prompt_redacted=user_prompt_redacted,
+        ai_model=ai_model,
+    )
