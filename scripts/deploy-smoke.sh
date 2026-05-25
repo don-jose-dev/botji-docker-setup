@@ -3,8 +3,10 @@
 # smoke check. Sourced by deploy.sh. Defines:
 #   preflight_plugin_smoke  — runs scripts/smoke-plugin.sh against the
 #                             primary tenant's plugins (aborts deploy on fail).
-#   clear_telegram_webhook  — best-effort Telegram deleteWebhook so polling
-#                             starts clean.
+#   clear_telegram_webhook_from_env ENV_FILE
+#                           — best-effort Telegram deleteWebhook so polling
+#                             starts clean without dropping pending updates.
+#   clear_telegram_webhook  — primary-tenant wrapper around .env.
 #   wait_for_primary_health — polls botji-hermes for up to 60s until healthy;
 #                             echoes status into the caller via STATUS global.
 #   run_primary_smoke       — calls scripts/vps-postdeploy-smoke.sh on the
@@ -29,13 +31,18 @@ preflight_plugin_smoke() {
   fi
 }
 
-clear_telegram_webhook() {
-  echo "==> Clear Telegram webhook (ensures clean long-polling)"
-  BOT_TOKEN="$(grep -E '^TELEGRAM_BOT_TOKEN=' .env 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
+clear_telegram_webhook_from_env() {
+  local env_file="${1:-.env}"
+  echo "==> Clear Telegram webhook for $env_file (preserve pending updates)"
+  BOT_TOKEN="$(grep -E '^TELEGRAM_BOT_TOKEN=' "$env_file" 2>/dev/null | cut -d= -f2 | tr -d "'" | tr -d '"')"
   if [ -n "$BOT_TOKEN" ]; then
-    curl -s "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook?drop_pending_updates=true" | grep -o '"ok":[^,}]*' || true
+    curl -s "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook?drop_pending_updates=false" | grep -o '"ok":[^,}]*' || true
     echo "    Webhook cleared"
   fi
+}
+
+clear_telegram_webhook() {
+  clear_telegram_webhook_from_env .env
 }
 
 wait_for_primary_health() {

@@ -353,6 +353,10 @@ deploy_additional_tenant() {
   # /opt/data/skills/.bundled_manifest. The PR #20 / #21 / #22 chmods were
   # widening permissions on the WRONG (real) dir all along — observed
   # 2026-05-22 when degain restart-looped through four deploys.
+  if command -v clear_telegram_webhook_from_env >/dev/null 2>&1; then
+    clear_telegram_webhook_from_env "$tenant_path/.env"
+  fi
+
   (
     cd "$tenant_path"
     export BOTJI_PROD_IMAGE="$IMAGE_REF"
