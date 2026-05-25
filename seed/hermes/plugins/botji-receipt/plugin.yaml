@@ -1,0 +1,8 @@
+name: botji-receipt
+version: 0.1.0
+description: "One-page A4 PDF receipt per delivery. Side-by-side thumbnails, preserved/changed/generated columns, fidelity-score table, C2PA manifest footer."
+author: Botji
+kind: standalone
+requires_env: []
+provides_tools: []
+provides_hooks: []

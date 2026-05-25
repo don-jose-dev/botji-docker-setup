@@ -77,8 +77,14 @@ PLUGIN_CONTRACTS = {
             "__init__": ["catalog_check", "catalog_load", "catalog_update"],
         },
     },
+    "botji-receipt": {
+        # PDF receipt plugin. __init__ probes fpdf2 lazily so the smoke test
+        # does not fail in environments where the dep is not yet installed.
+        "submodules": [],
+        "symbols": {},
+    },
 }
-REQUIRED_PLUGINS = {"botji-allowlist", "botji-artifacts", "botji-catalog", "botji-core", "botji-gate", "botji-render"}
+REQUIRED_PLUGINS = {"botji-allowlist", "botji-artifacts", "botji-catalog", "botji-core", "botji-gate", "botji-receipt", "botji-render"}
 
 # Resolve which plugins to check: if PLUGINS_ROOT is set use it (preferred),
 # else fall back to a single legacy PLUGIN_DIR for back-compat.

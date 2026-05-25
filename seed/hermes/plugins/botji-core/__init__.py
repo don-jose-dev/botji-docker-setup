@@ -455,16 +455,36 @@ def _handle_delivery_gate(args: dict[str, Any], **_: Any) -> str:
                     )
 
         gate = "warned" if status == "warn" else "clear"
+        receipt_pdf_path = _maybe_generate_receipt_pdf(receipt, sources, output)
         return _ok(
             delivery_gate=gate,
             recommended_action="deliver",
             primary_blocker=None,
             receipt=receipt,
             output=output,
+            receipt_pdf_path=receipt_pdf_path,
         )
     except Exception as exc:
         logger.exception("botji-core: delivery_gate failed")
         return _fail(str(exc), delivery_gate="blocked", primary_blocker="gate_error")
+
+
+def _maybe_generate_receipt_pdf(receipt, sources, output) -> str | None:
+    """Best-effort receipt PDF; never raises. Off with ``BOTJI_RECEIPT_PDF_ENABLED=0``."""
+    if os.environ.get("BOTJI_RECEIPT_PDF_ENABLED", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return None
+    try:
+        from _pdf import generate_receipt_pdf  # type: ignore[import-not-found]
+        first = next((s for s in sources if s and s.get("path")), None)
+        rid = str(receipt.get("receipt_id") or "")
+        out_path = str(output.get("path") or "")
+        if not (first and out_path and rid):
+            return None
+        dest = _core_root() / "receipts" / rid
+        return str(generate_receipt_pdf(receipt, str(first.get("path")), out_path, dest))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("botji-core: receipt PDF generation skipped (%s)", exc)
+        return None
 
 
 SOURCE_REGISTER_SCHEMA = {

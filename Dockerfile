@@ -40,6 +40,7 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
          pillow \
          pymupdf \
          pypdf \
+         fpdf2 \
          ezdxf \
          python-magic \
          jsonschema \
