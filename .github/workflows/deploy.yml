@@ -23,11 +23,49 @@ env:
   IMAGE_NAME: don-jose-dev/botji-hermes
 
 jobs:
+  # Fast-path gate: image rebuild is only needed when Dockerfile, Python deps,
+  # or runtime/bin scripts change. Seed/, skills/, config.yaml, compose, and
+  # docs are copied onto the VPS via sync_code_components() — no image needed.
+  # When build is skipped the deploy job reuses the :latest tag, cutting end-to-
+  # end pipeline time from ~3-5min to ~30-45s for the common product change.
+  changes:
+    name: Detect change scope
+    runs-on: ubuntu-latest
+    outputs:
+      needs_build: ${{ steps.filter.outputs.build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            build:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'runtime/bin/**'
+              - 'pyproject.toml'
+              - 'requirements*.txt'
+              - 'package.json'
+              - 'package-lock.json'
+              # Deploy script changes also need a rebuild because they're scp'd
+              # from the just-built source; mismatches would silently use stale
+              # behavior. Keep these in the build set.
+              - 'scripts/deploy*.sh'
+              - 'scripts/vps-deploy.sh'
+
   build:
     name: Build and push image
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.event_name == 'push' || github.event.inputs.action == 'deploy'
+    # Skip the build when the only changes are seed/, config, skills, docs,
+    # docker-compose, or other deploy-only paths. The deploy job will reuse
+    # the existing :latest image.
+    if: |
+      (github.event_name == 'push' || github.event.inputs.action == 'deploy') &&
+      needs.changes.outputs.needs_build == 'true'
     permissions:
       contents: read
       packages: write
@@ -177,11 +215,21 @@ jobs:
 
   deploy:
     name: Deploy to VPS
-    needs: build
+    needs: [changes, build]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
-    if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event.inputs.action == 'deploy')
+    # Run when:
+    #   - we're on master/main AND a deploy was requested AND
+    #   - either the build succeeded, OR the build was skipped because no
+    #     image-affecting paths changed (fast-path).
+    # Using `always() && !cancelled()` so a skipped `build` doesn't cancel us.
+    if: |
+      always() && !cancelled() &&
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') &&
+      (github.event_name == 'push' || github.event.inputs.action == 'deploy') &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      needs.changes.result == 'success'
     permissions:
       contents: read
       packages: read
@@ -219,7 +267,11 @@ jobs:
           DEPLOY_PATH_SECRET: ${{ secrets.DEPLOY_PATH }}
           GHCR_USER_VALUE: ${{ github.actor }}
           GHCR_TOKEN_SECRET: ${{ github.token }}
-          IMAGE_REF_VALUE: ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image_digest }}
+          # Full-path: pin to the just-built image digest. Fast-path (build
+          # skipped): reuse the floating :latest tag, which always points to
+          # the most recent successful build for this repo. VPS deploy script
+          # uses IMAGE_REF unchanged either way.
+          IMAGE_REF_VALUE: ${{ needs.build.outputs.image_digest && format('ghcr.io/{0}@{1}', env.IMAGE_NAME, needs.build.outputs.image_digest) || format('ghcr.io/{0}:latest', env.IMAGE_NAME) }}
           GIT_BRANCH_VALUE: ${{ github.ref_name }}
           TELEGRAM_BOT_TOKEN_SECRET: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_BOT_USERNAME_SECRET: ${{ secrets.TELEGRAM_BOT_USERNAME }}
