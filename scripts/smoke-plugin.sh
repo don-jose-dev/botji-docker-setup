@@ -71,8 +71,14 @@ PLUGIN_CONTRACTS = {
         "submodules": [],
         "symbols": {},
     },
+    "botji-catalog": {
+        "submodules": [],
+        "symbols": {
+            "__init__": ["catalog_check", "catalog_load", "catalog_update"],
+        },
+    },
 }
-REQUIRED_PLUGINS = {"botji-allowlist", "botji-artifacts", "botji-core", "botji-gate", "botji-render"}
+REQUIRED_PLUGINS = {"botji-allowlist", "botji-artifacts", "botji-catalog", "botji-core", "botji-gate", "botji-render"}
 
 # Resolve which plugins to check: if PLUGINS_ROOT is set use it (preferred),
 # else fall back to a single legacy PLUGIN_DIR for back-compat.
