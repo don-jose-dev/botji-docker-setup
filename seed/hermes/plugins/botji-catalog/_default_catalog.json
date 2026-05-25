@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "tenant_id": "botji",
+  "updated_at": "2026-05-25T10:00:00Z",
+  "materials": {
+    "stones": ["Calacatta Nuvo", "Carrara Bianco", "Pietra Serena"],
+    "woods": ["rift-sawn white oak", "smoked European oak", "fumed walnut"],
+    "metals": ["brushed brass", "blackened steel", "patinated bronze"],
+    "paints": ["Farrow & Ball Studio Green No. 93", "Little Greene Hicks Blue 208"],
+    "fixtures": ["Vola HV1", "Dornbracht Tara", "Buster + Punch Linear"]
+  },
+  "banned_terms": ["luxury", "modern", "elegant", "polished", "sleek", "high-end", "premium-looking"],
+  "substitutions": {"wood": "rift-sawn white oak", "stone": "Calacatta Nuvo", "marble": "Calacatta Nuvo", "metal": "brushed brass", "paint": "Farrow & Ball Studio Green No. 93", "fixture": "Vola HV1"}
+}
