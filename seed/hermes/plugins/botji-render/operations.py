@@ -17,9 +17,11 @@ named-function surface botji-render-router consumes.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import logging
 import os
 import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -141,6 +143,28 @@ def render_schema(
     )
 
 
+def _load_openai_codex_provider() -> Any:
+    """Load the bundled provider without using the global ``providers`` name.
+
+    The upstream Hermes runtime already has an ``/opt/hermes/providers`` package.
+    If that package is imported first, ``from providers.openai_codex`` resolves
+    against the upstream package and misses Botji's bundled provider. Loading by
+    file path keeps this plugin independent of global import order.
+    """
+    module_name = "botji_render_openai_codex"
+    provider_path = Path(__file__).resolve().parent / "providers" / "openai_codex.py"
+    loaded = sys.modules.get(module_name)
+    if loaded is not None and Path(getattr(loaded, "__file__", "")) == provider_path:
+        return loaded
+    spec = importlib.util.spec_from_file_location(module_name, provider_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load openai_codex provider from {provider_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def edit_image(
     sources: list[Path],
     policy: RenderPolicy,
@@ -150,12 +174,12 @@ def edit_image(
 ) -> RenderResult:
     """Provider-routed image transform."""
     try:
-        from providers.openai_codex import generate_image  # type: ignore[import-not-found]
-    except ImportError as exc:
+        generate_image = _load_openai_codex_provider().generate_image
+    except Exception as exc:
         return RenderResult(
             operation="edit_image", output_path=None,
             error=f"openai_codex provider not loadable: {exc}",
-            error_type="ImportError",
+            error_type=type(exc).__name__,
         )
     return generate_image(sources, policy, output_dir=output_dir, **kwargs)
 

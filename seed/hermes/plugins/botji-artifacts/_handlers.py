@@ -1,6 +1,7 @@
 """Tool handler functions — thin dispatchers that call into submodules."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import sys
@@ -39,16 +40,34 @@ _HERMES_NATIVE_ID_PREFIXES = ("src_", "out_", "rcpt_")
 _MANIFEST_V2_VALIDATOR: Any = None
 
 
-def _render_runtime() -> tuple[Any, Any, Any]:
-    """Return botji-render dispatch objects without making plugin load order brittle."""
-    render_dir = Path(__file__).resolve().parents[1] / "botji-render"
-    render_dir_str = str(render_dir)
-    if render_dir_str not in sys.path:
-        sys.path.insert(0, render_dir_str)
-    from operations import RenderPolicy, dispatch  # type: ignore[import-not-found]
-    from providers.openai_codex import resolve_provider_route  # type: ignore[import-not-found]
+def _load_module_from_path(module_name: str, path: Path) -> Any:
+    loaded = sys.modules.get(module_name)
+    if loaded is not None and Path(getattr(loaded, "__file__", "")) == path:
+        return loaded
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {module_name} from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
-    return RenderPolicy, dispatch, resolve_provider_route
+
+def _render_runtime() -> tuple[Any, Any, Any]:
+    """Return botji-render dispatch objects without relying on global imports.
+
+    Hermes ships its own top-level ``providers`` package. In the gateway process
+    that package is often imported before Botji's render plugin, so importing
+    ``providers.openai_codex`` can resolve against the wrong package. Load the
+    bundled render files by absolute path instead.
+    """
+    render_dir = Path(__file__).resolve().parents[1] / "botji-render"
+    operations = _load_module_from_path("botji_render_operations", render_dir / "operations.py")
+    provider = _load_module_from_path(
+        "botji_render_openai_codex",
+        render_dir / "providers" / "openai_codex.py",
+    )
+    return operations.RenderPolicy, operations.dispatch, provider.resolve_provider_route
 
 
 def _manifest_v2_validator() -> Any:
