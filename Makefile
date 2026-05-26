@@ -57,6 +57,7 @@ codex-push-auth:
 	VPS_USER="$${VPS_USER:-botji}" \
 	VPS_DATA_PATH="$${VPS_DATA_PATH:-/opt/botji/data/botji}" \
 	SSH_KEY="$${SSH_KEY:-}" \
+	ALLOW_DIRECT_CODEX_PUSH="$${ALLOW_DIRECT_CODEX_PUSH:-0}" \
 	./scripts/codex-push-auth.sh
 
 codex-status:

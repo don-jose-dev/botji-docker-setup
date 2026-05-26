@@ -73,11 +73,15 @@ start_primary_tenant
 wait_for_primary_health
 
 if [ "$STATUS" = "healthy" ]; then
+  # Upstream Hermes startup can touch /opt/data/auth.json before the gateway
+  # runs as the hermes UID. Re-assert ownership after the container is healthy
+  # so the first real Telegram turn can read the provider auth store.
+  ensure_auth_file_owner "$DATA_DIR" "$HERMES_RUNTIME_UID" "$HERMES_RUNTIME_GID" "post-start Hermes"
   run_primary_smoke
   record_last_deploy "$STATUS"
   # shellcheck disable=SC2034  # read by the cleanup trap in vps-deploy.sh
   ROLLBACK_ON_ERROR=0
-  echo "==> Deploy complete."
+  echo "==> Primary deploy complete."
 else
   echo "ERROR: Container not healthy ($STATUS)" >&2
   docker logs botji-hermes --tail 40 >&2 || true
@@ -86,6 +90,7 @@ else
 fi
 
 run_additional_tenants
+echo "==> Deploy complete."
 
 # Prune images not used by any running container. Prevents the ~30 GB disk
 # accumulation seen after each CI deploy (old sha-* images pile up as <none>).
@@ -94,6 +99,6 @@ docker image prune -a -f 2>/dev/null || true
 
 # Cleanup — also handled by the EXIT trap in vps-deploy.sh, but the original
 # monolithic script removed these inline at the very end too. Keep for parity.
-rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth.b64 \
+rm -f /tmp/ci-vars.env /tmp/vps-env.b64 /tmp/codex-auth*.b64 \
       /tmp/vps-deploy.sh /tmp/deploy.sh /tmp/deploy-env.sh \
       /tmp/deploy-config.sh /tmp/deploy-tenants.sh /tmp/deploy-smoke.sh

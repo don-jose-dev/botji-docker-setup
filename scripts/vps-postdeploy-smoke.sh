@@ -10,6 +10,20 @@ EXPECTED_IMAGE_INPUT_MODE="${BOTJI_EXPECTED_IMAGE_INPUT_MODE:-native}"
 EXPECTED_IMAGE_MODEL="${BOTJI_EXPECTED_IMAGE_MODEL:-gpt-image-2}"
 EXPECTED_IMAGE_CHAT_MODEL="${BOTJI_EXPECTED_CODEX_IMAGE_CHAT_MODEL:-gpt-5.4-mini}"
 EXPECTED_VISION_REVIEW_MODEL="${BOTJI_EXPECTED_VISION_REVIEW_MODEL:-gpt-5.4-mini}"
+EXPECTED_TERMINAL_CWD="${BOTJI_EXPECTED_TERMINAL_CWD:-/workspace}"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+EXPECTED_SKILL_NAMES="${BOTJI_EXPECTED_SKILL_NAMES:-}"
+if [ -z "$EXPECTED_SKILL_NAMES" ] && [ -d "$REPO_ROOT/seed/hermes/skills" ]; then
+  EXPECTED_SKILL_NAMES="$(find "$REPO_ROOT/seed/hermes/skills" -mindepth 1 -maxdepth 1 -type d -name 'botji-*' -printf '%f\n' | sort | paste -sd, -)"
+fi
+EXPECTED_PLUGIN_NAMES="${BOTJI_EXPECTED_PLUGIN_NAMES:-}"
+if [ -z "$EXPECTED_PLUGIN_NAMES" ] && [ -d "$REPO_ROOT/seed/hermes/plugins" ]; then
+  EXPECTED_PLUGIN_NAMES="$(find "$REPO_ROOT/seed/hermes/plugins" -mindepth 1 -maxdepth 1 -type d -name 'botji-*' -printf '%f\n' | sort | paste -sd, -)"
+fi
+EXPECTED_PROMPT_RELS="${BOTJI_EXPECTED_PROMPT_RELS:-}"
+if [ -z "$EXPECTED_PROMPT_RELS" ] && [ -d "$REPO_ROOT/seed/hermes/plugins" ]; then
+  EXPECTED_PROMPT_RELS="$(find "$REPO_ROOT/seed/hermes/plugins" -path '*/prompts/*.md' -printf '%P\n' | sort | paste -sd, -)"
+fi
 SINCE_MINUTES="${BOTJI_BUDGET_SINCE_MINUTES:-30}"
 MAX_RESPONSE_SECONDS="${BOTJI_MAX_RESPONSE_SECONDS:-180}"
 MAX_API_CALLS="${BOTJI_MAX_API_CALLS:-8}"
@@ -35,6 +49,141 @@ if STARTED_EPOCH="$(date -d "$STARTED_AT" +%s 2>/dev/null)"; then
     SINCE_MINUTES="$RESTART_AGE_MIN"
   fi
 fi
+
+echo "=== postdeploy: gateway runtime contract ==="
+docker exec \
+  -e EXPECTED_TENANT="$TENANT_ID" \
+  -e EXPECTED_TERMINAL_CWD="$EXPECTED_TERMINAL_CWD" \
+  -u 10000:10000 "$CONTAINER_NAME" sh -lc '
+set -eu
+pids="$(ps -eo pid=,args= | awk "/\/python[0-9.]* / && /\/hermes gateway run$/ {print \$1}")"
+count="$(printf "%s\n" "$pids" | sed "/^$/d" | wc -l | tr -d " ")"
+if [ "$count" != "1" ]; then
+  echo "ERROR: expected exactly one hermes gateway run process, found $count" >&2
+  ps -eo pid,ppid,user,args | grep -E "[h]ermes gateway run|[s]6-supervise gateway" >&2 || true
+  exit 1
+fi
+pid="$(printf "%s\n" "$pids" | sed "/^$/d" | head -n1)"
+env_dump="$(tr "\0" "\n" < "/proc/$pid/environ")"
+require_env() {
+  if ! printf "%s\n" "$env_dump" | grep -q "^$1="; then
+    echo "ERROR: gateway process missing env $1" >&2
+    exit 1
+  fi
+}
+for key in HERMES_HOME CODEX_HOME XDG_STATE_HOME BOTJI_TENANT_ID TERMINAL_CWD; do
+  require_env "$key"
+done
+if ! printf "%s\n" "$env_dump" | grep -qx "BOTJI_TENANT_ID=$EXPECTED_TENANT"; then
+  echo "ERROR: gateway BOTJI_TENANT_ID does not match $EXPECTED_TENANT" >&2
+  exit 1
+fi
+if ! printf "%s\n" "$env_dump" | grep -qx "TERMINAL_CWD=$EXPECTED_TERMINAL_CWD"; then
+  echo "ERROR: gateway TERMINAL_CWD does not match $EXPECTED_TERMINAL_CWD" >&2
+  exit 1
+fi
+proc_cwd="$(readlink "/proc/$pid/cwd")"
+if [ "$proc_cwd" != "$EXPECTED_TERMINAL_CWD" ]; then
+  echo "ERROR: gateway cwd is $proc_cwd, expected $EXPECTED_TERMINAL_CWD" >&2
+  exit 1
+fi
+if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+  require_env TELEGRAM_BOT_TOKEN
+fi
+python3 - <<'"'"'PY'"'"'
+import json
+from pathlib import Path
+
+auth_path = Path("/opt/data/auth.json")
+if not auth_path.exists():
+    raise SystemExit("ERROR: /opt/data/auth.json missing")
+data = json.loads(auth_path.read_text())
+tokens = (
+    data.get("providers", {})
+    .get("openai-codex", {})
+    .get("tokens", {})
+)
+missing = [key for key in ("access_token", "refresh_token") if not tokens.get(key)]
+if missing:
+    raise SystemExit("ERROR: Codex provider auth missing " + ",".join(missing))
+PY
+echo "    gateway process/env/auth contract ok"
+'
+
+echo "=== postdeploy: seeded skills/plugins/prompts ==="
+docker exec -i \
+  -e EXPECTED_SKILL_NAMES="$EXPECTED_SKILL_NAMES" \
+  -e EXPECTED_PLUGIN_NAMES="$EXPECTED_PLUGIN_NAMES" \
+  -e EXPECTED_PROMPT_RELS="$EXPECTED_PROMPT_RELS" \
+  -u 10000:10000 "$CONTAINER_NAME" python3 - <<'PY'
+import os
+from pathlib import Path
+
+
+def split_csv(name: str) -> list[str]:
+    return [item for item in os.environ.get(name, "").split(",") if item]
+
+skills = split_csv("EXPECTED_SKILL_NAMES")
+plugins = split_csv("EXPECTED_PLUGIN_NAMES")
+prompts = split_csv("EXPECTED_PROMPT_RELS")
+if not skills or not plugins or not prompts:
+    raise SystemExit("ERROR: seed inventory missing; cannot verify skills/plugins/prompts")
+
+missing: list[str] = []
+for skill in skills:
+    path = Path("/opt/data/skills") / skill / "SKILL.md"
+    if not path.is_file() or not path.read_text(errors="replace").strip():
+        missing.append(str(path))
+for plugin in plugins:
+    root = Path("/opt/data/plugins") / plugin
+    for name in ("plugin.yaml", "__init__.py"):
+        path = root / name
+        if not path.is_file():
+            missing.append(str(path))
+for rel in prompts:
+    path = Path("/opt/data/plugins") / rel
+    if not path.is_file() or not path.read_text(errors="replace").strip():
+        missing.append(str(path))
+if missing:
+    raise SystemExit("ERROR: missing/unreadable seeded files:\n" + "\n".join(missing))
+print(f"    skills={len(skills)} plugins={len(plugins)} prompts={len(prompts)} ok")
+PY
+
+
+echo "=== postdeploy: Hermes provider/platform status ==="
+docker exec -u 10000:10000 "$CONTAINER_NAME" sh -lc '
+set -eu
+export HERMES_HOME="${HERMES_HOME:-/opt/data}"
+export CODEX_HOME="${CODEX_HOME:-/opt/data/.codex}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-/opt/data/.local/state}"
+if [ -x /opt/hermes/.venv/bin/hermes ]; then
+  HERMES_BIN=/opt/hermes/.venv/bin/hermes
+elif command -v hermes >/dev/null 2>&1; then
+  HERMES_BIN=hermes
+else
+  echo "ERROR: hermes binary not found" >&2
+  exit 1
+fi
+status_output="$("$HERMES_BIN" status 2>&1)" || {
+  printf "%s\n" "$status_output" >&2
+  exit 1
+}
+printf "%s\n" "$status_output"
+printf "%s\n" "$status_output" | awk "
+  /OpenAI Codex/ && /logged in/ && !/not logged/ { ok=1 }
+  END { exit ok ? 0 : 1 }
+" || {
+  echo "ERROR: OpenAI Codex provider is not logged in" >&2
+  exit 1
+}
+printf "%s\n" "$status_output" | awk "
+  /Telegram/ && /configured/ && !/not configured/ { ok=1 }
+  END { exit ok ? 0 : 1 }
+" || {
+  echo "ERROR: Telegram platform is not configured" >&2
+  exit 1
+}
+'
 
 echo "=== postdeploy: runtime tenant harness ==="
 docker exec "$CONTAINER_NAME" botji-runtime-harness \

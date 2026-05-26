@@ -14,8 +14,7 @@
 #   start_primary_tenant       — defensive name reclaim + compose up the
 #                                primary tenant container.
 #   record_last_deploy STATUS  — write $DATA_DIR/.botji/LAST_DEPLOY.json.
-#   deploy_additional_tenant PATH — sync + compose up a sibling tenant
-#                                (non-fatal on failure).
+#   deploy_additional_tenant PATH — sync + compose up a sibling tenant.
 #   run_additional_tenants     — iterate over $BOTJI_ADDITIONAL_TENANTS.
 #
 # Reads from setup_env: HERMES_RUNTIME_UID, HERMES_RUNTIME_GID, DATA_DIR,
@@ -223,9 +222,9 @@ EOF
 # We do NOT touch their .env, config.yaml, or .codex/auth.json — those are
 # tenant-specific and intentionally diverge.
 #
-# Failures in an additional tenant are logged as warnings but do NOT fail the
-# overall deploy: /opt/botji is already healthy at this point and the workflow
-# should not roll back a healthy primary because a sibling tenant had trouble.
+# Additional tenants are first-class by default: failures fail the deploy so a
+# green workflow means every configured Botji bot is actually serving traffic.
+# Set BOTJI_ADDITIONAL_TENANTS_REQUIRED=0 for a warn-only best-effort rollout.
 deploy_additional_tenant() {
   local tenant_path="$1"
   if [ ! -d "$tenant_path" ]; then
@@ -252,6 +251,12 @@ deploy_additional_tenant() {
 
   echo "    tenant=$tenant_id container=$tenant_container data=$tenant_data_abs"
 
+  # Additional tenants run the same release contract as the primary tenant.
+  # Keep compose files centralized in /opt/botji and copy them into sibling
+  # tenant dirs on each deploy; never copy .env or tenant data.
+  cp docker-compose.yml docker-compose.prod.yml "$tenant_path/"
+  echo "    compose files synced"
+
   # Sync plugins / skills / schemas from the primary's checkout into the
   # additional tenant's data dir. Reuses sync_code_components by overriding DATA_DIR
   # + HERMES_RUNTIME_UID/GID, then restoring the primary values.
@@ -275,6 +280,49 @@ deploy_additional_tenant() {
 
   # Best-effort kanban schema migration on the additional tenant's kanban.db.
   migrate_kanban_db_for_tenant "$tenant_data_abs/kanban.db" "$tenant_uid" "$tenant_gid"
+
+  # Additional tenants keep their own Codex auth chain. A fresh per-tenant
+  # base64 auth secret may be staged as /tmp/codex-auth-$tenant_id.b64 by CI;
+  # otherwise we preserve the tenant-local .codex/auth.json already on disk.
+  # Do not copy primary-tenant tokens: Codex OAuth refresh tokens are
+  # single-use and sharing one auth.json across tenants causes
+  # refresh_token_reused outages.
+  local tenant_auth_b64="/tmp/codex-auth-${tenant_id}.b64"
+  local tenant_codex_auth="$tenant_data_abs/.codex/auth.json"
+  maybe_install_staged_codex_auth \
+    "$tenant_auth_b64" \
+    "$tenant_codex_auth" \
+    "$tenant_uid" \
+    "$tenant_gid" \
+    "additional tenant $tenant_id" || {
+      case "$?" in
+        1) : ;;
+        *) echo "    ERROR: additional tenant staged auth import failed"; return 1 ;;
+      esac
+    }
+  if [ -f "$tenant_codex_auth" ]; then
+    ensure_codex_auth_file_owner "$tenant_codex_auth" "$tenant_uid" "$tenant_gid" \
+      "additional tenant $tenant_id" \
+      || { echo "    ERROR: additional tenant Codex auth ownership fix failed"; return 1; }
+    if write_hermes_auth_store_from_codex \
+        "$tenant_codex_auth" \
+        "$tenant_data_abs/auth.json"; then
+      ensure_auth_file_owner "$tenant_data_abs" "$tenant_uid" "$tenant_gid" \
+        "additional tenant $tenant_id" \
+        || { echo "    ERROR: additional tenant auth ownership fix failed"; return 1; }
+    else
+      echo "    ERROR: additional tenant auth conversion failed — tenant needs fresh Codex login"
+      return 1
+    fi
+  elif [ -f "$tenant_data_abs/auth.json" ]; then
+    echo "    no tenant Codex CLI auth file present; preserving existing Hermes provider auth store"
+    ensure_auth_file_owner "$tenant_data_abs" "$tenant_uid" "$tenant_gid" \
+      "additional tenant $tenant_id" \
+      || { echo "    ERROR: additional tenant auth ownership fix failed"; return 1; }
+  else
+    echo "    ERROR: additional tenant $tenant_id has no Codex auth; stage /tmp/codex-auth-${tenant_id}.b64 from a fresh tenant login"
+    return 1
+  fi
 
   # Remove stale skills metadata files written by a previous (different) image.
   # When a tenant transitions from one hermes-agent image to another, the old
@@ -321,6 +369,10 @@ deploy_additional_tenant() {
   # /opt/data/skills/.bundled_manifest. The PR #20 / #21 / #22 chmods were
   # widening permissions on the WRONG (real) dir all along — observed
   # 2026-05-22 when degain restart-looped through four deploys.
+  if command -v clear_telegram_webhook_from_env >/dev/null 2>&1; then
+    clear_telegram_webhook_from_env "$tenant_path/.env"
+  fi
+
   (
     cd "$tenant_path"
     export BOTJI_PROD_IMAGE="$IMAGE_REF"
@@ -335,9 +387,9 @@ deploy_additional_tenant() {
     if docker inspect "$tenant_container" >/dev/null 2>&1; then
       docker rm -f "$tenant_container" >/dev/null 2>&1 || true
     fi
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+    docker compose -p "$tenant_id" -f docker-compose.yml -f docker-compose.prod.yml \
       up -d --force-recreate --no-build --remove-orphans
-  ) || { echo "    WARNING: additional tenant compose up failed — additional tenant left unchanged"; return 0; }
+  ) || { echo "    ERROR: additional tenant compose up failed"; return 1; }
 
   # Wait for healthy, warn on failure but do NOT fail the primary deploy.
   local tenant_status="not_found"
@@ -348,23 +400,34 @@ deploy_additional_tenant() {
   done
   if [ "$tenant_status" = "healthy" ]; then
     echo "    additional tenant $tenant_container healthy"
+    ensure_auth_file_owner "$tenant_data_abs" "$tenant_uid" "$tenant_gid" \
+      "additional tenant $tenant_id" \
+      || { echo "    ERROR: additional tenant auth ownership fix failed"; return 1; }
     if [ -f scripts/vps-postdeploy-smoke.sh ]; then
       BOTJI_CONTAINER_NAME="$tenant_container" \
         BOTJI_TENANT_ID="$tenant_id" \
         bash scripts/vps-postdeploy-smoke.sh \
-        || echo "    WARNING: $tenant_container post-deploy smoke failed (non-fatal — /opt/botji already shipped)"
+        || { echo "    ERROR: $tenant_container post-deploy smoke failed"; return 1; }
     fi
   else
-    echo "    WARNING: $tenant_container unhealthy ($tenant_status) — /opt/botji deploy already succeeded"
+    echo "    ERROR: $tenant_container unhealthy ($tenant_status)"
     docker logs "$tenant_container" --tail 30 2>&1 | sed 's/^/      | /' || true
+    return 1
   fi
 }
 
 run_additional_tenants() {
-  # Run additional-tenant deploys as a non-fatal post-step. List tenants here
-  # (whitespace-separated under BOTJI_ADDITIONAL_TENANTS, default = degain).
+  # List tenants here (whitespace-separated under BOTJI_ADDITIONAL_TENANTS,
+  # default = degain). They are required unless explicitly set warn-only.
   BOTJI_ADDITIONAL_TENANTS="${BOTJI_ADDITIONAL_TENANTS:-/opt/botji-degain}"
+  BOTJI_ADDITIONAL_TENANTS_REQUIRED="${BOTJI_ADDITIONAL_TENANTS_REQUIRED:-1}"
   for tenant_path in $BOTJI_ADDITIONAL_TENANTS; do
-    deploy_additional_tenant "$tenant_path" || true
+    if ! deploy_additional_tenant "$tenant_path"; then
+      if [ "$BOTJI_ADDITIONAL_TENANTS_REQUIRED" = "0" ]; then
+        echo "    WARNING: additional tenant $tenant_path failed (warn-only mode)"
+      else
+        return 1
+      fi
+    fi
   done
 }

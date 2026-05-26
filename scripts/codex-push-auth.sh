@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Push local Codex ChatGPT auth credentials to the VPS data volume.
+# Legacy emergency helper: push local Codex ChatGPT auth credentials directly
+# to one VPS tenant data volume.
+#
+# Prefer the GitHub environment-secret seed flow documented in
+# docs/DEPLOYMENT.md. Direct pushes bypass the deploy-time freshness guard and
+# are unsafe for routine multi-tenant operation.
 #
 # How to use:
 #   1. On your local machine (where you have a browser):
@@ -9,7 +14,8 @@
 #        VPS_HOST=187.124.13.159 ./scripts/codex-push-auth.sh
 #
 # The credentials are copied into the VPS data volume and survive container
-# restarts. No make reload is required — Codex reads the file on each call.
+# restarts. Use this only for one affected tenant, never to reuse the same
+# auth.json across multiple live bots.
 #
 # Optional env overrides:
 #   LOCAL_CODEX_HOME  — local path where codex stored auth (default: ~/.codex)
@@ -34,6 +40,14 @@ if [ -z "$VPS_HOST" ]; then
   echo "Usage:"
   echo "  VPS_HOST=<ip> ./scripts/codex-push-auth.sh"
   echo "  VPS_HOST=<ip> VPS_USER=root ./scripts/codex-push-auth.sh"
+  exit 1
+fi
+
+if [ "${ALLOW_DIRECT_CODEX_PUSH:-0}" != "1" ]; then
+  echo "ERROR: direct Codex auth pushes are disabled by default."
+  echo "       Use the per-tenant GitHub secret seed flow in docs/DEPLOYMENT.md."
+  echo "       For an emergency single-tenant repair, re-run with ALLOW_DIRECT_CODEX_PUSH=1"
+  echo "       and ensure this auth.json is not reused by another live tenant."
   exit 1
 fi
 
