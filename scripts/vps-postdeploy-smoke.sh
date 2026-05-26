@@ -56,7 +56,7 @@ docker exec \
   -e EXPECTED_TERMINAL_CWD="$EXPECTED_TERMINAL_CWD" \
   -u 10000:10000 "$CONTAINER_NAME" sh -lc '
 set -eu
-pids="$(ps -eo pid,args | awk "/[h]ermes gateway run/ {print \$1}")"
+pids="$(ps -eo pid=,args= | awk '$0 ~ /\/python[0-9.]* / && $0 ~ /\/hermes gateway run$/ {print $1}')"
 count="$(printf "%s\n" "$pids" | sed "/^$/d" | wc -l | tr -d " ")"
 if [ "$count" != "1" ]; then
   echo "ERROR: expected exactly one hermes gateway run process, found $count" >&2
