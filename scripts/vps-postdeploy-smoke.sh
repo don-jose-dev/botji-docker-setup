@@ -56,7 +56,7 @@ docker exec \
   -e EXPECTED_TERMINAL_CWD="$EXPECTED_TERMINAL_CWD" \
   -u 10000:10000 "$CONTAINER_NAME" sh -lc '
 set -eu
-pids="$(ps -eo pid=,args= | awk '$0 ~ /\/python[0-9.]* / && $0 ~ /\/hermes gateway run$/ {print $1}')"
+pids="$(ps -eo pid=,args= | awk "/\/python[0-9.]* / && /\/hermes gateway run$/ {print \$1}")"
 count="$(printf "%s\n" "$pids" | sed "/^$/d" | wc -l | tr -d " ")"
 if [ "$count" != "1" ]; then
   echo "ERROR: expected exactly one hermes gateway run process, found $count" >&2
@@ -111,7 +111,7 @@ echo "    gateway process/env/auth contract ok"
 '
 
 echo "=== postdeploy: seeded skills/plugins/prompts ==="
-docker exec \
+docker exec -i \
   -e EXPECTED_SKILL_NAMES="$EXPECTED_SKILL_NAMES" \
   -e EXPECTED_PLUGIN_NAMES="$EXPECTED_PLUGIN_NAMES" \
   -e EXPECTED_PROMPT_RELS="$EXPECTED_PROMPT_RELS" \
