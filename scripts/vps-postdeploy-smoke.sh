@@ -10,6 +10,20 @@ EXPECTED_IMAGE_INPUT_MODE="${BOTJI_EXPECTED_IMAGE_INPUT_MODE:-native}"
 EXPECTED_IMAGE_MODEL="${BOTJI_EXPECTED_IMAGE_MODEL:-gpt-image-2}"
 EXPECTED_IMAGE_CHAT_MODEL="${BOTJI_EXPECTED_CODEX_IMAGE_CHAT_MODEL:-gpt-5.4-mini}"
 EXPECTED_VISION_REVIEW_MODEL="${BOTJI_EXPECTED_VISION_REVIEW_MODEL:-gpt-5.4-mini}"
+EXPECTED_TERMINAL_CWD="${BOTJI_EXPECTED_TERMINAL_CWD:-/workspace}"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+EXPECTED_SKILL_NAMES="${BOTJI_EXPECTED_SKILL_NAMES:-}"
+if [ -z "$EXPECTED_SKILL_NAMES" ] && [ -d "$REPO_ROOT/seed/hermes/skills" ]; then
+  EXPECTED_SKILL_NAMES="$(find "$REPO_ROOT/seed/hermes/skills" -mindepth 1 -maxdepth 1 -type d -name 'botji-*' -printf '%f\n' | sort | paste -sd, -)"
+fi
+EXPECTED_PLUGIN_NAMES="${BOTJI_EXPECTED_PLUGIN_NAMES:-}"
+if [ -z "$EXPECTED_PLUGIN_NAMES" ] && [ -d "$REPO_ROOT/seed/hermes/plugins" ]; then
+  EXPECTED_PLUGIN_NAMES="$(find "$REPO_ROOT/seed/hermes/plugins" -mindepth 1 -maxdepth 1 -type d -name 'botji-*' -printf '%f\n' | sort | paste -sd, -)"
+fi
+EXPECTED_PROMPT_RELS="${BOTJI_EXPECTED_PROMPT_RELS:-}"
+if [ -z "$EXPECTED_PROMPT_RELS" ] && [ -d "$REPO_ROOT/seed/hermes/plugins" ]; then
+  EXPECTED_PROMPT_RELS="$(find "$REPO_ROOT/seed/hermes/plugins" -path '*/prompts/*.md' -printf '%P\n' | sort | paste -sd, -)"
+fi
 SINCE_MINUTES="${BOTJI_BUDGET_SINCE_MINUTES:-30}"
 MAX_RESPONSE_SECONDS="${BOTJI_MAX_RESPONSE_SECONDS:-180}"
 MAX_API_CALLS="${BOTJI_MAX_API_CALLS:-8}"
@@ -37,7 +51,10 @@ if STARTED_EPOCH="$(date -d "$STARTED_AT" +%s 2>/dev/null)"; then
 fi
 
 echo "=== postdeploy: gateway runtime contract ==="
-docker exec -e EXPECTED_TENANT="$TENANT_ID" -u 10000:10000 "$CONTAINER_NAME" sh -lc '
+docker exec \
+  -e EXPECTED_TENANT="$TENANT_ID" \
+  -e EXPECTED_TERMINAL_CWD="$EXPECTED_TERMINAL_CWD" \
+  -u 10000:10000 "$CONTAINER_NAME" sh -lc '
 set -eu
 pids="$(ps -eo pid,args | awk "/[h]ermes gateway run/ {print \$1}")"
 count="$(printf "%s\n" "$pids" | sed "/^$/d" | wc -l | tr -d " ")"
@@ -54,11 +71,20 @@ require_env() {
     exit 1
   fi
 }
-for key in HERMES_HOME CODEX_HOME XDG_STATE_HOME BOTJI_TENANT_ID; do
+for key in HERMES_HOME CODEX_HOME XDG_STATE_HOME BOTJI_TENANT_ID TERMINAL_CWD; do
   require_env "$key"
 done
 if ! printf "%s\n" "$env_dump" | grep -qx "BOTJI_TENANT_ID=$EXPECTED_TENANT"; then
   echo "ERROR: gateway BOTJI_TENANT_ID does not match $EXPECTED_TENANT" >&2
+  exit 1
+fi
+if ! printf "%s\n" "$env_dump" | grep -qx "TERMINAL_CWD=$EXPECTED_TERMINAL_CWD"; then
+  echo "ERROR: gateway TERMINAL_CWD does not match $EXPECTED_TERMINAL_CWD" >&2
+  exit 1
+fi
+proc_cwd="$(readlink "/proc/$pid/cwd")"
+if [ "$proc_cwd" != "$EXPECTED_TERMINAL_CWD" ]; then
+  echo "ERROR: gateway cwd is $proc_cwd, expected $EXPECTED_TERMINAL_CWD" >&2
   exit 1
 fi
 if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
@@ -83,6 +109,46 @@ if missing:
 PY
 echo "    gateway process/env/auth contract ok"
 '
+
+echo "=== postdeploy: seeded skills/plugins/prompts ==="
+docker exec \
+  -e EXPECTED_SKILL_NAMES="$EXPECTED_SKILL_NAMES" \
+  -e EXPECTED_PLUGIN_NAMES="$EXPECTED_PLUGIN_NAMES" \
+  -e EXPECTED_PROMPT_RELS="$EXPECTED_PROMPT_RELS" \
+  -u 10000:10000 "$CONTAINER_NAME" python3 - <<'PY'
+import os
+from pathlib import Path
+
+
+def split_csv(name: str) -> list[str]:
+    return [item for item in os.environ.get(name, "").split(",") if item]
+
+skills = split_csv("EXPECTED_SKILL_NAMES")
+plugins = split_csv("EXPECTED_PLUGIN_NAMES")
+prompts = split_csv("EXPECTED_PROMPT_RELS")
+if not skills or not plugins or not prompts:
+    raise SystemExit("ERROR: seed inventory missing; cannot verify skills/plugins/prompts")
+
+missing: list[str] = []
+for skill in skills:
+    path = Path("/opt/data/skills") / skill / "SKILL.md"
+    if not path.is_file() or not path.read_text(errors="replace").strip():
+        missing.append(str(path))
+for plugin in plugins:
+    root = Path("/opt/data/plugins") / plugin
+    for name in ("plugin.yaml", "__init__.py"):
+        path = root / name
+        if not path.is_file():
+            missing.append(str(path))
+for rel in prompts:
+    path = Path("/opt/data/plugins") / rel
+    if not path.is_file() or not path.read_text(errors="replace").strip():
+        missing.append(str(path))
+if missing:
+    raise SystemExit("ERROR: missing/unreadable seeded files:\n" + "\n".join(missing))
+print(f"    skills={len(skills)} plugins={len(plugins)} prompts={len(prompts)} ok")
+PY
+
 
 echo "=== postdeploy: Hermes provider/platform status ==="
 docker exec -u 10000:10000 "$CONTAINER_NAME" sh -lc '
