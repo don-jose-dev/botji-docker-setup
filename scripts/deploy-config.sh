@@ -319,6 +319,10 @@ state["last_refresh"] = (
     or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 )
 state["auth_mode"] = "chatgpt"
+# A fresh Codex import supersedes any previous transient refresh/auth failure.
+# Leaving this stale field around makes status diagnostics report an old outage
+# after valid tokens have been installed.
+state.pop("last_auth_error", None)
 
 hermes_auth_path.write_text(json.dumps(hermes_auth, indent=2, sort_keys=True) + "\n")
 PY
